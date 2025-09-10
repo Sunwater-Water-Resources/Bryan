@@ -3,7 +3,7 @@
 
 **Developers**: Richard Sharpe (Sunwater) and Graigan Panosot (Jacobs).
 
-***Bryan*** is a Python-based platform that has been developed to implement Sunwater's design flood hydrology specification. It was specifically designed to run Monte Carlo simulations using URBS, and is essentially a wrapper for URBS. For completeness, Bryan also runs the ensemble method. We did add a RORB wrapper later as the need arose for one of our dams. Though this presented some challenges, resulting in us adding a baseflow model and dam router to enable us to simulate storage levels starting below full supply level. But we're getting into the weeds a bit bit here.
+***Bryan*** is a Python-based platform that has been developed to implement Sunwater's design flood hydrology specification. It was specifically designed to run Monte Carlo simulations using URBS, and is essentially a wrapper for URBS. For completeness, Bryan also runs the ensemble method. We did add a RORB wrapper later as the need arose for one of our dams. Though this presented some challenges, resulting in us adding a baseflow model and dam router to enable us to simulate storage levels starting below full supply level. But we're getting into the weeds a bit here.
 
 Why Bryan? For a similar reason that Python is called Python - in reference to Monty Python. Early on, Monty Python was a slip of the tongue when intending to say Monte Carlo. And *The Life of Brian* is a classic movie by the comedy troupe. But Bryan is more pythonic than Brian. So, there it is. 
 
