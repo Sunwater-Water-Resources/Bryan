@@ -13,7 +13,7 @@ DAM ROUTE VBF=ADV_below location=DAM FILE=DAM.SQ
 ```
 
 ### Baseflow
-Including **baseflow** is a little intricate. Do not include the baseflow parameters in URBS's catchment definition (_*.vec_) file. Instead, the parameters are inserted in the [URBS config](URBSModelConfig.md) file. An example of the baseflow parameter line in the config file is shown below.
+Including **baseflow** is a little intricate. Do not include the baseflow parameters in URBS's catchment definition (_*.vec_) file. Instead, the parameters are inserted in the URBS config file. An example of the baseflow parameter line in the config file is shown below.
 ```python
 "baseflow": {"apply": true, "b0": 0.0, "br": 0.99, "bm": 1.0, "bfvf10_factor": 1.0},
 ```
