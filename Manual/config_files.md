@@ -1,5 +1,5 @@
 # Config files
-Bryan uses several config files for managing the catchment-specific inputs to the modelling. The config files use the [JSON](config/json_files.md.html) file format. The following config files are expected:
+Bryan uses several config files for managing the catchment-specific inputs to the modelling. The config files use the [JSON](config/json_files.md) file format. The following config files are expected:
 
 - [Monte Carlo config file](config/MonteCarloConfig.md) is used to set up the monte carlo framework, modelling method and result analysis parameters.
 - [Ensemble config file](config/EnsembleConfig.md) is used to set up the ensemble method framework, modelling method and result analysis parameters.
