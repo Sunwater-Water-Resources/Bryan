@@ -16,7 +16,7 @@ Why Bryan? For a similar reason that Python is called Python - in reference to M
 
 There are also a few Python scripts that can be used for post-processing. For more info ono this [click here](Manual/utilities.md).
 
-Hang on there, Richard... why not just use Storm Injector or the URBS Control Centre for Monte Carlo TPT? Well, Storm Injector had not released Monte Carlo for URBS when we started this project and the URBS Manual did not seem to provide details of all the analyses going on under the hood. We wanted to be sure of those details and test some of our own methods. So, why not just develop our own URBS wrapper. For an example of some of the details we added see:
+Hang on there... why not just use Storm Injector or the URBS Control Centre for Monte Carlo TPT? Well, Storm Injector had not released Monte Carlo for URBS when we started this project and the URBS Manual did not seem to provide details of all the analyses going on under the hood. We wanted to be sure of those details and test some of our own methods. So, why not just develop our own URBS wrapper. For an example of some of the details we added see:
 
 >Criste-Jones, L., Watt, S., & Sharpe, R. (2025). Improving the coupling of antecedent storage and storms for design flood estimation. *Hydrology and Water Resources Symposium*, Engineers Australia.
 
