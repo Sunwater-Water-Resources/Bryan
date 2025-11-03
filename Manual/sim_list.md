@@ -6,7 +6,7 @@ The simulation list provides a list of simulations to be performed. Note that th
 | ----------- | ----------- |
 | ```Include```|If ```no```, this simulation is skipped. Else, ```yes``` to include this simulation. |
 | ```Method```| Either ```ensemble``` or ```monte carlo```. |
-| ```Duration```| The storm duration in hours if running a monte carlo simulation. Not used for ensemble simulations - specified in the [ensemble config file](.\config\EnsembleConfig.md).  |
+| ```Duration```| The storm duration in hours if running a monte carlo simulation. Not used for ensemble simulations - specified in the [ensemble config file](config\EnsembleConfig.md).  |
 | ```Run models```| If ```yes```, the RORB/URBS models are run for this simulation. Else, ```no``` if not wanting to run the models - only analysing existing results.|
 | ```Analyse results```| If ```yes```, the results from the simulation are analysed: applying total probbaility theorem for monte carlo and creating box plots and tables for ensemble events. Else, ```no``` if not wanting to analyse the results. |
 | ```Store hydrographs```| Type ```yes``` if wanting to store all the modelled hydrographs for this simulation in a single csv file. Useful if wanting to use some results as boundary conditions for a hydraulic model or to check the results. Though, storing the results for thousands of runs takes a bit more time. |
