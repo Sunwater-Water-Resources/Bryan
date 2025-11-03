@@ -36,4 +36,4 @@ The **simulation list** is an Excel file containing a list of simulations to run
 - ***Monte Carlo*** simulations are set up for a single storm duration, which is specified in the ```Duration``` field in the simulation list. The simulation parameters are controlled using a [Monte Carlo config file](config/MonteCarloConfig.md) specified in the ```Config file``` field in the simulation list. 
 - ***Ensemble*** simulations are run across a range of simulations specified in the [Ensemble config file](config/EnsembleConfig.md), which is specified in the ```Config file``` field in the simulation list. 
 
-Other fields in the simulation list are explained [here](config/sim_list.md). 
+Other fields in the simulation list are explained [here](sim_list.md). 
