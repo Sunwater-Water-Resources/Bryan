@@ -13,7 +13,7 @@ call path\to\Anaconda3\condabin\activate.bat
 :: Run the model
 python %pyfile% %config_file%
 ```
-All config files are [JSON](config/json_files.md.html) files that set up the inputs to the Python scripts. The **main config file**, referenced in the batch file, tells Bryan which simulation list (Excel file) to use and provides filepaths to the model, storm, and climate config files. An example is shown below:
+All config files are [JSON](config/json_files.md) files that set up the inputs to the Python scripts. The **main config file**, referenced in the batch file, tells Bryan which simulation list (Excel file) to use and provides filepaths to the model, storm, and climate config files. An example is shown below:
 
 ```python
 {
@@ -33,7 +33,7 @@ From here, all simulations are controlled through the simulation list (Excel fil
 
 The **simulation list** is an Excel file containing a list of simulations to run. There are a number of fields used to set up each simulation. Two types of simulations can be performed:
 
-- ***Monte Carlo*** simulations are set up for a single storm duration, which is specified in the ```Duration``` field in the simulation list. The simulation parameters are controlled using a [Monte Carlo config file](SubDocs/MonteCarloConfig.md.html) specified in the ```Config file``` field in the simulation list. 
-- ***Ensemble*** simulations are run across a range of simulations specified in the [Ensemble config file](SubDocs/EnsembleConfig.md.html), which is specified in the ```Config file``` field in the simulation list. 
+- ***Monte Carlo*** simulations are set up for a single storm duration, which is specified in the ```Duration``` field in the simulation list. The simulation parameters are controlled using a [Monte Carlo config file](MonteCarloConfig.md) specified in the ```Config file``` field in the simulation list. 
+- ***Ensemble*** simulations are run across a range of simulations specified in the [Ensemble config file](EnsembleConfig.md), which is specified in the ```Config file``` field in the simulation list. 
 
-Other fields in the simulation list are explained [here](sim_list.md.html). 
+Other fields in the simulation list are explained [here](sim_list.md). 
