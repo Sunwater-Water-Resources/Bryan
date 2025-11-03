@@ -13,7 +13,7 @@ DAM ROUTE VBF=ADV_below location=DAM FILE=DAM.SQ
 ```
 
 ### Baseflow
-Including **baseflow** is a little intricate. Do not include the baseflow parameters in URBS's catchment definition (_*.vec_) file. Instead, the parameters are inserted in the [URBS config](config\URBSModelConfig.md.html) file. An example of the baseflow parameter line in the config file is shown below.
+Including **baseflow** is a little intricate. Do not include the baseflow parameters in URBS's catchment definition (_*.vec_) file. Instead, the parameters are inserted in the [URBS config](config\URBSModelConfig.md) file. An example of the baseflow parameter line in the config file is shown below.
 ```python
 "baseflow": {"apply": true, "b0": 0.0, "br": 0.99, "bm": 1.0, "bfvf10_factor": 1.0},
 ```
@@ -21,10 +21,10 @@ The ```apply``` key can be used to turn the inclusion of baseflow on (```true```
 
 
 ### Result file management
-URBS generates lots of result files, like a lot and a lot. Therefore, there are some **file management options** (deleting and storing results) controlled through the [simulation list](SubDocs/sim_list.md.html). Keywords need to be configured in [Monte Carlo config](SubDocs/MonteCarloConfig.md.html) and [Ensemble config](SubDocs/EnsembleConfig.md.html) files for tracking the inflow, lake level, and outflow results printed by URBS; an example is given below. 
+URBS generates lots of result files, like a lot and a lot. Therefore, there are some **file management options** (deleting and storing results) controlled through the [simulation list](sim_list.md). Keywords need to be configured in [Monte Carlo config](MonteCarloConfig.md) and [Ensemble config](EnsembleConfig.md) files for tracking the inflow, lake level, and outflow results printed by URBS; an example is given below. 
 ```python
 "max_keys": {"inflow": "INFLOW", "level": "DAM", "outflow": "DAM"}
 ```
-The peak results are then extracted for these three labels in the URBS ```*.p``` file. In addition, there is an option to store the full hydrographs of all simulations in a single csv file (```Store hydrographs``` key in [simulation list](SubDocs/sim_list.md.html)), enabling the thousands of results files created by URBS to be deleted (```Mop up files``` key in [simulation list](SubDocs/sim_list.md.html)). 
+The peak results are then extracted for these three labels in the URBS ```*.p``` file. In addition, there is an option to store the full hydrographs of all simulations in a single csv file (```Store hydrographs``` key in [simulation list](sim_list.md)), enabling the thousands of results files created by URBS to be deleted (```Mop up files``` key in [simulation list](sim_list.md)). 
 
 Regardless of whether these file management options are used, the peak iflow, lake level, and outflow are tracked and stored for each simulation in the simulation results file, which is then used to analyse the results.
