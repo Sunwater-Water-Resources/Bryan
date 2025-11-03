@@ -21,7 +21,7 @@ The ```apply``` key can be used to turn the inclusion of baseflow on (```true```
 
 
 ### Result file management
-URBS generates lots of result files, like a lot and a lot. Therefore, there are some **file management options** (deleting and storing results) controlled through the [simulation list](../sim_list.md). Keywords need to be configured in [Monte Carlo config](../MonteCarloConfig.md) and [Ensemble config](../EnsembleConfig.md) files for tracking the inflow, lake level, and outflow results printed by URBS; an example is given below. 
+URBS generates lots of result files, like a lot and a lot. Therefore, there are some **file management options** (deleting and storing results) controlled through the [simulation list](../sim_list.md). Keywords need to be configured in [Monte Carlo config](MonteCarloConfig.md) and [Ensemble config](EnsembleConfig.md) files for tracking the inflow, lake level, and outflow results printed by URBS; an example is given below. 
 ```python
 "max_keys": {"inflow": "INFLOW", "level": "DAM", "outflow": "DAM"}
 ```
