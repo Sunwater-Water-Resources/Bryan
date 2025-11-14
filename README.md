@@ -24,4 +24,11 @@ Hang on there... why not just use Storm Injector or the URBS Control Centre for 
 
 >Sharpe, R.G. (2024). Dealing with vertex perplexity in parabolic interpolation of design rainfall. *ANCOLD conference*, November 2024
 
+Oh, a few thing to watch out for: 
+- Bryan was developed with dams in mind. So, the way the code is currently written there will need to be a dam in the hydrology model.
+- For print statements in URBS models that are used to produce results used in the TPT analysis (i.e. inflow and outflow), it's best to use ALLCAPS as with the dam location label.
+- For the keys used in URBS models to produce results for the TPT analysis (i.e. the inflow, lake level, and outflow labels), make sure that one key is not a subset of the start of another. For example, don't use : DAM_INFLOW, DAM, DAM_OUTFLOW. Instead use: INFLOW_DAM, DAM, OUTFLOW_DAM.
+
+We realise that an example project would be really useful. Will hopefuly get around to adding one. 
+
 Well, what about the juniper bushes over there?
