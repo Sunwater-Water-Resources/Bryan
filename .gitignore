@@ -1,0 +1,77 @@
+# ---------------------------
+# Python virtual environments
+# ---------------------------
+env/
+venv/
+.venv/
+
+# ---------------------------
+# Python cache and artifacts
+# ---------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+
+# ---------------------------
+# Distribution / packaging
+# ---------------------------
+build/
+dist/
+*.egg-info/
+
+# ---------------------------
+# Logs and temp files
+# ---------------------------
+*.log
+*.tmp
+*.bak
+
+# ---------------------------
+# IDE / editor settings
+# ---------------------------
+.vscode/
+.idea/
+
+# ---------------------------
+# OS files
+# ---------------------------
+.DS_Store
+Thumbs.db
+
+# ---------------------------
+# SVN metadata (important)
+# ---------------------------
+.svn/
+
+# ---------------------------
+# Data files (adjust as needed)
+# ---------------------------
+# Large hydrology datasets / model inputs/outputs
+*.csv
+*.xlsx
+*.xls
+*.nc
+*.grib
+*.tif
+*.img
+
+# If you DO want to keep certain data, comment out above and whitelist specific folders:
+# !data/
+# !inputs/
+
+# ---------------------------
+# Model outputs / results
+# ---------------------------
+outputs/
+results/
+figures/
+plots/
+
+# ---------------------------
+# Environment / config secrets
+# ---------------------------
+.env
+*.env
+``
