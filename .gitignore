@@ -79,4 +79,10 @@ plots/
 # Local reference material (manuals, example files)
 # ---------------------------
 References/
+
+# ---------------------------
+# Generated manual output (from Manual/render_manual.py)
+# ---------------------------
+*.md.html
+Manual/markdeep.min.js
 ``
