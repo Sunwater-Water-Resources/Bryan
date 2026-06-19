@@ -88,10 +88,15 @@ class UrbsModel:
         self.alpha = config_data['alpha']
         self.beta = config_data['beta']
         self.m_exponent = config_data['m_exponent']
+        # Optional parameters - if omitted from the config they are left out of the
+        # URBS command line and the model falls back to its own defaults.
+        self.n_exponent = config_data.get('n_exponent', None)
+        self.x_factor = config_data.get('X_factor', None)
 
         self.volume_below_fsl = 0
 
-        self.set_run_parameters(alpha=self.alpha, beta=self.beta, m_exponent=self.m_exponent)
+        self.set_run_parameters(alpha=self.alpha, beta=self.beta, m_exponent=self.m_exponent,
+                                n_exponent=self.n_exponent, x_factor=self.x_factor)
         self.simulation_periods = config_data['simulation_periods']
 
         # set up the header for the batch file
@@ -360,17 +365,29 @@ class UrbsModel:
         shutil.copy(src, dst)
         return
     
-    def set_run_parameters(self, alpha=0, m_exponent=0, beta=0, initial_loss=0, continuing_loss=0):
+    def set_run_parameters(self, alpha=0, m_exponent=0, beta=0, n_exponent=None,
+                           x_factor=None, initial_loss=0, continuing_loss=0):
+        # Build the URBS command-line parameter string using the alpha (keyword) mode.
+        # Per the URBS manual (Table 3), parameters are given as "keyword=value", spaces
+        # are allowed and any order is permitted - e.g. "Alpha=0.3 M=0.8 Beta=1.5".
+        parts = []
         if alpha > 0:
-            self.paramter_string = f'{alpha}'
+            parts.append(f'Alpha={alpha}')
         if m_exponent > 0:
-            self.paramter_string = f'{self.paramter_string} {m_exponent}'
+            parts.append(f'M={m_exponent}')
         if beta > 0:
-            self.paramter_string = f'{self.paramter_string} {beta}'
+            parts.append(f'Beta={beta}')
+        # N and X Factor are optional - only written when defined in the URBS config file.
+        # When omitted, URBS applies its own defaults.
+        if n_exponent is not None:
+            parts.append(f'N={n_exponent}')
+        if x_factor is not None:
+            parts.append(f'XF={x_factor}')
         if initial_loss > 0:
-            self.paramter_string = f'{self.paramter_string} {initial_loss}'
+            parts.append(f'IL={initial_loss}')
         if continuing_loss > 0:
-            self.paramter_string = f'{self.paramter_string} {continuing_loss}'
+            parts.append(f'CL={continuing_loss}')
+        self.paramter_string = ' '.join(parts)
 
     def write_ensemble_batch(self, aeps, storm_durations, ensembles):
         vec_path = os.path.join(self.model_folder, self.vec_file)

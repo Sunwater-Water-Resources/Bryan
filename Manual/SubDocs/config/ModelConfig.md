@@ -20,9 +20,13 @@ Secondly, the keys used in the **URBS** model
 |```vec_file``` | Name of the model file. |
 |```time_increment```| Timestep (in hours) the URBS model will use to compute flows. |
 |```time_increment_override```|(Optional) A dictionary that can be used to set time increments for specific storm durations. For example, if running shorter durations which have temporal patterns that use a shorter timesteps than the longer durations, the override can be used as follows: ```"time_increment_override": {"2": 0.05, "3": 0.25, "4.5": 0.25, "6": 0.25}```|
-|```alpha``` | The URBS alpha parameter to apply to the model. |
-|```beta``` | The URBS beta parameter to apply to the model. |
-|```m_exponent``` | The catchment routing non-linearity exponent (usually 0.8). |
+|```alpha``` | The URBS alpha parameter to apply to the model (written as ```Alpha=``` on the command line). |
+|```beta``` | The URBS beta parameter to apply to the model (written as ```Beta=``` on the command line). |
+|```m_exponent``` | The catchment routing non-linearity exponent (usually 0.8); written as ```M=``` on the command line. |
+|```n_exponent``` | **Optional**. The channel routing non-linearity exponent (typical range 0.8–1.2); written as ```N=``` on the command line. If omitted, it is left off the command line and URBS uses its own default. |
+|```X_factor``` | **Optional**. The Muskingum X scaling factor (typical range > 0); written as ```XF=``` on the command line. If omitted, it is left off the command line and URBS uses its own default. |
+
+These parameters are passed to URBS using the **alpha (keyword) command-line mode**, where each parameter is written as ```keyword=value``` after the URBS executable, storm file and result name; for example: ```Alpha=0.3 M=0.8 Beta=1.5```. The order is not significant. See Table 3 of the URBS manual for the full list of command-line parameters.
 
 And lucky last, the keys used in the **RORB** model
 >Graigan needs to check/correct/expand  the table below as needed.
