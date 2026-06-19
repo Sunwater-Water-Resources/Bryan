@@ -58,8 +58,8 @@ class ifdCurves:
             extreme_spatial_smoothing_method = self.config_data['extreme_spatial_smoothing_method']
             if extreme_spatial_smoothing_method == 'interpolate_depths':
                 print ('Applying depths interpolation method for smoothing very rare – extreme spatial patterns')
-                self.extreme_spatial_method == 'interpolate_depths'
-            elif 'interpolate_weights' in extreme_spatial_smoothing_method.keys():
+                self.extreme_spatial_method = 'interpolate_depths'
+            elif isinstance(extreme_spatial_smoothing_method, dict) and 'interpolate_weights' in extreme_spatial_smoothing_method:
                 print ('Applying weights interpolation method for smoothing very rare – extreme spatial patterns')
                 smoothing_bounds = extreme_spatial_smoothing_method['interpolate_weights']
                 self.extreme_spatial_method = 'interpolate_weights'
@@ -185,7 +185,7 @@ class ifdCurves:
                 if not self.skip_method == 'gsdm': # and duration < duration_changeover[1]:
                     if duration not in self.pmp.df_gsdm.index:
                         print(f'ERROR: {duration} hr duration PMP depth not found!')
-                        Exception('Check the list of PMP depths and durations')
+                        raise Exception('Check the list of PMP depths and durations')
                     print('GSDM rainfall for duration:', duration)
                     # For GSDM:
                     # gsdm_df = self.arr_ifd_curves[duration].df.loc[1000:2000].copy()
@@ -202,7 +202,7 @@ class ifdCurves:
                     # for GTSMR
                     if duration not in self.pmp.df_gtsmr.index:
                         print(f'ERROR: {duration} hr duration PMP depth not found!')
-                        Exception('Check the list of PMP depths and durations')
+                        raise Exception('Check the list of PMP depths and durations')
                     print('GTSMR rainfall for duration:', duration)
                     # gtsmr_df = self.arr_ifd_curves[duration].df.loc[1000:2000].copy()
                     gtsmr_df = self.arr_ifd_curves[duration].df.loc[[1000, 2000]].copy()
@@ -583,11 +583,10 @@ class WeightInterpolatedSpatialPattern:
 
         if type(value[1]) is str:
             if value[1].upper() == 'PMP':
-                value[1] == aep_of_pmp
+                value[1] = aep_of_pmp
             else:
                 raise Exception('upper bound for interpolate_weights must be "pmp" or integer > lower bound')
-
-        if type(value[1]) is not int: raise Exception(
+        elif type(value[1]) is not int: raise Exception(
             'upper bound for interpolate_weights must be "pmp" or integer > lower bound')
         if value[1] <= value[0]: raise Exception(
             'upper bound for interpolate_weights must be "pmp" or integer > lower bound')

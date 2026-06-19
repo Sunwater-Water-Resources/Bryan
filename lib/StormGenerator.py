@@ -387,7 +387,7 @@ class StormBurst:
             frequency = self.point_tp_frequency_bins(aep)
             temporal_pattern = self.get_arr_point_pattern(duration, frequency, tp_sample)
             self.timesteps = self.point_temporal_patterns.timesteps[duration]
-            self.pattern_type = 'ARR areal'
+            self.pattern_type = 'ARR point'
         elif storm_method == 'GSDM':
             temporal_pattern = self.get_gsdm_pattern(duration, tp_sample)
             self.timesteps = self.gsdm_temporal_patterns.timesteps[duration]
@@ -477,7 +477,7 @@ class StormBurst:
                     elif dur >= duration_changeover[1]:
                         storm_method_1 = 'GTSMR'
 
-                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False)
+                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method_1, print_msg=False)
                 embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
             elif self.rainfall.extreme_spatial_method == 'interpolate_weights':
                 if z <= z_2000:
@@ -1372,7 +1372,7 @@ class ArealReduction:
             arf = 1.0
         return arf
     
-    def small_area_arf(arf10, area):
+    def small_area_arf(self, arf10, area):
         # Equation 2.4.4 in ARR Book 2
         arf = 1 - 0.6614 * (1 - arf10) * (area**0.4 - 1)
         return arf
