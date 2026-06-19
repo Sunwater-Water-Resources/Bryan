@@ -74,4 +74,9 @@ plots/
 # ---------------------------
 .env
 *.env
+
+# ---------------------------
+# Local reference material (manuals, example files)
+# ---------------------------
+References/
 ``
