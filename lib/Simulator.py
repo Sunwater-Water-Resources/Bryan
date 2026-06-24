@@ -603,7 +603,7 @@ class EnsembleSimulator(Simulator):
                                         ari=np.round(rain_sample_aep, 0),
                                         ensemble=tp_sample)
 
-                result_filename = f'sim_{str(sim_id).zfill(4)}_{duration_str}h'
+                result_filename = f'sim_{str(sim_id).zfill(5)}_{duration_str}h'
                 model.run_storm(storm_name=storm_filename,
                                 result_name=result_filename)
 

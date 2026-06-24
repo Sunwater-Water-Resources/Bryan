@@ -36,7 +36,7 @@ class UrbsModel:
             self.full_supply_volume = config_data['full_supply_volume']
         self.urbs_exe = config_data['model_exe']
         if not os.path.exists(self.urbs_exe):
-            print("WARNING: The URBS path could not be found:", path_to_check)
+            print("WARNING: The URBS path could not be found:", self.urbs_exe)
             print('Pausing the simulation... hit enter to ignore the warning above.')
             input()
         self.model_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['model_folder']))
@@ -184,7 +184,7 @@ class UrbsModel:
         # Check that the baseflow has been applied
         for key, insertion in insertions.items():
             if insertion['used'] is not True:
-                Exception('Baseflow insertion not found:', key)
+                raise Exception('Baseflow insertion not found:', key)
 
     def insert_baseflow_into_vec_old(self, bfvf10, z):
         bfvf_f = self.baseflow_info['bfvf10_factor']
