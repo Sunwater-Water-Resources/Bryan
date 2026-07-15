@@ -17,8 +17,6 @@ Why Bryan? For a similar reason that Python is called Python - in reference to M
 - [The config files](SubDocs/config_files.md.html)
 - [Analysing the model results](SubDocs/analyse_results.md.html)
 
->Graigan: we need some blurb on how to set up the preburst temporal patterns!
-
 There are also a few Python scripts that can be used for post-processing. For more info ono this [click here](SubDocs/utilities.md.html).
 
 Well, what about the juniper bushes over there?
