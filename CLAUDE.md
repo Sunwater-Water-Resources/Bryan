@@ -85,6 +85,9 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 ### Hydrologic models (external executables wrapped by Bryan)
 - `lib/URBSmodel.py` — `UrbsModel`: writes storm files, runs URBS, parses results. Supports
   volume-based and level-based dam routing (auto-detected from the `.vec` file).
+- Inflow hydrographs for `reservoir routing` may be `.csv` or `.parquet` (`_read_inflows`).
+  Parquet written with `index=False` carries time as an ordinary column, so it is promoted
+  to the index on read — do not assume a positional `index_col` works for both formats.
 - `lib/RORBmodel.py` — `RorbModel`: equivalent wrapper for RORB.
 
 ### Routing & baseflow (`lib/Routing.py`)
@@ -108,10 +111,14 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
 
 ## Environment
 
-- Python 3.12. Dependencies: `numpy`, `scipy`, `pandas`, `matplotlib`, `openpyxl`.
+- Python 3.12. Dependencies: `numpy`, `scipy`, `pandas`, `matplotlib`, `openpyxl`, `pyarrow`.
+- `pyarrow` is needed only to read `.parquet` inflow hydrographs in `ReservoirRouting.py`
+  (`_read_inflows`). Everything else works without it.
 - `requirements.txt` — pip pins (note: newer/looser than the conda env).
 - `_env_bryan.yml` — conda environment `bryan29` (the as-used Windows environment;
   numpy 1.26, pandas 2.2, scipy 1.13). Prefer this for reproducing study results.
+  **It has no `pyarrow`** — it is a `conda env export` with exact build strings, so add the
+  package to the env and re-export rather than hand-editing the file.
 - Designed for **Windows** (batch files, `COMPUTERNAME` env var, backslash paths in configs,
   external URBS/RORB `.exe`). Running the full pipeline on Linux requires the model executables
   and will hit path/env assumptions.

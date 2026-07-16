@@ -58,6 +58,37 @@ def _read_sq(sq_path, fsv):
     return s_abs, o
 
 
+def _read_inflows(inflow_path):
+    """Read an inflow hydrograph file, indexed by time (hours), one column per sim.
+
+    Accepts .csv or .parquet. Parquet needs pyarrow installed.
+    """
+    extension = os.path.splitext(inflow_path)[1].lower()
+    if extension not in ('.csv', '.parquet'):
+        raise ValueError(
+            f'Inflow files must be .csv or .parquet, got "{extension}": {inflow_path}'
+        )
+
+    if not os.path.isfile(inflow_path):
+        # The same hydrographs are often kept in both formats, so point at the
+        # counterpart rather than just reporting the missing name.
+        counterpart = os.path.splitext(inflow_path)[0] + (
+            '.parquet' if extension == '.csv' else '.csv')
+        hint = f'\n  A {os.path.splitext(counterpart)[1]} version does exist: {counterpart}' \
+               f'\n  Update the "Inflow" column in the sims list to match.' \
+               if os.path.isfile(counterpart) else ''
+        raise FileNotFoundError(f'Inflow file not found: {inflow_path}{hint}')
+
+    if extension == '.csv':
+        return pd.read_csv(inflow_path, index_col=0)
+
+    df = pd.read_parquet(inflow_path)
+    # Parquet written with index=False carries time as an ordinary first column,
+    # so it must be promoted explicitly - there is no positional index_col here.
+    df.set_index(df.columns[0], inplace=True)
+    return df
+
+
 def _build_routing_grid(el_els, v_els, fsv, sq_storage, sq_flow, n_grid=20000):
     """Build the storage/outflow/level lookup grids.
 
@@ -334,7 +365,7 @@ class ReservoirRoutingSimulator:
         inflow_path = str(self.sim_row['Inflow'])
         print(f'Loading inflows: {inflow_path}')
         t0 = time.time()
-        df = pd.read_csv(inflow_path, index_col=0)
+        df = _read_inflows(inflow_path)
         df.interpolate(method='slinear', inplace=True)
         self.time_index = df.index.to_numpy(dtype=float)
         self.sim_columns = df.columns.tolist()
