@@ -1,7 +1,7 @@
 # URBS wrapper
 
 ### Dam routing - level method
-This is the preferred method. Dam routing in the URBS model can be set up using the full supply level (FSL) method with an initial level (IL) and the storage profile in a elevation-level-storage (els) file. This method will provide results when the peak lake level does not reach the full supply level. Bryan applies the IL using a label in the environment variables, called ```initial_lake_level```. An example of the dam routing command in URBS is below.
+This is the preferred method. Dam routing in the URBS model can be set up using the full supply level (FSL) method with an initial level (IL) and the storage profile in an elevation-level-storage (els) file. This method will provide results when the peak lake level does not reach the full supply level. Bryan applies the IL using a label in the environment variables, called ```initial_lake_level```. An example of the dam routing command in URBS is below.
 ```
 DAM ROUTE FSL=215.50 datafile=dam.els il=initial_lake_level location=DAM FILE=DAM.SQ
 ```
@@ -27,4 +27,4 @@ URBS generates lots of result files, like a lot and a lot. Therefore, there are 
 ```
 The peak results are then extracted for these three labels in the URBS ```*.p``` file. In addition, there is an option to store the full hydrographs of all simulations in a single csv file (```Store hydrographs``` key in [simulation list](../sim_list.md)), enabling the thousands of results files created by URBS to be deleted (```Mop up files``` key in [simulation list](../sim_list.md)). 
 
-Regardless of whether these file management options are used, the peak iflow, lake level, and outflow are tracked and stored for each simulation in the simulation results file, which is then used to analyse the results.
+Regardless of whether these file management options are used, the peak inflow, lake level, and outflow are tracked and stored for each simulation in the simulation results file, which is then used to analyse the results.

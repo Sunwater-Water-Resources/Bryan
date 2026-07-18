@@ -23,4 +23,4 @@ This is the config file for managing antecedent lake levels and uses the keys in
 | ----------- | ----------- |
 |```lower_z```| Lower bound of the AEP range for this probability band using standard normal variate scale. Use -99 if this band applies to the left-hand tail. |
 |```upper_z```|Upper bound of the AEP range for this probability band using standard normal variate scale. Use 99 if this band applies to the right-hand tail.|
-|```correlation```|Pearson correlation coefficient for lake standard normal variate verus rainfall standard normal variate for the current AEP band.|
+|```correlation```|Pearson correlation coefficient for lake standard normal variate versus rainfall standard normal variate for the current AEP band.|

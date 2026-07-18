@@ -1,4 +1,4 @@
-### Getting started - the batch file,  main config file, and simulation list
+### Getting started - the batch file, main config file, and simulation list
 As discussed above, the Python scripts sit in a separate location to the model files. The main script is accessed using a **batch file** that passes the main config file path for a project as a *key* to the Python script. This way, a copy of the Python code is not needed for each model (dam catchment). An example batch file is below.
 ```bat
 :: Insert the name of the config file

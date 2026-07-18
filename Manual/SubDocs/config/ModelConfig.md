@@ -28,8 +28,7 @@ Secondly, the keys used in the **URBS** model
 
 These parameters are passed to URBS using the **alpha (keyword) command-line mode**, where each parameter is written as ```keyword=value``` after the URBS executable, storm file and result name; for example: ```Alpha=0.3 M=0.8 Beta=1.5```. The order is not significant. See Table 3 of the URBS manual for the full list of command-line parameters.
 
-And lucky last, the keys used in the **RORB** model
->Graigan needs to check/correct/expand  the table below as needed.
+And lucky last, the keys used in the **RORB** model:
 
  Config file | Description |
 | ----------- | ----------- |

@@ -4,7 +4,7 @@
 One of the strengths of Python is that there are lots of great packages available to leverage when scripting up a project. But Python is not great at managing these packages, which can lead to your Python installation getting cluttered and conflicts arising when packages are updated. Virtual environments help deal with this problem by setting up a stand--alone folder structure with all the packages needed for a specific project installed in an isolated Python environment. Virtual environments are particularly useful for keeping consistency between users when the code is being shared. Conda is used for managing environments and package installations with the Anaconda distribution of Python. 
 
 ### Setting up a Conda environment
-A file containing the Conda environment settings for Bryan is included with the source code:  *_env_bryan_.yml*. To import the environment:
+A file containing the Conda environment settings for Bryan is included with the source code: *_env_bryan.yml*. To import the environment:
 
 1.	Copy the file *_env_bryan.yml* to a local folder (e.g. C:\Users\username\Documents)
 2.	Install Anaconda distribution (if not already installed)
