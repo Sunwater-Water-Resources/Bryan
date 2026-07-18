@@ -3,7 +3,7 @@
 ### Dam routing - level method
 This is the preferred method. Dam routing in the URBS model can be set up using the full supply level (FSL) method with an initial level (IL) and the storage profile in a elevation-level-storage (els) file. This method will provide results when the peak lake level does not reach the full supply level. Bryan applies the IL using a label in the environment variables, called ```initial_lake_level```. An example of the dam routing command in URBS is below.
 ```
-DAM ROUTE FSL=215.50 datafile=callide.els il=initial_lake_level location=CALLIDE FILE=CALLIDE.SQ
+DAM ROUTE FSL=215.50 datafile=dam.els il=initial_lake_level location=DAM FILE=DAM.SQ
 ```
 
 ### Dam routing - volume method
