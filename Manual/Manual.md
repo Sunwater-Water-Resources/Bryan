@@ -8,15 +8,15 @@ Bryan is a Python-based platform that has been developed to implement Sunwater's
 
 Why Bryan? For a similar reason that Python is called Python - in reference to Monty Python. Early on, Monty Python was a slip in speech when speaking of monte carlo. And *The Life of Brian* is classic movie by the comedy troupe. But Bryan is more pythonic than Brian. So, there it is. 
 
-- [What Bryan does](SubDocs/what.md.html)
-- [Some pre-requisites](SubDocs/pre-requisites.md.html)
-- [Installation](SubDocs/installation.md.html)
-- [Getting started](SubDocs/getting_started.md.html)
-- [Hydrologic modelling](SubDocs/hydrologic_modelling.md.html)
-- [The simulations list](SubDocs/sim_list.md.html)
-- [The config files](SubDocs/config_files.md.html)
-- [Analysing the model results](SubDocs/analyse_results.md.html)
+- [What Bryan does](SubDocs/what.md)
+- [Some pre-requisites](SubDocs/pre-requisites.md)
+- [Installation](SubDocs/installation.md)
+- [Getting started](SubDocs/getting_started.md)
+- [Hydrologic modelling](SubDocs/config/hydrologic_modelling.md)
+- [The simulations list](SubDocs/sim_list.md)
+- [The config files](SubDocs/config_files.md)
+- [Analysing the model results](SubDocs/analyse_results.md)
 
-There are also a few Python scripts that can be used for post-processing. For more info ono this [click here](SubDocs/utilities.md.html).
+There are also a few Python scripts that can be used for post-processing. For more info ono this [click here](SubDocs/utilities.md).
 
 Well, what about the juniper bushes over there?

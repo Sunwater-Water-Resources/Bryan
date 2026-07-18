@@ -1,16 +1,17 @@
 """
 Render the Bryan manual's Markdown files to browsable HTML.
 
-The manual is authored as plain Markdown (``*.md``) but every cross-document link
-points at ``*.md.html`` (e.g. ``SubDocs/what.md.html``). That, plus the use of
-Markdeep-only syntax in the source (``++underline++`` inserts, ``>`` call-outs),
-means the docs are designed to be rendered with Markdeep
-(https://casual-effects.com/markdeep/).
+The manual is authored as plain Markdown (``*.md``) with ordinary cross-document
+links (e.g. ``[Getting started](SubDocs/getting_started.md)``) so the docs browse
+correctly on GitHub. The use of Markdeep-only syntax in the source
+(``++underline++`` inserts, ``>`` call-outs) means the docs are designed to also be
+rendered with Markdeep (https://casual-effects.com/markdeep/).
 
 This script walks the Manual folder, and for every ``foo.md`` it writes a sibling
-``foo.md.html`` Markdeep file (the original Markdown plus a Markdeep footer). Because
-the output keeps the ``.md.html`` name, all of the existing relative links between
-documents resolve correctly - just open ``Manual.md.html`` in a browser.
+``foo.md.html`` Markdeep file (the original Markdown plus a Markdeep footer). Along
+the way it rewrites relative links that point at another ``*.md`` file in the manual
+to point at that file's rendered ``*.md.html`` sibling instead, so the generated
+pages link to each other correctly - just open ``Manual.md.html`` in a browser.
 
 Markdeep renders client-side from a single ``markdeep.min.js``. The generated pages
 reference a *local* copy first (vendored next to this script) and fall back to the
@@ -28,6 +29,7 @@ Only the Python standard library is required.
 
 import argparse
 import os
+import re
 import sys
 import urllib.request
 
@@ -41,6 +43,31 @@ MARKDEEP_CDN = 'https://morgan3d.github.io/markdeep/latest/markdeep.min.js'
 
 # Markdeep rendering options - tweak the look here. See casual-effects.com/markdeep.
 MARKDEEP_OPTIONS = "window.markdeepOptions = {tocStyle: 'medium'};"
+
+# Matches Markdown links: [text](target) - target is captured on its own so it can
+# be rewritten without disturbing the link text.
+MD_LINK_RE = re.compile(r'(\[[^\]]*\]\()([^)]+)(\))')
+# Absolute URLs (http:, mailto:, etc.) - these should be left untouched.
+EXTERNAL_SCHEME_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.-]*:')
+
+
+def _rewrite_link_target(target):
+    """Point a relative *.md link at its rendered *.md.html sibling."""
+    if EXTERNAL_SCHEME_RE.match(target):
+        return target
+    path, sep, fragment = target.partition('#')
+    if path.lower().endswith('.md'):
+        path += '.html'
+    return path + sep + fragment
+
+
+def rewrite_markdown_links(markdown):
+    """Rewrite relative *.md links in Markdown source to the *.md.html files this
+    script generates, so the rendered pages link to each other correctly."""
+    return MD_LINK_RE.sub(
+        lambda m: m.group(1) + _rewrite_link_target(m.group(2)) + m.group(3),
+        markdown,
+    )
 
 
 def ensure_markdeep(allow_download=True):
@@ -102,6 +129,7 @@ def render_file(md_path, have_local):
     output_path = md_path + '.html'  # foo.md -> foo.md.html
     with open(md_path, 'r', encoding='utf-8') as f:
         markdown = f.read()
+    markdown = rewrite_markdown_links(markdown)
     html = '<meta charset="utf-8">\n' + markdown + build_footer(output_path, have_local)
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
