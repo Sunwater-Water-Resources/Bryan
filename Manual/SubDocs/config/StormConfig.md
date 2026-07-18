@@ -5,7 +5,7 @@ This is the config file for setting up the design storms and uses the keys in th
 | ----------- | ----------- |
 |```file_paths``` | A dictionary of filepaths. Keys are listed in Table 2 below. |
 |```storm_method_config```| A dictionary used to specify storm configurations. Keys are listed in Table 3 below.  |
-|```CL_limit```|(Optional) A dictionary used to reduce the continuing loss in extreme storms (rarer than 1 in 100 AEP). For example, the folllowing command will reduce the CL to 3 mm per hour at the PMPF: ```"CL_limit":{"apply":true, "limit": 3}```. The ```apply``` key can be set to ```false``` to switch off this limit. If the applied CL is lower than the limit (e.g. applied CL of 1 mm and limit is 3 mm), the applied CL will be used. |
+|```CL_limit```|(Optional) A dictionary used to reduce the continuing loss in extreme storms (rarer than 1 in 100 AEP). For example, the following command will reduce the CL to 3 mm per hour at the PMPF: ```"CL_limit":{"apply":true, "limit": 3}```. The ```apply``` key can be set to ```false``` to switch off this limit. If the applied CL is lower than the limit (e.g. applied CL of 1 mm and limit is 3 mm), the applied CL will be used. |
 
 
 **Table 2: Keys for the ```file_paths``` dictionary.**
@@ -16,7 +16,7 @@ This is the config file for setting up the design storms and uses the keys in th
 |```point_patterns``` | Relative path to the ARR point temporal patterns (csv file)|
 |```areal_patterns``` | Relative path to the ARR areal temporal patterns (csv file)|
 |```gsdm_patterns``` | Relative path to the GSDM temporal patterns (pat file)|
-|```gtsmr_patterns``` | Relative path to the GTSMR temporal patterns (pat files). Note that separate files are provided for each catchment area bin. A keyword ```~AREA~``` is used in the filename here and replaced in the Python code with the relevant area based on  the catchment area provided. |
+|```gtsmr_patterns``` | Relative path to the GTSMR temporal patterns (pat files). Note that separate files are provided for each catchment area bin. A keyword ```~AREA~``` is used in the filename here and replaced in the Python code with the relevant area based on the catchment area provided. |
 |```preburst_patterns``` | Relative path to user-defined pre-burst temporal patterns for excess pre-burst depths. Note that this is only needed if modelling excess pre-burst. Excluding/including pre-burst is managed in the Simulations list spreadsheet with the ```Exclusions``` key.|
 |```preburst_patterns``` | Relative path to bespoke preburst patterns for catchment area (optional). |
 |```preburst_proportions``` | Relative path to preburst proportions (optional). |

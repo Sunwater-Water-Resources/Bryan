@@ -1,8 +1,8 @@
 # Utilities for post-processing
-Python scripts for post-processing are located in the ```util``` folder. It might be easiest to create a copy of the scripts in the location where the analyses are being done to avoid changing the original scripts - unless fixing bugs or enhancing. To play with the size of plots search for the ```dpi```  key in the scripts.
+Python scripts for post-processing are located in the ```util``` folder. It might be easiest to create a copy of the scripts in the location where the analyses are being done to avoid changing the original scripts - unless fixing bugs or enhancing. To play with the size of plots search for the ```dpi``` key in the scripts.
 
 ## Creating frequency plots
-Use the ```PlotFrequencyCurves.py``` script to create frequency plots. Users can add as many model results (Monte Carlo or Ensemble) and FFA plots as needed. The inputs are specified in a spreasheet listing what should go into each plot. For an example spreadsheet, see ```_Plots_List_example.xlsx``` in the ```util``` folder. The only part of the script that should need editing is shown below:
+Use the ```PlotFrequencyCurves.py``` script to create frequency plots. Users can add as many model results (Monte Carlo or Ensemble) and FFA plots as needed. The inputs are specified in a spreadsheet listing what should go into each plot. For an example spreadsheet, see ```_Plots_List_example.xlsx``` in the ```util``` folder. The only part of the script that should need editing is shown below:
 
 ```python
 # Insert the folder and plot list filenames below

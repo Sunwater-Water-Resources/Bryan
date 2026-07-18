@@ -6,7 +6,7 @@ This is the main config file for the Monte Carlo simulations and uses the keys i
 | ----------- | ----------- |
 | ```scheme_config```| A dictionary parameterising the Monte Carlo scheme - see Table 2. The information in the table is used to set up the sampling framework for rainfall depths and storm temporal patterns.|
 |```tpt_quantile_analysis```| A dictionary containing the information used to analyse the results of the Monte Carlo analysis using the Total Probability Theorem - see Table 3.  
-|  ```confidence_intervals``` | A dictionary containing the information used in the analysis of the Monte Carlo results to determine the  confidence intervals - ***this is a work in progress***.  |
+|  ```confidence_intervals``` | A dictionary containing the information used in the analysis of the Monte Carlo results to determine the confidence intervals - ***this is a work in progress***.  |
 
 **Table 2: Keys used in the ```scheme_config``` key**
 | Key | Description |
@@ -21,6 +21,6 @@ This is the main config file for the Monte Carlo simulations and uses the keys i
 **Table 3: Keys used in the ```tpt_quantile_analysis``` key**
 | Key | Description |
 | ----------- | ----------- |
-| ```inflow``` | Range of dam inflow quantiles (m³/s) to estimate the AEP for, with the bounds and divisions of the range specified using the  ```lower```, ```upper```, and ```step``` keys. For example, ```"inflow": {"lower":  1000, "upper":  10000, "step":  1000}```|
-| ```level``` | Range of lake level quantiles (m AHD) to estimate the AEP for, with the bounds and divisions of the range specified using the  ```lower```, ```upper```, and ```step``` keys. |
-| ```outflow``` | Range of dam outflow quantiles (m³/s) to estimate the AEP for, with the bounds and divisions of the range specified using the  ```lower```, ```upper```, and ```step``` keys. |
+| ```inflow``` | Range of dam inflow quantiles (m³/s) to estimate the AEP for, with the bounds and divisions of the range specified using the ```lower```, ```upper```, and ```step``` keys. For example, ```"inflow": {"lower":  1000, "upper":  10000, "step":  1000}```|
+| ```level``` | Range of lake level quantiles (m AHD) to estimate the AEP for, with the bounds and divisions of the range specified using the ```lower```, ```upper```, and ```step``` keys. |
+| ```outflow``` | Range of dam outflow quantiles (m³/s) to estimate the AEP for, with the bounds and divisions of the range specified using the ```lower```, ```upper```, and ```step``` keys. |

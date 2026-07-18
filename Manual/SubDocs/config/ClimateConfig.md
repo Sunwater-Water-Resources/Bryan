@@ -1,5 +1,5 @@
 # Climate change config file
-This is the config file for managing climate change adjustments according to the draft update to ARR released in late-2023. The main aspects of this file that will need to be checked are the catchment-specific Natural Resource Management Regions cluster and the Köppen-Geiger climate classification. It is unlikely other components of this config file will need to be changed often; perhaps when new IPCC reports and data are released or the ARR/Sunwater guidelines change. The keys used in this config file are dicussed in the tables below.  
+This is the config file for managing climate change adjustments according to the draft update to ARR released in late-2023. The main aspects of this file that will need to be checked are the catchment-specific Natural Resource Management Regions cluster and the Köppen-Geiger climate classification. It is unlikely other components of this config file will need to be changed often; perhaps when new IPCC reports and data are released or the ARR/Sunwater guidelines change. The keys used in this config file are discussed in the tables below.  
 
 **Table 1: Required keys**
 | Key | Description |
