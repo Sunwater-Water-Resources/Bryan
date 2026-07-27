@@ -302,7 +302,11 @@ class SampleScheme:
 
         # Get aep of quantiles for each simulation
         print(f'\nRunning TPT analysis for {result_type}...')
-        tpt = TotalProbTheorem(self.m, self.n, self.main_divisions, mcdf[['m', result_type]])
+        tpt_cols = ['m', result_type]
+        if 'tp_w' in mcdf.columns:
+            print('Found a tp_w column: applying temporal pattern probability weights in the TPT')
+            tpt_cols.append('tp_w')
+        tpt = TotalProbTheorem(self.m, self.n, self.main_divisions, mcdf[tpt_cols])
         # tpt.tpt_limits = {'lower': mcdf.loc[mcdf['m'] == 0, result_type].mean(),
         #                   'upper': mcdf.loc[mcdf['m'] == self.m - 1, result_type].mean()}
         tpt.tpt_limits = {'lower': self.lower_aep * 0.98, 'upper': self.upper_aep * 1.02}
@@ -517,8 +521,14 @@ class TotalProbTheorem:
         n = self.n
         compute_df = self.compute_df
         edge_df = self.edge_df
-        compute_df['num'] = self.mcdf.groupby('m').apply(lambda div: sum(div[result_type] > peak_value))
-        compute_df['pH'] = compute_df['num'] / self.n
+        if 'tp_w' in self.mcdf.columns:
+            # Weighted pattern probabilities (e.g. calibrated temporal pattern weights):
+            # pH is the weighted exceedance fraction within each main division
+            compute_df['pH'] = self.mcdf.groupby('m').apply(
+                lambda div: (div['tp_w'] * (div[result_type] > peak_value)).sum() / div['tp_w'].sum())
+        else:
+            compute_df['num'] = self.mcdf.groupby('m').apply(lambda div: sum(div[result_type] > peak_value))
+            compute_df['pH'] = compute_df['num'] / self.n
 
         # # Special treatment for first and last intervals as per Nathan and Weinmann 2013
         # pQr0 = compute_df.loc[0, 'pH']
@@ -563,3 +573,28 @@ class TotalProbTheorem:
         #        aep = np.nan
         return aep
 
+
+
+def interpolate_reference_curve(reference, ref_col, std_z):
+    # Interpolate a per-realisation reference curve at the standard-AEP z values.
+    # reference: dataframe with columns ['rain_z', 'storm_method', ref_col]. The curve is
+    # interpolated per storm method (the reference is branched in the ARR to GSDM/GTSMR
+    # changeover zone) and the lowest branch is adopted (conservative). Gaps between branches
+    # are bridged; NaN is returned beyond the sampled z range.
+    branches = []
+    for method, group in reference.groupby('storm_method'):
+        group = group.sort_values('rain_z')
+        branches.append(np.interp(std_z, group['rain_z'], group[ref_col],
+                                  left=np.nan, right=np.nan))
+    curve = pd.DataFrame(branches).min(axis=0)              # skips NaN (branch out of range)
+    curve = pd.Series(curve.to_numpy(), index=std_z).interpolate(method='index', limit_area='inside')
+    return curve
+
+
+def neutrality_margin(quant_df, reference, col, ifd_col):
+    # Ratio of the TPT sub-burst quantile to the same-z IFD depth at the standard AEPs.
+    # Values above 1.0 indicate sub-bursts occur more often than the IFD implies.
+    std_z = ndtri(1 - quant_df['probability'].to_numpy())
+    ifd_at_std = interpolate_reference_curve(reference, ifd_col, std_z)
+    margin = quant_df[col].to_numpy() / ifd_at_std.to_numpy()
+    return pd.Series(np.around(margin, 3), index=quant_df['aep (1 in x)'].to_numpy())
