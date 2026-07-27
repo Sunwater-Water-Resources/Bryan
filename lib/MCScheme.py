@@ -109,12 +109,20 @@ class SampleScheme:
         print(f'Sampling rainfall from {main_division} main division and {sub_division} sub division with z of {z}')
         return z
 
-    def get_temporal_pattern_sample(self, front_w, front_patterns, m=3):
+    def get_temporal_pattern_sample(self, front_w, front_patterns, m=3, base_weights=None):
         # the 'm' parameter is the number of more forward loaded events
         # used in the weightings: top third (3 out of 10) was used in the Sharpe analysis
+        # base_weights: optional temporal pattern probability weights (e.g. calibrated for
+        # sub-burst neutrality) - composed with the D50 shift weightings
         # returns integer between 0 and 9
         if front_w < 0.1001:
-            sample = np.random.randint(self.number_of_temporal_patterns)
+            if base_weights is None:
+                sample = np.random.randint(self.number_of_temporal_patterns)
+            else:
+                patterns = list(range(self.number_of_temporal_patterns))
+                probabilities = np.asarray(base_weights, dtype=float)
+                probabilities = probabilities / probabilities.sum()
+                sample = np.random.choice(patterns, p=probabilities)
         else:
             # back_w = (self.number_of_temporal_patterns - 3 * front_w) / (self.number_of_temporal_patterns - m)
             back_w = (1 - 3 * front_w) / (self.number_of_temporal_patterns - m)
@@ -135,6 +143,10 @@ class SampleScheme:
             # print(f'Front weighting: {front_w} | Back weighting: {back_w} | Sum check: {check}')
             # print(patterns)
             # print(probabilities)
+            if base_weights is not None:
+                # Compose the D50 shift weightings with the pattern probability weights
+                probabilities = np.asarray(probabilities) * np.asarray(base_weights, dtype=float)
+                probabilities = probabilities / probabilities.sum()
             sample = np.random.choice(patterns, p=probabilities)
         return sample
 

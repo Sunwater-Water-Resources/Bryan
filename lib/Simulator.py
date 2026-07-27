@@ -89,6 +89,14 @@ class Simulator:
         if 'Analyse sub-bursts' in parameters.index:
             if str(parameters['Analyse sub-bursts']).lower() == 'yes':
                 self.do_sub_bursts = True
+
+        # Optional temporal pattern probability weights (e.g. calibrated for sub-burst
+        # neutrality with util/CalibrateTpWeights.py) applied to the pattern sampling
+        self.tp_weights_file = None
+        if 'TP weights' in parameters.index:
+            tp_weights_file = str(parameters['TP weights']).strip()
+            if tp_weights_file.lower() not in ['', 'nan', 'none', 'no']:
+                self.tp_weights_file = tp_weights_file
                 
         if 'Pre-burst method' in parameters.index:
             self.preburst_method = str(parameters['Pre-burst method']).lower().strip()
@@ -395,6 +403,8 @@ class EnsembleSimulator(Simulator):
         print('\nRunning in ensemble mode!')
         if self.storms_only:
             raise Exception('"Run models: storms only" is not supported for the ensemble method - use "yes" or "no"')
+        if self.tp_weights_file is not None:
+            print('WARNING: the "TP weights" key is ignored for the ensemble method (all patterns are run)')
 
         # output_folder = self.config_data['output_folder']
         # scheme_config = self.config_data['scheme_config']
@@ -1125,6 +1135,16 @@ class MonteCarloSimulator(Simulator):
             do_filtering = True
             # storm.do_embedded_burst_filtering = True
 
+        # Load the temporal pattern probability weights if provided
+        if self.tp_weights_file is not None:
+            if self.replicates['tp']:
+                raise Exception('Temporal pattern weights ("TP weights") cannot be combined with '
+                                'replication of the temporal pattern sampling ("tp" replicate) - '
+                                'the replicated patterns were sampled under different weights')
+            tp_weights = self.load_tp_weights(self.tp_weights_file)
+        else:
+            tp_weights = None
+
         # Set up  the simulations
         sim_id = 0
         for m in range(mc.m):
@@ -1177,7 +1197,21 @@ class MonteCarloSimulator(Simulator):
                 if self.replicates['tp']:
                     tp_sample = self.replicates_df.loc[sim_id, 'tp']
                 else:
-                    tp_sample = mc.get_temporal_pattern_sample(delta_d50_weighting, delta_d50_patterns)
+                    base_weights = None
+                    if tp_weights is not None:
+                        if storm_method == 'ARR point':
+                            weight_group = f'ARR point|{point_tp_frequency_bin}'
+                        else:
+                            weight_group = storm_method
+                        if weight_group not in tp_weights:
+                            raise Exception(f'No temporal pattern weights provided for "{weight_group}" - '
+                                            'check that the weights file matches this simulation '
+                                            '(storm methods, frequency bins, and AEP range)')
+                        base_weights = tp_weights[weight_group]
+                    tp_sample = mc.get_temporal_pattern_sample(delta_d50_weighting, delta_d50_patterns,
+                                                               base_weights=base_weights)
+                    if base_weights is not None:
+                        mc.df.loc[sim_id, 'tp_weight'] = base_weights[tp_sample]
                 mc.df.loc[sim_id, 'tp'] = tp_sample
                 temporal_pattern = storm.get_temporal_pattern(storm_method=storm_method,
                                                               duration=duration,
@@ -1568,6 +1602,26 @@ class MonteCarloSimulator(Simulator):
                                          output_filename=f'{output_name}.csv')
                 mc.plot_tpt_results_2(result_type=f'Vol{duration}h',
                                       output_filename=f'{output_name}.png')
+
+    def load_tp_weights(self, filepath):
+        # Load temporal pattern probability weights (as written by util/CalibrateTpWeights.py):
+        # rows are the weight groups (storm method, plus the frequency bin for ARR point
+        # patterns, e.g. 'ARR point|rare'), columns are the pattern indices 0-9
+        print('\nOpening the temporal pattern weights file:', filepath)
+        weights_df = pd.read_csv(filepath, index_col=0)
+        number_of_patterns = self.mc.number_of_temporal_patterns
+        if len(weights_df.columns) != number_of_patterns:
+            raise Exception(f'The temporal pattern weights file has {len(weights_df.columns)} weight '
+                            f'columns but {number_of_patterns} temporal patterns are expected')
+        print('Applying temporal pattern probability weights to the sampling:')
+        print(weights_df)
+        weights = {}
+        for group, row in weights_df.iterrows():
+            w = row.to_numpy(dtype=float)
+            if np.isnan(w).any() or w.min() < 0 or w.sum() <= 0:
+                raise Exception(f'Invalid temporal pattern weights for "{group}"')
+            weights[str(group)] = w / w.sum()      # normalise (tolerate rounding in the csv)
+        return weights
 
     def analyse_sub_bursts(self):
         # Derive frequency curves for the sub-burst depths within the sampled storms by TPT and
