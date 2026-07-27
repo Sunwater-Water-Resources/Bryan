@@ -67,10 +67,16 @@ Notes on the weights:
 - Weights are grouped by storm method (and by frequency bin for ARR point patterns), and calibrated per storm duration.
 - A floor is applied (default 0.02) so that no pattern is silently excluded. If the margins cannot be brought below the target with the offending patterns at the floor, weighting alone cannot achieve neutrality for that simulation — the script says so, and the choice reverts to filtering or pattern review.
 - The calibration stops as soon as neutrality is achieved, so patterns are not down-weighted further than the condition requires.
-- Applying the calibrated weights to the *sampling* itself (rather than re-weighting in the analysis) is not yet implemented.
+
+### Applying the weights to the sampling
+
+For a production run, the calibrated weights can be applied to the pattern sampling itself: set the optional ```TP weights``` key in the [simulation list](sim_list.md) to the weights file written by the calibration script. The patterns are then sampled with the calibrated probabilities (composed with the D50 climate shift weightings), and the weight applied to each realisation is recorded in a ```tp_weight``` column of the mcdf for audit. Three things to be aware of:
+
+- **The standard TPT analysis is already correct for a weighted-sampling run** — the sampled frequencies embody the weights, which *are* the asserted pattern probability model. Do **not** also attach a ```tp_w``` column to such a run's mcdf (that would double-count the weights).
+- Rerunning the sub-burst check on the weighted-sampling run verifies the neutrality of the ensemble as actually simulated — a worthwhile closing check, since the sampled realisations will differ from the calibration run's.
+- The ```TP weights``` key cannot be combined with replication of the pattern sampling (the ```tp``` replicate), because the replicated patterns were sampled under different weights. Since heavily down-weighted patterns are rarely sampled, their response is also thinly resolved — another reason the weight floor matters.
 
 ## Limitations and possible extensions
 
 - **Pre-burst is not yet covered.** Prepending the pre-burst can create embedded bursts spanning the pre-burst/main-burst boundary, including windows *equal to the parent duration itself*: a rolling window of the storm duration positioned across the boundary can exceed the sampled burst depth, which would breach the method framework. The pre-burst filter partially addresses this (see the enveloping burst filter), but the neutrality check does not yet scan the pre-burst-inclusive series. Extending the check to do so (sub-durations, the parent duration, and enveloping durations against the pre-burst envelope curve) is a natural next step.
-- **Weighted sampling.** The calibrated weights are currently applied at the analysis stage (TPT re-weighting). Sampling the patterns with the calibrated probabilities during the runs would make the weighted scheme the primary result rather than a re-analysis; this is a planned extension.
 - **Combining parent durations.** The per-duration curves could be combined into an approximate all-durations sub-burst frequency curve. This has not been implemented; treating the durations as independent would be conservative because the same storm population contributes to neighbouring durations.
