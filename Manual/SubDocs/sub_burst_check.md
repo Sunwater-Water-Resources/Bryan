@@ -36,6 +36,10 @@ Sub-burst tracking is always on for Monte Carlo runs — its cost is negligible.
 - Measurement happens **before the pre-burst is prepended** — the check currently applies to the main burst only (see limitations below).
 - Sub-durations are the standard IFD durations shorter than the storm duration whose window is a whole number of pattern timesteps.
 
+### Cheap runs without the hydrologic model
+
+Because the sub-burst measurements depend only on the sampled storms (not the flood response), the check can be run without URBS/RORB: set ```Run models``` in the [simulation list](sim_list.md) to *storms only*. The full sampling and storm generation runs and the mcdf is written, but the hydrologic model is skipped — a Monte Carlo "run" then takes seconds to minutes instead of hours. This is the recommended way to explore the filtering question and to calibrate pattern weights (below) before committing to full model runs.
+
 ### Analysis (after model runs)
 
 Set the optional ```Analyse sub-bursts``` key in the [simulation list](sim_list.md) to *yes*. As with ```Analyse results```, the models do not need to be rerun — but the mcdf file must have been produced by a version of Bryan that records the sub-burst columns. For each sub-duration this produces:
@@ -54,8 +58,19 @@ The IFD reference appears as separate branches for each storm method (ARR point/
 - The tail of the sub-burst curve is *pattern-limited*: within each sampling division only ten temporal patterns are available, so the curve reflects the embedded burst content of those ten patterns scaled by the depth distribution. A single unusual pattern can dominate the curve — the realisation scatter on the plot will show this.
 - Do the comparison in the same climate scenario throughout; the recorded IFD reference already includes the climate adjustment applied to the run.
 
+## If neutrality is breached: calibrated pattern weights
+
+If the unfiltered ensemble breaches neutrality, the blunt remedy is the embedded burst filter. A softer alternative is to keep the observed patterns intact but assign them unequal probabilities: down-weight the patterns whose embedded bursts drive the breach until the ensemble satisfies neutrality. The ```util/CalibrateTpWeights.py``` script does this calibration — see [the utilities page](utilities.md). Because the sub-burst depths depend only on the sampled pattern, depth, and storm method (all recorded in the mcdf), the calibration is entirely offline: trial weights are evaluated by re-weighting the recorded realisations in the TPT, with no model reruns. The script also re-computes the flood quantiles under the calibrated weights (a ```tp_w``` column in the mcdf is recognised by the TPT analysis), previewing the effect on the flood frequency curve from the existing model runs.
+
+Notes on the weights:
+
+- Weights are grouped by storm method (and by frequency bin for ARR point patterns), and calibrated per storm duration.
+- A floor is applied (default 0.02) so that no pattern is silently excluded. If the margins cannot be brought below the target with the offending patterns at the floor, weighting alone cannot achieve neutrality for that simulation — the script says so, and the choice reverts to filtering or pattern review.
+- The calibration stops as soon as neutrality is achieved, so patterns are not down-weighted further than the condition requires.
+- Applying the calibrated weights to the *sampling* itself (rather than re-weighting in the analysis) is not yet implemented.
+
 ## Limitations and possible extensions
 
 - **Pre-burst is not yet covered.** Prepending the pre-burst can create embedded bursts spanning the pre-burst/main-burst boundary, including windows *equal to the parent duration itself*: a rolling window of the storm duration positioned across the boundary can exceed the sampled burst depth, which would breach the method framework. The pre-burst filter partially addresses this (see the enveloping burst filter), but the neutrality check does not yet scan the pre-burst-inclusive series. Extending the check to do so (sub-durations, the parent duration, and enveloping durations against the pre-burst envelope curve) is a natural next step.
-- **The check is diagnostic, not corrective.** If it shows the unfiltered ensemble breaching neutrality, the current remedies are the embedded burst filter or manual pattern review. A softer alternative — probability-weighted sampling of temporal patterns, with weights calibrated so the ensemble satisfies neutrality — is a planned extension; the recorded ```subburst_``` and ```ifd_``` columns contain everything needed to calibrate such weights offline, without rerunning the hydrologic models.
+- **Weighted sampling.** The calibrated weights are currently applied at the analysis stage (TPT re-weighting). Sampling the patterns with the calibrated probabilities during the runs would make the weighted scheme the primary result rather than a re-analysis; this is a planned extension.
 - **Combining parent durations.** The per-duration curves could be combined into an approximate all-durations sub-burst frequency curve. This has not been implemented; treating the durations as independent would be conservative because the same storm population contributes to neighbouring durations.

@@ -1,12 +1,12 @@
 import matplotlib.pyplot as plt
-from lib.MCScheme import SampleScheme
+from lib.MCScheme import SampleScheme, neutrality_margin
 from lib.StormGenerator import StormBurst
 from lib.Lake import LakeConditions
 from lib.URBSmodel import UrbsModel
 from lib.RORBmodel import RorbModel
 from lib.ClimateChange import ClimateAdjustment
 from lib.EnbScheme import Ensemble
-from scipy.special import ndtr, ndtri
+from scipy.special import ndtr
 from scipy import integrate
 import pandas as pd
 import os
@@ -24,7 +24,9 @@ class Simulator:
         self.test = test_iterations  # exist after this many realizations. Use zero for not production.
         self.start = time.time()
 
-        if parameters['Run models'].lower() == 'yes':
+        run_models_key = str(parameters['Run models']).lower().strip()
+        self.storms_only = run_models_key == 'storms only'
+        if run_models_key == 'yes' or self.storms_only:
             self.do_runs = True
             # Create and set up the log file
             # log_file = self.config_data['log_file']
@@ -34,6 +36,8 @@ class Simulator:
             # log_file = log_file.replace('.csv', 'analysis.csv')
             sys.stdout = Logger(log_file)
             life_of_brian()
+            if self.storms_only:
+                print('\nStorm-generation only mode: the hydrologic models will not be run')
         else:
             self.do_runs = False
 
@@ -389,6 +393,8 @@ class EnsembleSimulator(Simulator):
     def __init__(self, parameters, filepaths, test_iterations):
         super().__init__(parameters, filepaths, test_iterations)
         print('\nRunning in ensemble mode!')
+        if self.storms_only:
+            raise Exception('"Run models: storms only" is not supported for the ensemble method - use "yes" or "no"')
 
         # output_folder = self.config_data['output_folder']
         # scheme_config = self.config_data['scheme_config']
@@ -995,16 +1001,19 @@ class MonteCarloSimulator(Simulator):
             print('\nRunning the models...')
             self.run_models()
 
-        if self.do_analysis == True:
-            print('\nAnalysing the model results...')
-            self.analyse_results()
-        elif type(self.do_analysis) is list:
-            print('\nAnalysing the model results...')
-            self.analyse_results(result_types=self.do_analysis)
-            
-        if self.do_volumes:
-            # for result_type in self.do_volumes:
-            self.analyse_volumes(result_types=self.do_volumes)
+        if self.storms_only and (self.do_analysis or self.do_volumes):
+            print('\nStorm-generation only mode: skipping the flow results analysis')
+        else:
+            if self.do_analysis == True:
+                print('\nAnalysing the model results...')
+                self.analyse_results()
+            elif type(self.do_analysis) is list:
+                print('\nAnalysing the model results...')
+                self.analyse_results(result_types=self.do_analysis)
+
+            if self.do_volumes:
+                # for result_type in self.do_volumes:
+                self.analyse_volumes(result_types=self.do_volumes)
 
         if self.do_sub_bursts:
             self.analyse_sub_bursts()
@@ -1323,6 +1332,14 @@ class MonteCarloSimulator(Simulator):
                     return
                 
 
+                # Storm-generation only mode: skip the hydrologic model
+                if self.storms_only:
+                    sim_id += 1
+                    # Exit if testing
+                    if 0 < self.test < sim_id:
+                        break
+                    continue
+
                 # create storm file and run the URBS model
                 simulation_period = model.get_simulation_period(duration)
                 if self.model_type == 'URBS':
@@ -1416,7 +1433,7 @@ class MonteCarloSimulator(Simulator):
         print(mc.df.head())
 
         # Store the hydrographs to file
-        if self.store_hydrographs:
+        if self.store_hydrographs and not self.storms_only:
             # result_filename = sim_filename.replace('.csv', '')
             model.store_hydrographs(self.outputfile)
 
@@ -1588,7 +1605,7 @@ class MonteCarloSimulator(Simulator):
             reference = mc.df[['rain_z', 'storm_method', ifd_col]].dropna()
             mc.plot_tpt_results_2(col, f'{output_name}.png', reference=reference)
 
-            summary[dur] = self.sub_burst_neutrality_margin(mc.quantiles[col], reference, col, ifd_col)
+            summary[dur] = neutrality_margin(mc.quantiles[col], reference, col, ifd_col)
 
         summary_df = pd.concat(summary, axis=1)
         summary_df.index.name = 'aep (1 in x)'
@@ -1598,23 +1615,6 @@ class MonteCarloSimulator(Simulator):
         print(summary_df)
         print('Writing neutrality summary:', summary_file)
         summary_df.to_csv(summary_file)
-
-    def sub_burst_neutrality_margin(self, quant_df, reference, col, ifd_col):
-        # Ratio of the TPT sub-burst quantile to the same-z IFD depth at the standard AEPs.
-        # The IFD reference is interpolated per storm method because the reference is two-branched
-        # in the ARR to GSDM/GTSMR changeover zone; the lowest branch is adopted (conservative).
-        std_z = ndtri(1 - quant_df['probability'].to_numpy())
-        branches = []
-        for method, group in reference.groupby('storm_method'):
-            group = group.sort_values('rain_z')
-            branches.append(np.interp(std_z, group['rain_z'], group[ifd_col],
-                                      left=np.nan, right=np.nan))
-        ifd_at_std = pd.DataFrame(branches).min(axis=0)                 # skips NaN (branch out of range)
-        # Bridge gaps between method branches (e.g. at the ARR to GSDM/GTSMR changeover);
-        # leave NaN beyond the sampled z range
-        ifd_at_std = pd.Series(ifd_at_std.to_numpy(), index=std_z).interpolate(method='index', limit_area='inside')
-        margin = quant_df[col].to_numpy() / ifd_at_std.to_numpy()
-        return pd.Series(np.around(margin, 3), index=quant_df['aep (1 in x)'].to_numpy())
 
 
 class Logger(object):
