@@ -324,6 +324,7 @@ class SampleScheme:
 
         # change the interpolation to being in log-normal space
         std_norm_var = ndtri(1 - std_aeps_frac)
+        ascending = ascending.dropna()      # e.g. sub-burst measurements missing for some realisations
         ascending['z'] = ndtri(1 - ascending[f'{result_type}_aep'])
         ascending.sort_values('z', inplace=True)
         quantiles = np.interp(std_norm_var,
@@ -372,7 +373,11 @@ class SampleScheme:
 
         return std_aeps
 
-    def plot_tpt_results_2(self, result_type, output_filename, show_fig=False, percentiles=None):
+    def plot_tpt_results_2(self, result_type, output_filename, show_fig=False, percentiles=None,
+                           reference=None):
+        # reference: optional dataframe with columns ['rain_z', 'storm_method', <values>] holding a
+        # per-realisation reference curve (e.g. the same-z IFD depths for the sub-burst check),
+        # plotted as one dashed branch per storm method
         fig, ax = plt.subplots()
 
         # inserting the main data points
@@ -405,7 +410,15 @@ class SampleScheme:
         x = df['aep (1 in x)']
         z = ndtri(1 - 1 / x)
         y = df[result_type]
-        ax.plot(z, y, '-', color='k')
+        ax.plot(z, y, '-', color='k', label='TPT')
+
+        # Inserting the reference curve if provided (same-z IFD for the sub-burst neutrality check)
+        if reference is not None:
+            ref_col = reference.columns[-1]
+            for method, group in reference.groupby('storm_method'):
+                group = group.sort_values('rain_z')
+                ax.plot(group['rain_z'], group[ref_col], '--', linewidth=1.2, label=f'IFD ({method})')
+            ax.legend()
 
         # Formatting the plot
         min_flow = y.min()
@@ -427,6 +440,10 @@ class SampleScheme:
             duration = result_type[3: 6]
             duration = duration.replace('h', '')
             plot_labels = {result_type: f'{duration} hr Volume (m³)'}
+        if result_type[0: 9] == 'subburst_':
+            duration = result_type[9:]
+            duration = duration.replace('h', '')
+            plot_labels = {result_type: f'{duration} hr sub-burst depth (mm)'}
         std_aeps = np.array(self.get_standard_aeps())
         std_z = ndtri(1 - 1 / std_aeps)
         ax.set_xticks(std_z)

@@ -455,14 +455,13 @@ class StormBurst:
         else:
             return 40000
 
-    def filter_temppat(self, temporal_pattern,
-                       z, main_burst_duration, ave_rain, storm_method, 
-                       buffer=1.0, climate_adjustment = None):
-        
-        original_temporal_pattern = temporal_pattern.copy()
-        
+    def build_temppat_filter_curve(self, z, main_burst_duration, ave_rain, storm_method,
+                                   climate_adjustment=None):
         # Construct temppat filter curve
-        # For given Z, get depths for all durations < storm duration, return as a pd.Series
+        # For given Z, get catchment-average depths for all durations < storm duration,
+        # normalised as a percentage of the main burst depth, returned as a pd.Series.
+        # Returns (curve, error_msg): error_msg is None unless a sub-duration depth
+        # exceeds the main burst depth (IFD inconsistency), in which case curve is None.
         data = {}
         z_2000 = ndtri(1 - 1 / 2000.0)
         duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
@@ -476,8 +475,7 @@ class StormBurst:
                         storm_method_1 = 'GSDM'
                     elif dur >= duration_changeover[1]:
                         storm_method_1 = 'GTSMR'
-
-                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False)
+                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method_1, print_msg=False)
                 embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
             elif self.rainfall.extreme_spatial_method == 'interpolate_weights':
                 if z <= z_2000:
@@ -487,21 +485,65 @@ class StormBurst:
                     embedded_ave = self.rainfall.catchment_ave_curves[dur].get_depth_z(z).array[0]
             else:
                 raise Exception('Invalid')
-            
+
             if climate_adjustment is not None:
                 embedded_ave = embedded_ave * climate_adjustment[dur]
-            
+
             normalised = embedded_ave / ave_rain * 100                              # Normalise as percentage of main burst depth
             if normalised > 100:
                 print(f'{main_burst_duration}h rain depth: {ave_rain}mm')
                 print(f'{dur}h rain depth: {embedded_ave}mm')
                 error_msg = f'{dur}h embedded burst depth exceeds {main_burst_duration}h burst depth for z: {z}'
-                return original_temporal_pattern, error_msg
-            data[dur] = normalised        
-        
+                return None, error_msg
+            data[dur] = normalised
+
         temppat_filter_curve = pd.Series(data)
         temppat_filter_curve.sort_index(ascending=True, inplace=True)
-        
+        return temppat_filter_curve, None
+
+    def measure_sub_bursts(self, temporal_pattern, z, main_burst_duration, ave_rain,
+                           storm_method, climate_adjustment=None):
+        # Measure the maximum rolling-window depth in the temporal pattern for each standard
+        # sub-duration, for the ensemble AEP-neutrality check on embedded bursts.
+        # Returns (sub_burst_mm, ifd_mm, error_msg): catchment-average sub-burst depths (mm)
+        # and the matching same-z IFD reference depths (mm), both indexed by sub-duration.
+        temppat_filter_curve, error_msg = self.build_temppat_filter_curve(z, main_burst_duration, ave_rain,
+                                                                          storm_method, climate_adjustment)
+        if error_msg is not None:
+            return None, None, error_msg
+
+        max_burst = {}
+        for dur in temppat_filter_curve.index:
+            window = dur / self.timesteps
+            if not window.is_integer():
+                continue
+            max_burst[dur] = temporal_pattern.rolling(int(window)).sum().max()
+
+        sub_burst_mm = pd.Series(max_burst) * ave_rain / 100.0
+        ifd_mm = temppat_filter_curve.loc[sub_burst_mm.index] * ave_rain / 100.0
+        return sub_burst_mm, ifd_mm, None
+
+    def embedded_burst_comment_from_measurement(self, sub_burst_mm, ifd_mm):
+        # Summarise a sub-burst measurement as an embedded burst comment (unfiltered patterns)
+        condition = sub_burst_mm / ifd_mm
+        if condition.max() > 1:
+            text = f'{condition.idxmax()}h burst exceeds by {condition.max()-1:.1%}'
+            embedded_burst_comment = f'Unfiltered embedded bursts: {text}'
+        else:
+            embedded_burst_comment = 'No embedded bursts'
+        return embedded_burst_comment
+
+    def filter_temppat(self, temporal_pattern,
+                       z, main_burst_duration, ave_rain, storm_method,
+                       buffer=1.0, climate_adjustment = None):
+
+        original_temporal_pattern = temporal_pattern.copy()
+
+        temppat_filter_curve, error_msg = self.build_temppat_filter_curve(z, main_burst_duration, ave_rain,
+                                                                          storm_method, climate_adjustment)
+        if error_msg is not None:
+            return original_temporal_pattern, error_msg
+
         embedded_burst_comment = "No embedded bursts"
         # storm_duration = temporal_pattern.index[-1]  # get storm duration 
         
@@ -586,71 +628,15 @@ class StormBurst:
 
         return temporal_pattern, embedded_burst_comment
     
-    def check_embedded_burst(self, temporal_pattern,                        
-                             z, main_burst_duration, ave_rain, storm_method, 
+    def check_embedded_burst(self, temporal_pattern,
+                             z, main_burst_duration, ave_rain, storm_method,
                              buffer=1.0, climate_adjustment = None):
-        
-        # Construct temppat filter curve
-        # For given Z, get depths for all durations < storm duration, return as a pd.Series
-        data = {}
-        z_2000 = ndtri(1 - 1 / 2000.0)
-        duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
-        for dur in self.rainfall.durations:
-            if dur >= main_burst_duration:
-                continue
-            if self.rainfall.extreme_spatial_method == 'interpolate_depths':
-                storm_method_1 = storm_method
-                if z > z_2000:
-                    if dur <= duration_changeover[0]:
-                        storm_method_1 = 'GSDM'
-                    elif dur >= duration_changeover[1]:
-                        storm_method_1 = 'GTSMR'
-                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method_1, print_msg=False)
-                embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)  # Catchment average rain
-            elif self.rainfall.extreme_spatial_method == 'interpolate_weights':
-                if z <= z_2000:
-                    embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False, for_filtering=True)
-                    embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
-                else:
-                    embedded_ave = self.rainfall.catchment_ave_curves[dur].get_depth_z(z).array[0]
-            else:
-                raise Exception('Invalid')
 
-            # embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False)
-            # embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
-            
-            if climate_adjustment is not None:
-                embedded_ave = embedded_ave * climate_adjustment[dur]
-            
-            normalised = embedded_ave / ave_rain * 100                              # Normalise as percentage of main burst depth
-            if normalised > 100:
-                print(f'{main_burst_duration}h rain depth: {ave_rain}mm')
-                print(f'{dur}h rain depth: {embedded_ave}mm')
-                return f'Error: {dur}h embedded burst depth exceeds {main_burst_duration}h burst depth for z: {z}'
-            data[dur] = normalised        
-        
-        temppat_filter_curve = pd.Series(data)
-        temppat_filter_curve.sort_index(ascending=True, inplace=True)
-        
-        max_burst = {}
-        for dur in temppat_filter_curve.index:
-            window = dur / self.timesteps
-            if window.is_integer(): 
-                window = int(window)
-            else: 
-                continue
-                # return f'Error: duration {dur} is not a multiple of timestep {self.timesteps}'
-            
-            max_burst[dur] = temporal_pattern.rolling(window).sum().max()
-        
-        curve_max = pd.Series(max_burst)
-        condition = curve_max / temppat_filter_curve
-        if condition.max() > 1:
-            text = f'{condition.idxmax()}h burst exceeds by {condition.max()-1:.1%}'
-            embedded_burst_comment = f'Unfiltered embedded bursts: {text}'
-        else:
-            embedded_burst_comment = 'No embedded bursts'
-        return embedded_burst_comment
+        sub_burst_mm, ifd_mm, error_msg = self.measure_sub_bursts(temporal_pattern, z, main_burst_duration,
+                                                                  ave_rain, storm_method, climate_adjustment)
+        if error_msg is not None:
+            return f'Error: {error_msg}'
+        return self.embedded_burst_comment_from_measurement(sub_burst_mm, ifd_mm)
     
     # Not used
     def filter_preburst_pattern(self, temporal_pattern, initial_loss_normalised):
