@@ -6,7 +6,7 @@ from lib.URBSmodel import UrbsModel
 from lib.RORBmodel import RorbModel
 from lib.ClimateChange import ClimateAdjustment
 from lib.EnbScheme import Ensemble
-from scipy.special import ndtr
+from scipy.special import ndtr, ndtri
 from scipy import integrate
 import pandas as pd
 import os
@@ -80,6 +80,11 @@ class Simulator:
                 self.do_volumes = ['inflow', 'outflow']
             elif do_volumes in ['inflow', 'outflow']:
                 self.do_volumes = [do_volumes]
+
+        self.do_sub_bursts = False
+        if 'Analyse sub-bursts' in parameters.index:
+            if str(parameters['Analyse sub-bursts']).lower() == 'yes':
+                self.do_sub_bursts = True
                 
         if 'Pre-burst method' in parameters.index:
             self.preburst_method = str(parameters['Pre-burst method']).lower().strip()
@@ -1001,6 +1006,9 @@ class MonteCarloSimulator(Simulator):
             # for result_type in self.do_volumes:
             self.analyse_volumes(result_types=self.do_volumes)
 
+        if self.do_sub_bursts:
+            self.analyse_sub_bursts()
+
     def run_models(self):
         mc = self.mc
         model = self.model
@@ -1199,13 +1207,27 @@ class MonteCarloSimulator(Simulator):
                         filtered_temporal_pattern = temporal_pattern.copy()
                         storm.store_hyetographs(sim_id, original_temporal_pattern, filtered_temporal_pattern)
                     mc.df.loc[sim_id, 'embedded_bursts'] = embedded_burst_comment
+                    # Measure the (post-filter) sub-burst depths for the neutrality check
+                    sub_burst_mm, ifd_mm, _ = storm.measure_sub_bursts(temporal_pattern, rain_sample_z,
+                                                                       duration, ave_rain, storm_method,
+                                                                       climate_adjustment=rain_climate_adj)
                 else:
-                    embedded_burst_comment = storm.check_embedded_burst(temporal_pattern, rain_sample_z,
-                                                                        duration, ave_rain, storm_method,
-                                                                        climate_adjustment=rain_climate_adj)  # ,
-                    # buffer = 1.0)
+                    sub_burst_mm, ifd_mm, measure_error = storm.measure_sub_bursts(temporal_pattern, rain_sample_z,
+                                                                                   duration, ave_rain, storm_method,
+                                                                                   climate_adjustment=rain_climate_adj)
+                    if measure_error is not None:
+                        embedded_burst_comment = f'Error: {measure_error}'
+                    else:
+                        embedded_burst_comment = storm.embedded_burst_comment_from_measurement(sub_burst_mm, ifd_mm)
                     mc.df.loc[sim_id, 'embedded_bursts'] = embedded_burst_comment
-                    
+
+                # Track main-burst sub-burst depths (mm) and the matching same-z IFD reference (mm)
+                # so a sub-burst frequency curve can be derived by TPT and compared with the IFD
+                if sub_burst_mm is not None:
+                    for dur in sub_burst_mm.index:
+                        mc.df.loc[sim_id, f'subburst_{dur:g}h'] = sub_burst_mm[dur]
+                        mc.df.loc[sim_id, f'ifd_{dur:g}h'] = ifd_mm[dur]
+
                 #if embedded_burst_comment.upper().startswith('ERROR:'):
                 #    self.terminate_model_runs(print_msg=embedded_burst_comment, run_data=mc.df.loc[sim_id])
 
@@ -1525,10 +1547,74 @@ class MonteCarloSimulator(Simulator):
             
             for duration in durations:
                 output_name = f'{self.outputfile}_{result_type}Vol{duration}h'
-                mc.compute_std_quantiles(result_type=f'Vol{duration}h', 
+                mc.compute_std_quantiles(result_type=f'Vol{duration}h',
                                          output_filename=f'{output_name}.csv')
                 mc.plot_tpt_results_2(result_type=f'Vol{duration}h',
                                       output_filename=f'{output_name}.png')
+
+    def analyse_sub_bursts(self):
+        # Derive frequency curves for the sub-burst depths within the sampled storms by TPT and
+        # compare with the same-z IFD reference recorded during the model runs. This supports the
+        # ensemble AEP-neutrality check on embedded bursts: a sub-burst TPT curve sitting above
+        # the IFD reference indicates sub-bursts occur more often than the IFD statistics imply.
+        mc = self.mc
+        sim_filename = self.outputfile + '__mcdf.csv'
+        print('\nOpening Monte Carlo analysis file:', sim_filename)
+        mc.df = pd.read_csv(sim_filename, index_col=0)
+
+        # Get the AEP of the PMP for the standard AEP set
+        storm = StormBurst(self.filepaths['storm_config'], generate_storms=False)
+        mc.aep_of_pmp = storm.get_aep_of_pmp()
+
+        sub_cols = [col for col in mc.df.columns if col.startswith('subburst_')]
+        if not sub_cols:
+            print('No sub-burst columns found in the Monte Carlo analysis file.')
+            print('Sub-burst depths are recorded during the model runs - re-run the models to analyse sub-bursts.')
+            return
+
+        summary = {}
+        for col in sub_cols:
+            dur = col.replace('subburst_', '')      # e.g. '6h'
+            ifd_col = f'ifd_{dur}'
+            missing = mc.df[col].isna().sum()
+            if missing:
+                print(f'WARNING: {missing} realisations have no {dur} sub-burst measurement (treated as non-exceedances)')
+
+            print(f'\nAnalysing the {dur} sub-burst depths')
+            output_name = f'{self.outputfile}_subburst{dur}'
+            mc.compute_std_quantiles(result_type=col, output_filename=f'{output_name}.csv')
+
+            # Same-z IFD reference from the per-realisation values recorded during the runs
+            reference = mc.df[['rain_z', 'storm_method', ifd_col]].dropna()
+            mc.plot_tpt_results_2(col, f'{output_name}.png', reference=reference)
+
+            summary[dur] = self.sub_burst_neutrality_margin(mc.quantiles[col], reference, col, ifd_col)
+
+        summary_df = pd.concat(summary, axis=1)
+        summary_df.index.name = 'aep (1 in x)'
+        summary_file = f'{self.outputfile}_subburst_neutrality.csv'
+        print('\nSub-burst neutrality margins (TPT sub-burst depth / same-z IFD depth):')
+        print('Values above 1.0 indicate sub-bursts occur more often than the IFD implies')
+        print(summary_df)
+        print('Writing neutrality summary:', summary_file)
+        summary_df.to_csv(summary_file)
+
+    def sub_burst_neutrality_margin(self, quant_df, reference, col, ifd_col):
+        # Ratio of the TPT sub-burst quantile to the same-z IFD depth at the standard AEPs.
+        # The IFD reference is interpolated per storm method because the reference is two-branched
+        # in the ARR to GSDM/GTSMR changeover zone; the lowest branch is adopted (conservative).
+        std_z = ndtri(1 - quant_df['probability'].to_numpy())
+        branches = []
+        for method, group in reference.groupby('storm_method'):
+            group = group.sort_values('rain_z')
+            branches.append(np.interp(std_z, group['rain_z'], group[ifd_col],
+                                      left=np.nan, right=np.nan))
+        ifd_at_std = pd.DataFrame(branches).min(axis=0)                 # skips NaN (branch out of range)
+        # Bridge gaps between method branches (e.g. at the ARR to GSDM/GTSMR changeover);
+        # leave NaN beyond the sampled z range
+        ifd_at_std = pd.Series(ifd_at_std.to_numpy(), index=std_z).interpolate(method='index', limit_area='inside')
+        margin = quant_df[col].to_numpy() / ifd_at_std.to_numpy()
+        return pd.Series(np.around(margin, 3), index=quant_df['aep (1 in x)'].to_numpy())
 
 
 class Logger(object):
