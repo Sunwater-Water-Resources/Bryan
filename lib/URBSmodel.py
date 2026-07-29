@@ -437,7 +437,11 @@ class UrbsModel:
             vec_path = os.path.join(self.output_folder, self.baseflow_vec_file)
         else:
             vec_path = os.path.join(self.model_folder, self.vec_file)
-        batch_path = os.path.join(self.output_folder, self.batch_file)
+        # One batch file per run: cmd.exe reads a .bat incrementally while executing it,
+        # so a shared batch file must never be rewritten while a previous run could
+        # still be using it. Successful runs delete their batch file below; a failed
+        # run leaves its batch file behind for manual re-running.
+        batch_path = os.path.join(self.output_folder, f'_run_{result_name}.bat')
         storm_path = os.path.join(self.storms_folder, storm_name)
 
         # f = open(batch_path, 'w')
@@ -466,6 +470,7 @@ class UrbsModel:
             # p.wait()
             # p.kill()
             output, _ = p.communicate()
+            output = output.decode(errors='replace') if output else ''
 
             if p.returncode != 0:
                 raise RuntimeError(
@@ -476,6 +481,50 @@ class UrbsModel:
         except OSError as e:
             print(f'An error occurred when trying to run URBS batch file: {e}')
             sys.exit(1)
+
+        # Block until the results are fully on disk so the next run cannot start
+        # (and get_max_results cannot read) while URBS is still writing them
+        self.wait_for_results(result_name, run_output=output)
+
+        try:
+            os.remove(batch_path)
+        except OSError:
+            pass
+
+    def wait_for_results(self, result_name, run_output='', timeout=60.0, poll=0.25):
+        """Wait until the URBS result files for this run are completely written.
+
+        URBS (or the OS, on slow/network drives) can still be flushing result files
+        when the batch process returns. The .p summary must exist and be non-empty,
+        and no result file may still be locked by a writer, before continuing.
+        """
+        result_path = os.path.join(self.output_folder, f'{result_name}.p')
+        companions = [os.path.join(self.output_folder, f'{result_name}.{ext}')
+                      for ext in ('q', 'h')]
+        deadline = time.monotonic() + timeout
+        while True:
+            ready = False
+            try:
+                if os.path.getsize(result_path) > 0:
+                    # Opening for append fails on Windows while another process
+                    # still holds the file open for writing
+                    with open(result_path, 'a'):
+                        pass
+                    for path in companions:
+                        if os.path.exists(path):
+                            with open(path, 'a'):
+                                pass
+                    ready = True
+            except OSError:
+                pass
+            if ready:
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    f'URBS finished but its result file was not completely written '
+                    f'within {timeout} seconds: {result_path}\n\nURBS output:\n{run_output}'
+                )
+            time.sleep(poll)
 
     def create_storm_file(self, rainfall_depths, temporal_pattern, data_interval, filename, run_duration,
                           storm_duration, storm_duration_excl_pb, initial_loss, continuing_loss, ari=1, ensemble=0):
