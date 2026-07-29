@@ -6,6 +6,7 @@ import glob
 import shutil
 from pathlib import Path
 import pandas as pd
+import time
 
 
 class RorbModel:
@@ -207,29 +208,31 @@ class RorbModel:
         # collate h and q for specific locations across all ensembles then delete all outputs
         
     def setup_par_file(self):
-        batch_path = os.path.join(self.storms_folder, self.batch_file)
         par_path = os.path.join(self.model_folder, self.par_file)
-        
+
         with open(par_path, 'r') as f:
             all_lines = f.readlines()
-        
+
         # get number of interstation area
         num_isa = all_lines[6].split(':')[1]
         num_isa = int(num_isa)
-        
-        par_path = os.path.join(self.storms_folder, self.par_file)
-        with open(batch_path, 'w') as f:
-            f.write(f'"{self.rorb_exe}" "{par_path}"')
-        
+
         return all_lines, num_isa
 
     def run_storm(self, storm_name, initial_loss, continuing_loss):
         cat_path = os.path.join(self.storms_folder, self.cat_file)
-        par_path = os.path.join(self.storms_folder, self.par_file)
-        batch_path = os.path.join(self.storms_folder, self.batch_file)
         storm_path = os.path.join(self.storms_folder, storm_name)
         num_isa = self.num_isa
-        
+        result_name = f'{Path(cat_path).stem}_{Path(storm_path).stem}'      # Reproduce as per RORB
+
+        # One par and batch file per run: RORB reads the par file as it starts up
+        # and cmd.exe reads a .bat incrementally while executing it, so shared
+        # files must never be rewritten while a previous run could still be using
+        # them. Successful runs delete both files below; a failed run leaves them
+        # behind for manual re-running.
+        par_path = os.path.join(self.storms_folder, f'_run_{result_name}.par')
+        batch_path = os.path.join(self.storms_folder, f'_run_{result_name}.bat')
+
         with open(par_path, 'w') as f:
             f.write('# BEGIN\n')
             f.write(f'Cat file :{cat_path}\n')
@@ -239,16 +242,53 @@ class RorbModel:
             for i in range(8 + num_isa, 2 * num_isa + 8):
                 f.write(f'{":":>10}{initial_loss:.1f},{continuing_loss:.1f}\n')
             f.write('# END')
-        
-        # f = open(batch_path, 'w')
-        # f.writelines([txt + '\n' for txt in self.header])
-        # f.write(f'{self.urbs_exe} {vec_path} {storm_path} {result_name} {self.paramter_string}\n')
-        # f.close()
+
+        with open(batch_path, 'w') as f:
+            f.write(f'"{self.rorb_exe}" "{par_path}"')
+
         p = subprocess.Popen([batch_path], shell=True)
         p.wait()
-        
-        result_name = f'{Path(cat_path).stem}_{Path(storm_path).stem}'      # Reproduce as per RORB
+
+        # Block until the results are fully on disk so the next run cannot start
+        # (and get_max_results cannot read) while RORB is still writing them
+        self.wait_for_results(result_name)
+
+        for path in (batch_path, par_path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
         return result_name
+
+    def wait_for_results(self, result_name, timeout=60.0, poll=0.25):
+        """Wait until the RORB result file for this run is completely written.
+
+        RORB (or the OS, on slow/network drives) can still be flushing the .out
+        file when the batch process returns. It must exist, be non-empty, and not
+        still be locked by a writer before continuing.
+        """
+        result_path = os.path.join(self.storms_folder, f'{result_name}.out')
+        deadline = time.monotonic() + timeout
+        while True:
+            ready = False
+            try:
+                if os.path.getsize(result_path) > 0:
+                    # Opening for append fails on Windows while another process
+                    # still holds the file open for writing
+                    with open(result_path, 'a'):
+                        pass
+                    ready = True
+            except OSError:
+                pass
+            if ready:
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    f'RORB finished but its result file was not completely written '
+                    f'within {timeout} seconds: {result_path}'
+                )
+            time.sleep(poll)
 
     def create_storm_file(self, rainfall_depths, temporal_pattern, data_interval, filename, run_duration,
                           storm_duration = 0, initial_loss = 0, continuing_loss = 0):   # storm_duration and losses not used in RORB storm file, arguments retained for simplicity of Simulator code (i.e. don't need to add if block)
