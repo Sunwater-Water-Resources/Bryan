@@ -10,7 +10,7 @@ import pandas as pd
 
 
 class LakeConditions:
-    def __init__(self, parameters):
+    def __init__(self, parameters=None):
         # open the config file and get contents
         # Get the lake volume from the sims list
         self.is_correlated = False
@@ -21,6 +21,10 @@ class LakeConditions:
         self.storage_curve = pd.DataFrame()
         self.full_supply_volume = None
         self.volume_cap = 'fsv'  # cap the lake level to the full supply volume by default
+
+        if parameters is None:
+            # Built straight from a lake config file - see from_lake_config()
+            return
 
         if 'ADV' in parameters.keys():
             adv_type = parameters['ADV']
@@ -53,6 +57,20 @@ class LakeConditions:
                         'The ADV of {} is not numeric or the keyword "fsv" or "varying"'.format(adv_type))
             # else:
             #     raise Exception('An ADV has not been specified in the Simulation list!')
+
+    @classmethod
+    def from_lake_config(cls, json_file):
+        """Build the varying-ADV machinery straight from a lake config file.
+
+        The normal constructor takes its instructions from the sims list row (the
+        ADV keyword). This alternate constructor is for callers that already know
+        they want the varying distribution - e.g. the reservoir routing method
+        re-sampling the ADV from the lake_z column of an existing mcdf file.
+        """
+        lake = cls()
+        lake.antecedent_type = 'varying'
+        lake.get_config_info(json_file)
+        return lake
 
     def get_config_info(self, json_file):
         # open the config file and get contents
@@ -109,6 +127,23 @@ class LakeConditions:
                 if volume > self.full_supply_volume:
                     volume = self.full_supply_volume
         return volume
+
+    def get_lake_volumes(self, lake_z):
+        """Array version of get_lake_volume - one volume (ML) per sampled z.
+
+        Used where the whole sample is available up front (reservoir routing),
+        rather than one realisation at a time as in the Monte Carlo loop.
+        """
+        lake_z = np.asarray(lake_z, dtype=float)
+        if self.antecedent_type == 'varying':
+            volumes = self.antecedent_volume_curves.get_lake_volumes(lake_z, self.volume_cap)
+        else:
+            volumes = np.full(lake_z.shape, float(self.antecedent_volume))
+        # cap the volume if specified
+        if self.volume_cap == 'fsv':
+            if self.full_supply_volume:
+                volumes = np.minimum(volumes, self.full_supply_volume)
+        return volumes
 
     def get_correlated_z(self, rain_z, lake_z):
         print('\nApplying correlation for lake initial conditions...')
@@ -178,6 +213,32 @@ class VolumeExceedanceCurve:
                 break
         return volume
 
+    def get_lake_volumes(self, lake_z, volume_cap='none'):
+        """Array version of get_lake_volume. Each z is taken by the first layer
+        whose bounds contain it, matching the scalar version's break."""
+        lake_z = np.asarray(lake_z, dtype=float)
+        volumes = np.full(lake_z.shape, np.nan)
+        unassigned = np.ones(lake_z.shape, dtype=bool)
+        for i in range(self.number_of_layers):
+            layer = self.curves[i]
+            in_layer = np.asarray(layer.test_z_bounds(lake_z)) & unassigned
+            if not in_layer.any():
+                continue
+            print(f'{in_layer.sum()} z values taken by the {layer.type} '
+                  f'volume exceedance curve ({layer.lower_z} < z < {layer.upper_z})')
+            volumes[in_layer] = layer.get_lake_volumes(lake_z[in_layer], volume_cap)
+            unassigned &= ~in_layer
+        if unassigned.any():
+            # The scalar version quietly returns 0 ML here, which is far too easy
+            # to miss when it happens across a whole sample.
+            missed = lake_z[unassigned]
+            raise Exception(
+                f'{unassigned.sum()} lake z values fall outside every exceedance '
+                f'layer in the lake config file (z from {missed.min()} to '
+                f'{missed.max()}) - check the lower_z/upper_z bounds.'
+            )
+        return volumes
+
 
 class ExceedanceCurveLayer:
     def __init__(self, layer_info, folder):
@@ -234,6 +295,17 @@ class ExceedanceCurveLayer:
         if self.type == 'uniform':
             return self.value_ML
 
+        volume = float(self.get_lake_volumes(np.array([lake_z], dtype=float), volume_cap)[0])
+        if self.type == 'empirical':
+            print(f'Empirical ADV interpolation of {np.log10(volume)} log volume or {volume} ML')
+        return volume
+
+    def get_lake_volumes(self, lake_z, volume_cap):
+        """Array version of get_lake_volume - the volume (ML) for each z."""
+        lake_z = np.asarray(lake_z, dtype=float)
+        if self.type == 'uniform':
+            return np.full(lake_z.shape, float(self.value_ML))
+
         elif self.type == 'sigmoid':
             # set the coefficients
             k = self.coefficients['k']
@@ -244,18 +316,18 @@ class ExceedanceCurveLayer:
             log_vol = np.log10(Vc) / (H + np.exp(-k * (lake_z - z0))) + np.log10(Vf)
             volume = np.around(10 ** log_vol, 2)
             if volume_cap == 'ceiling':
-                if volume > Vc:
-                    volume = Vc
+                volume = np.minimum(volume, Vc)
             return volume
 
         elif self.type == 'empirical':
             try:
                 log_volume = self.curve(lake_z)
                 adv_volume = 10 ** log_volume
-                print(f'Empirical ADV interpolation of {log_volume} log volume or {adv_volume} ML')
             except Exception as e:
-                e.add_note(f'Trying to interpolate the lake z value of {lake_z}')
+                e.add_note(f'Trying to interpolate lake z values from '
+                           f'{lake_z.min()} to {lake_z.max()}')
                 e.add_note('Something went wrong with the interpolation!')
+                e.add_note('Perhaps a z value falls outside the range in the empirical curve.')
                 raise
             return adv_volume
         else:
@@ -285,6 +357,24 @@ class Correlator:
                     # do the correlation
                     lake_z = correlation * rain_z + lake_z * math.sqrt(1 - correlation**2)
 
+        return lake_z
+
+    def apply_correlations_to_array(self, rain_z, lake_z):
+        """Array version of apply_correlations - correlates each lake z with its
+        own rainfall z, using the layer that contains that rainfall z."""
+        rain_z = np.asarray(rain_z, dtype=float)
+        lake_z = np.array(lake_z, dtype=float)  # copy - not modified in place
+        for layer in range(self.number_of_layers):
+            layer_info = self.layers[layer]
+            min = layer_info['lower_z']
+            max = layer_info['upper_z']
+            correlation = layer_info['correlation']
+            condition = (min < rain_z) & (rain_z < max)
+            if correlation > 0.01:
+                lake_z[condition] = (correlation * rain_z[condition]
+                                     + lake_z[condition] * math.sqrt(1 - correlation ** 2))
+                print(f'Correlation of {correlation} applied to {condition.sum()} samples '
+                      f'with rainfall z between {min} and {max}')
         return lake_z
 
 
