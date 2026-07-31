@@ -1,6 +1,8 @@
 # Lake config file
 This is the config file for managing antecedent lake levels and uses the keys in the table below.  
 
+It is used by Monte Carlo simulations where the ```ADV``` key in the [simulation list](../sim_list.md) is set to *varying*, and by reservoir routing simulations where the ```ADV source``` key resamples the ADV from the ```lake_z``` column of an existing mcdf file.  
+
 **Table 1: Config file keys**
 | Config file | Description |
 | ----------- | ----------- |
