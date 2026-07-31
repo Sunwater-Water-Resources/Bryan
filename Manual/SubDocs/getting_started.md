@@ -37,3 +37,8 @@ The **simulation list** is an Excel file containing a list of simulations to run
 - ***Ensemble*** simulations are run across a range of simulations specified in the [Ensemble config file](config/EnsembleConfig.md), which is specified in the ```Config file``` field in the simulation list. 
 
 Other fields in the simulation list are explained [here](sim_list.md). 
+
+### The run log
+Each time Bryan is run, a **run log** is written beside the simulation list with the same name and a *_log.csv* suffix (e.g. *SimsList_log.csv*), with one row appended per simulation. As well as when each simulation ran, on which computer, and which config files it used, the ```Status``` column records whether it ```completed```, or ```FAILED``` with the reason in the ```Error``` column. Missing input files - the usual reason for a simulation not running - are flagged as ```FAILED - missing input```.
+
+A simulation that fails does not stop the rest of the list: Bryan reports the error, moves on to the next simulation, and lists everything that did not complete at the end of the run. This means a long overnight batch is not thrown away by one wrong filepath, but it also means the console output should not be taken as proof that everything ran - check the ```Status``` column in the run log. Where the run is driven from a batch file, note that Bryan exits with a non-zero exit code if any simulation failed.
