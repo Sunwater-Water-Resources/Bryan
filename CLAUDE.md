@@ -24,9 +24,6 @@ Bryan serves many dam catchments.
 - `python Main.py <sims_config.json>` — main entry point. Reads the config, opens the
   simulation list (Excel), and dispatches each row to a simulator by its `Method`:
   `monte carlo`, `ensemble`, or `reservoir routing`.
-- `python MainMulti.py <sims_config.json>` — same as `Main.py` but splits the simulation
-  list across processes (`multiprocessing` key in config). Does **not** support the
-  `reservoir routing` method.
 - `python RouteFlows.py <routing_sheet.xlsx>` — standalone: adds baseflow to quickflow
   hydrographs (for RORB) and/or routes flows through the dam. Driven by an Excel sheet.
 - `IFD_export.py`, `DownstreamStormGenerator.py`, `StormInstance.py` — top-level helper
@@ -43,7 +40,7 @@ batch file --> sims_config.json --> simulation list (Excel) --> per-row simulato
 - **sims_config.json** (main config): names the `simulation_list` Excel file and holds
   `filepaths` to the `model_config`, `storm_config`, and `climate_config` JSON files. All
   filepaths are **relative to the batch/config file location**. Optional keys: `project_folder`,
-  `multiprocessing`, `test_runs` (limits run count for testing; `0` = run to completion).
+  `test_runs` (limits run count for testing; `0` = run to completion).
 - **simulation list** (Excel, sheet 0): one row per simulation. Only rows with `Include == 'yes'`
   run. Key columns include `Method`, `Duration`, `Run models`, `Analyse results`,
   `Store hydrographs`, `Mop up files`, `ADV`, `Baseflow`, `Focal subcatchments`, `Config file`
