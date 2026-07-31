@@ -6,10 +6,12 @@ Generally... units are: '1 in X' for AEP, hours for storm duration, and km² for
 import sys
 import os
 import json
+import traceback
 import pandas as pd
 import numpy as np
 from lib.Simulator import MonteCarloSimulator, EnsembleSimulator
 from lib.ReservoirRouting import ReservoirRoutingSimulator
+from lib import RunLog
 from datetime import datetime
 
 
@@ -56,44 +58,43 @@ else:
     test_runs = 0
 
 # Run through the simulations
-log = {}
-for index, sim in sim_df.iterrows():
-    if sim['Include'] == 'yes':
-        log_data = {
-            'Simulation': [sim['Output file']],
-            'Start time': [datetime.now().strftime("%Y-%m-%d %H:%M")],
-            'End time': [''],
-            'Computer': [os.environ['COMPUTERNAME']],
-            'Method': [sim['Method']],
-            'Run models': [sim['Run models']],
-            'Analyse results': [sim['Analyse results']],
-            'Executable': [sys.argv[0]],
-            'Config file': [sys.argv[1]],
-            'Model config': [filepaths['model_config']],
-            'Storm config': [filepaths['storm_config']],
-            'Climate config': [filepaths['climate_config']],
-            'Method config': [sim['Config file']]
-        }
+log_filepath = RunLog.log_filepath(sim_config)
+included = sim_df[sim_df['Include'] == 'yes']
+failures = []
+for index, sim in included.iterrows():
+    log_entry = RunLog.start_entry(sim, filepaths, executable=sys.argv[0], config_file=sys.argv[1])
 
-        print(sim['Config file'])
-        model_method = sim['Method']  # Method is: monte carlo | ensemble | reservoir routing
+    print(sim['Config file'])
+    model_method = sim['Method']  # Method is: monte carlo | ensemble | reservoir routing
+    try:
         if model_method == 'monte carlo':
-            sim = MonteCarloSimulator(sim, filepaths, test_runs)
+            simulator = MonteCarloSimulator(sim, filepaths, test_runs)
         elif model_method == 'ensemble':
-            sim = EnsembleSimulator(sim, filepaths, test_runs)
+            simulator = EnsembleSimulator(sim, filepaths, test_runs)
         elif model_method == 'reservoir routing':
-            sim = ReservoirRoutingSimulator(sim, filepaths, test_runs)
+            simulator = ReservoirRoutingSimulator(sim, filepaths, test_runs)
         else:
             raise Exception(f'Modelling method {model_method} not recognised. Use one of: monte carlo | ensemble | reservoir routing')
+        status, error = RunLog.COMPLETED, ''
+    except Exception as exception:
+        # Keep going with the rest of the list: one simulation with a missing input
+        # file should not throw away the simulations queued behind it. The failure is
+        # flagged in the run log and summarised at the end.
+        status = RunLog.status_for(exception)
+        error = f'{type(exception).__name__}: {exception}'
+        failures.append((sim['Output file'], status, error))
+        print(f'\n{"!" * 60}')
+        print(f'{status}: {sim["Output file"]}')
+        traceback.print_exc()
+        print(f'Moving on to the next simulation in the list.')
+        print(f'{"!" * 60}')
 
-        # Output the logged info
-        log_data['End time'] = [datetime.now().strftime("%Y-%m-%d %H:%M")]
-        df = pd.DataFrame(log_data)
-        log_filepath = str(sim_config['simulation_list']).replace('.xlsx', '_log.csv')
-        if os.path.isfile(log_filepath):
-            print('Appending to log file:', log_filepath)
-            df.to_csv(log_filepath, mode='a', index=False, header=False)
-        else:
-            print('Creating log file:', log_filepath)
-            df.to_csv(log_filepath, index=False)
+    # Output the logged info. The simulators redirect stdout to their own log file, so
+    # put it back first, else this lands in the log of the simulation that just ran.
+    sys.stdout = sys.__stdout__
+    RunLog.write_entry(RunLog.close_entry(log_entry, status, error), log_filepath)
+
+RunLog.print_summary(failures, len(included))
+if failures:
+    sys.exit(1)
 
