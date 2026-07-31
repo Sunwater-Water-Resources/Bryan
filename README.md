@@ -41,7 +41,6 @@ Bryan is driven from a batch file that passes a config file path to a top-level 
 
 ```
 python Main.py <sims_config.json>          # main entry point
-python MainMulti.py <sims_config.json>     # same, split across processes (no reservoir routing)
 python RouteFlows.py <routing_sheet.xlsx>  # standalone baseflow addition / dam routing
 ```
 
@@ -56,7 +55,7 @@ repository.
 
 ## Repository layout
 
-- `Main.py`, `MainMulti.py`, `RouteFlows.py` -- top-level entry points (thin dispatchers)
+- `Main.py`, `RouteFlows.py` -- top-level entry points (thin dispatchers)
 - `lib/` -- core logic: simulators, storm generation, rainfall, temporal patterns,
   sampling, hydrologic model wrappers, routing, lake conditions, climate change,
   interpolation curves

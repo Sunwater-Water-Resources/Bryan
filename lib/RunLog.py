@@ -4,10 +4,10 @@ lib/RunLog.py
 The run log written beside the simulation list: one row per simulation, recording
 when it ran, what it ran, and how it went.
 
-Shared by Main.py and MainMulti.py. A simulation that fails - most often because
-one of its input files is not where the sims list says it is - is written to the
-log with a FAILED status and the error, and the batch carries on with the next
-simulation rather than stopping part way through the list.
+Used by Main.py. A simulation that fails - most often because one of its input
+files is not where the sims list says it is - is written to the log with a FAILED
+status and the error, and the batch carries on with the next simulation rather
+than stopping part way through the list.
 """
 import os
 import platform
@@ -68,19 +68,8 @@ def status_for(error):
     return FAILED
 
 
-def write_entry(entry, filepath, lock=None):
-    """Append one entry to the run log, creating it if needed.
-
-    The lock is used by MainMulti, where several processes share the one log file.
-    """
-    if lock is None:
-        _write_entry(entry, filepath)
-    else:
-        with lock:
-            _write_entry(entry, filepath)
-
-
-def _write_entry(entry, filepath):
+def write_entry(entry, filepath):
+    """Append one entry to the run log, creating it if needed."""
     df = pd.DataFrame([entry], columns=COLUMNS)
     if not os.path.isfile(filepath):
         print('Creating log file:', filepath)
