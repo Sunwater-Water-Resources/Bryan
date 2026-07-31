@@ -85,6 +85,10 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 ### Hydrologic models (external executables wrapped by Bryan)
 - `lib/URBSmodel.py` — `UrbsModel`: writes storm files, runs URBS, parses results. Supports
   volume-based and level-based dam routing (auto-detected from the `.vec` file).
+- `reservoir routing` takes the antecedent dam volume from the `ADV` column of the input mcdf by
+  default; the optional `ADV source` sims-list column (`lake_z` / `lake_z correlated`) instead
+  resamples it from the mcdf `lake_z` column via the lake config distribution, so one set of
+  inflows can be re-routed under different antecedent storage distributions.
 - Inflow hydrographs for `reservoir routing` may be `.csv` or `.parquet` (`_read_inflows`).
   Parquet written with `index=False` carries time as an ordinary column, so it is promoted
   to the index on read — do not assume a positional `index_col` works for both formats.
