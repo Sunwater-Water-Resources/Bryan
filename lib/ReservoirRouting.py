@@ -25,6 +25,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.special import ndtr, ndtri
 
+from lib.Lake import LakeConditions
+
 
 # ---------------------------------------------------------------------------
 # Rating curve I/O (mirrors lib/Routing.py:set_dam_properties_from_urbs)
@@ -310,8 +312,23 @@ class ReservoirRoutingSimulator:
 
     Optional columns:
       Store hydrographs (default 'yes'), Output suffix, Config file,
-      Log file, Comment.
+      ADV source, Lake config, Log file, Comment.
+
+    'ADV source' selects where the initial storage comes from:
+      mcdf              - the ADV column of the input mcdf (default, and what
+                          happens if the column is absent)
+      lake_z            - the ADV is recomputed from the lake_z column of the
+                          input mcdf using the distribution in the 'Lake config'
+                          file, so the same sample can be re-routed under a
+                          different antecedent storage distribution
+      lake_z correlated - as above, but the correlation layers in the lake config
+                          are (re)applied to lake_z against the mcdf rain_z first.
+                          Only for mcdf files sampled without a correlation - the
+                          lake_z written by a correlated Monte Carlo run already
+                          has the correlation in it.
     """
+
+    ADV_SOURCES = ('mcdf', 'lake_z', 'lake_z correlated')
 
     def __init__(self, sim_row, filepaths, test_runs=0):
         self.start = time.time()
@@ -329,6 +346,7 @@ class ReservoirRoutingSimulator:
 
         self.run_models = str(sim_row['Run models']).strip().lower() == 'yes'
         self.do_analysis = str(sim_row['Analyse results']).strip().lower() == 'yes'
+        self.adv_source = self._get_adv_source()
 
         if self.run_models:
             self._load_curves()
@@ -375,6 +393,26 @@ class ReservoirRoutingSimulator:
               f'{self.inflows_arr.shape[1]} sims, dt = {self.dt_hours} h '
               f'(read in {time.time() - t0:.2f} s)')
 
+    def _get_adv_source(self):
+        """Where the antecedent dam volume comes from - see the class docstring."""
+        source = 'mcdf'
+        for column in ('ADV source', 'ADV sample source'):
+            if column in self.sim_row.index and pd.notna(self.sim_row[column]):
+                source = ' '.join(str(self.sim_row[column]).split()).lower()
+                break
+        if source in ('', 'adv'):
+            source = 'mcdf'
+        if source not in self.ADV_SOURCES:
+            raise ValueError(
+                f'"ADV source" of "{source}" is not recognised. '
+                f'Use one of: {" | ".join(self.ADV_SOURCES)}'
+            )
+        if source == 'mcdf':
+            print('ADV source: the ADV column of the input MCDF')
+        else:
+            print(f'ADV source: {source} - the ADV will be resampled from the lake config file')
+        return source
+
     def _load_mcdf(self):
         mcdf_path = str(self.sim_row['Input MCDF'])
         print(f'Loading MCDF: {mcdf_path}')
@@ -384,7 +422,65 @@ class ReservoirRoutingSimulator:
                 f'MCDF row count ({len(self.mcdf)}) does not match number of '
                 f'inflow columns ({self.inflows_arr.shape[1]}).'
             )
-        self.adv = self.mcdf['ADV'].to_numpy(dtype=float)
+        if self.adv_source == 'mcdf':
+            self.adv = self.mcdf['ADV'].to_numpy(dtype=float)
+        else:
+            self.adv = self._sample_adv_from_lake_z()
+
+    def _sample_adv_from_lake_z(self):
+        """Recompute the ADV for every realisation from the sampled lake z values
+        in the MCDF, using the distribution in the lake config file.
+
+        This lets the one set of inflow hydrographs be re-routed under a different
+        antecedent storage distribution without re-running the hydrology.
+        """
+        lake_config = self.sim_row.get('Lake config')
+        if lake_config is None or pd.isna(lake_config):
+            raise ValueError(
+                'A "Lake config" filepath is needed in the sims list when the '
+                f'ADV source is "{self.adv_source}" - check the sims list!'
+            )
+        if 'lake_z' not in self.mcdf.columns:
+            raise ValueError(
+                f'The input MCDF has no "lake_z" column, so the ADV cannot be '
+                f'resampled. Use an ADV source of "mcdf" or an MCDF from a Monte '
+                f'Carlo run with a varying ADV.'
+            )
+
+        lake = LakeConditions.from_lake_config(str(lake_config))
+        # The FSV comes from the *new* rating curve, so any capping is against the
+        # storage being routed rather than the one the MCDF was generated with.
+        lake.set_full_supply_volume(self.fsv)
+
+        lake_z = self.mcdf['lake_z'].to_numpy(dtype=float)
+        if self.adv_source == 'lake_z correlated':
+            if not lake.is_correlated:
+                raise ValueError(
+                    'The ADV source is "lake_z correlated" but the lake config '
+                    'file has no "correlation_layer_info" key.'
+                )
+            if 'rain_z' not in self.mcdf.columns:
+                raise ValueError('The input MCDF has no "rain_z" column to correlate against.')
+            print('\nApplying correlation for lake initial conditions...')
+            rain_z = self.mcdf['rain_z'].to_numpy(dtype=float)
+            lake_z = lake.correlation.apply_correlations_to_array(rain_z, lake_z)
+            self.mcdf['lake_z_correlated'] = lake_z
+        elif lake.is_correlated:
+            print('\nNOTE: the lake config file has correlation layers, but the lake z '
+                  'values in the MCDF are used as sampled.\n'
+                  '      Use an ADV source of "lake_z correlated" to apply the '
+                  'correlation (only valid if the MCDF was sampled without one).')
+
+        adv = lake.get_lake_volumes(lake_z)
+        print(f'\nResampled ADV for {len(adv)} realisations: '
+              f'min {adv.min():.1f}, mean {adv.mean():.1f}, max {adv.max():.1f} ML '
+              f'(FSV = {self.fsv:.1f} ML, volume cap = {lake.volume_cap})')
+        # Record what was actually routed - the ADV column from the source run no
+        # longer applies. The original is kept alongside it for checking.
+        if 'ADV' in self.mcdf.columns:
+            self.mcdf['ADV_input'] = self.mcdf['ADV']
+        self.mcdf['ADV'] = adv
+        return adv
 
     # ----------------------------------------------------------------- core
 
