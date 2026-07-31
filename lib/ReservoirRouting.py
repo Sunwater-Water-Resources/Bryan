@@ -314,6 +314,10 @@ class ReservoirRoutingSimulator:
       Store hydrographs (default 'yes'), Output suffix, Config file,
       ADV source, Lake config, Log file, Comment.
 
+    'Config file' should be the Monte Carlo config the input mcdf was generated
+    with: the TPT parameters come from its scheme_config, and the mcdf sample is
+    checked against them before the results are analysed (_validate_sample).
+
     'ADV source' selects where the initial storage comes from:
       mcdf              - the ADV column of the input mcdf (default, and what
                           happens if the column is absent)
@@ -545,30 +549,191 @@ class ReservoirRoutingSimulator:
 
     def _tpt_config(self):
         """Pull TPT params from the row's Config file JSON, with sensible defaults
-        derived from the MCDF if the JSON is missing or partial."""
+        derived from the MCDF if the JSON is missing or partial.
+
+        The Monte Carlo config file holds these keys inside "scheme_config", so
+        look there first and fall back to the top level for a config written just
+        for the routing. Where a key comes from matters: a wrong lower/upper AEP
+        silently shifts the main division boundaries and so the TPT weights, which
+        is why the source of each value is reported and the sample is then checked
+        against them in _validate_sample.
+        """
         cfg = {}
         if 'Config file' in self.sim_row.index and pd.notna(self.sim_row['Config file']):
             cfg_path = str(self.sim_row['Config file'])
             if os.path.isfile(cfg_path):
                 with open(cfg_path) as f:
                     cfg = json.load(f)
-        m_count = int(cfg.get('number_of_main_divisions', self.mcdf['m'].nunique()))
-        n_count = int(cfg.get('number_of_sub_divisions', len(self.mcdf) // max(m_count, 1)))
-        lower_aep = float(cfg.get('lower_aep', 2))
-        upper_aep = float(cfg.get('upper_aep', 1e7))
-        aep_of_pmp = cfg.get('aep_of_pmp', None)
+                print(f'\nReading the TPT parameters from: {cfg_path}')
+            else:
+                print(f'\nWARNING: the "Config file" in the sims list was not found: {cfg_path}')
+        else:
+            print('\nWARNING: no "Config file" given in the sims list for this simulation.')
+
+        scheme = cfg.get('scheme_config', {})
+        self.config_sources = {}
+
+        def from_config(key, default):
+            if key in scheme:
+                self.config_sources[key] = 'scheme_config'
+                return scheme[key]
+            if key in cfg:
+                self.config_sources[key] = 'config file'
+                return cfg[key]
+            self.config_sources[key] = 'DEFAULT (not in the config file)'
+            return default
+
+        m_count = int(from_config('number_of_main_divisions', self.mcdf['m'].nunique()))
+        n_count = int(from_config('number_of_sub_divisions', len(self.mcdf) // max(m_count, 1)))
+        lower_aep = float(from_config('lower_aep', 2))
+        upper_aep = float(from_config('upper_aep', 1e7))
+        aep_of_pmp = from_config('aep_of_pmp', None)
         if aep_of_pmp is not None:
             aep_of_pmp = float(aep_of_pmp)
+
+        print('\nTPT parameters:')
+        for key, value in (('number_of_main_divisions', m_count),
+                           ('number_of_sub_divisions', n_count),
+                           ('lower_aep', lower_aep),
+                           ('upper_aep', upper_aep),
+                           ('aep_of_pmp', aep_of_pmp)):
+            print(f'  {key:<26} {str(value):<12} from the {self.config_sources[key]}')
+        scheme_keys = ('number_of_main_divisions', 'number_of_sub_divisions',
+                       'lower_aep', 'upper_aep')
+        if any(self.config_sources[key].startswith('DEFAULT') for key in scheme_keys):
+            print('  NOTE: defaulted values are not necessarily those the MCDF was sampled with.\n'
+                  '        The AEP bounds set the main division boundaries used by the TPT.')
+
         return m_count, n_count, lower_aep, upper_aep, aep_of_pmp
+
+    def _validate_sample(self, m_count, n_count, main_divisions):
+        """Check that the MCDF sample matches the scheme it is about to be analysed
+        with - the sampled rainfall must sit inside the AEP range, in the right main
+        division, with the expected number of samples per division.
+
+        The TPT weights each main division by its own probability slice, so an MCDF
+        analysed against a scheme it was not sampled with gives quantiles that are
+        wrong without looking wrong. Nothing downstream would catch it.
+        """
+        print('\nChecking the MCDF sample against the TPT parameters...')
+        problems = []
+        n_rows = len(self.mcdf)
+
+        # --- structure of the sample space --------------------------------
+        if 'm' not in self.mcdf.columns:
+            raise Exception('The MCDF has no "m" column - the main division of each realisation.')
+
+        expected_rows = m_count * n_count
+        if n_rows != expected_rows:
+            problems.append(
+                f'The MCDF has {n_rows} realisations but the scheme describes '
+                f'{m_count} x {n_count} = {expected_rows}.')
+
+        group_ids = self.mcdf['m'].to_numpy(dtype=int)
+        found_ids = np.unique(group_ids)
+        expected_ids = np.arange(m_count)
+        if not np.array_equal(found_ids, expected_ids):
+            problems.append(
+                f'The main divisions in the MCDF are {found_ids.min()} to {found_ids.max()} '
+                f'({found_ids.size} of them), not 0 to {m_count - 1} as the scheme expects.')
+
+        counts = np.array([(group_ids == i).sum() for i in expected_ids])
+        odd = expected_ids[counts != n_count]
+        if odd.size:
+            problems.append(
+                f'{odd.size} main division(s) do not hold {n_count} realisations, e.g. '
+                + ', '.join(f'm={i} has {counts[i]}' for i in odd[:5])
+                + ('...' if odd.size > 5 else '')
+                + '. The TPT divides the exceedance counts by the number of sub divisions, '
+                  'so the assigned AEPs would be biased.')
+
+        if 'n' in self.mcdf.columns and not problems:
+            # Only worth reporting once the counts are right - it locates duplicates
+            # (the same sub division twice) that the counts alone would not show.
+            pairs = set(zip(group_ids.tolist(),
+                            self.mcdf['n'].to_numpy(dtype=int).tolist()))
+            if len(pairs) != expected_rows:
+                problems.append(
+                    f'The MCDF holds {len(pairs)} distinct (m, n) sample positions rather '
+                    f'than {expected_rows} - there are repeated realisations.')
+
+        # --- the sampled rainfall itself ----------------------------------
+        if 'rain_z' not in self.mcdf.columns:
+            problems.append('The MCDF has no "rain_z" column, so the sampled rainfall '
+                            'cannot be checked against the AEP range of the scheme.')
+        else:
+            rain_z = self.mcdf['rain_z'].to_numpy(dtype=float)
+            z_low, z_up = main_divisions[0], main_divisions[-1]
+            tol = 1e-6
+            blank = ~np.isfinite(rain_z)
+            if blank.any():
+                # e.g. an MCDF from a run stopped early by the test_runs key - the
+                # empty realisations would count as non-exceedances in the TPT.
+                problems.append(
+                    f'{blank.sum()} of {n_rows} realisations have no rainfall z. The MCDF looks '
+                    f'incomplete (a run stopped part way through?), and the TPT needs the whole '
+                    f'sample.')
+            outside = (rain_z < z_low - tol) | (rain_z > z_up + tol)
+            if outside.any():
+                problems.append(
+                    f'{outside.sum()} of {n_rows} sampled rainfall z values fall outside the '
+                    f'{z_low:.4f} to {z_up:.4f} range of the scheme (1 in {1 / (1 - ndtr(z_low)):.0f} '
+                    f'to 1 in {1 / (1 - ndtr(z_up)):.0f} AEP): sampled z runs from '
+                    f'{rain_z.min():.4f} to {rain_z.max():.4f}. The MCDF was almost certainly '
+                    f'sampled over a different AEP range to the one being analysed.')
+            elif not problems:
+                # Right range and right structure, so the divisions can be checked
+                misplaced = 0
+                for i in expected_ids:
+                    in_group = group_ids == i
+                    z_group = rain_z[in_group]
+                    misplaced += ((z_group < main_divisions[i] - tol)
+                                  | (z_group > main_divisions[i + 1] + tol)).sum()
+                if misplaced:
+                    problems.append(
+                        f'{misplaced} of {n_rows} realisations hold a rainfall z from outside '
+                        f'their own main division. The {m_count} divisions being analysed span '
+                        f'z {z_low:.4f} to {z_up:.4f}, which is not how the MCDF was divided up: '
+                        f'either the number of main divisions or the AEP bounds differ from the '
+                        f'ones it was sampled with.')
+
+            if 'rain_aep' in self.mcdf.columns:
+                rain_aep = self.mcdf['rain_aep'].to_numpy(dtype=float)
+                with np.errstate(divide='ignore', over='ignore'):
+                    expected_aep = 1.0 / (1.0 - ndtr(rain_z))
+                comparable = np.isfinite(rain_aep) & np.isfinite(expected_aep) & (expected_aep > 0)
+                if comparable.any():
+                    error = np.abs(rain_aep[comparable] / expected_aep[comparable] - 1.0).max()
+                    if error > 1e-3:
+                        problems.append(
+                            f'The "rain_aep" column does not match "rain_z" (up to {error:.1%} '
+                            f'out) - the two columns did not come from the one sample.')
+
+        if 'tp_w' in self.mcdf.columns:
+            print('  WARNING: the MCDF has a "tp_w" column (temporal pattern probability '
+                  'weights).\n           The reservoir routing TPT does not apply these weights, '
+                  'so the AEPs\n           will differ from the Monte Carlo analysis of the same '
+                  'MCDF.')
+
+        if problems:
+            raise Exception(
+                '\nThe MCDF sample does not match the TPT parameters being used:\n  - '
+                + '\n  - '.join(problems)
+                + '\n\nCheck that the "Config file" column in the sims list points at the '
+                  'config\nfile the MCDF was generated with (the scheme keys are read from its '
+                  '"scheme_config").'
+            )
+
+        print(f'  {n_rows} realisations in {m_count} main divisions of {n_count}, '
+              f'rainfall z within each division: consistent.')
 
     def _analyse(self):
         m_count, n_count, lower_aep, upper_aep, aep_of_pmp = self._tpt_config()
-        print(f'\nTPT config: m={m_count}, n={n_count}, '
-              f'lower=1in{lower_aep}, upper=1in{upper_aep}, aep_of_pmp={aep_of_pmp}')
 
         z_low = ndtri(1.0 - 1.0 / lower_aep)
         z_up = ndtri(1.0 - 1.0 / upper_aep)
         main_divisions = np.linspace(z_low, z_up, m_count + 1)
+        self._validate_sample(m_count, n_count, main_divisions)
 
         tpt = FastTPT(m_count, n_count, main_divisions)
         group_ids = self.mcdf['m'].to_numpy(dtype=int)
