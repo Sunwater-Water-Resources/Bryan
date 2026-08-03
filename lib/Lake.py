@@ -262,6 +262,7 @@ class ExceedanceCurveLayer:
                 self.coefficients = layer_info['coefficients']
                 print('Using sigmoid curve for ADV with coefficients:')
                 print(self.coefficients)
+                self._resolve_sigmoid()
             else:
                 raise Exception('"coefficients" not given in lake config file for type: ', self.type)
         elif self.type == 'empirical':
@@ -287,6 +288,71 @@ class ExceedanceCurveLayer:
             else:
                 raise Exception('"filename" not given in lake config file for type: ', self.type)
 
+    def _resolve_sigmoid(self):
+        """Work out the numerator A and height factor H of the sigmoid ADV curve
+
+            log10 V(z) = A / (H + exp(-k (z - z0))) + log10(Vf)
+
+        so the curve runs from Vf at low z up to 10**(A/H + log10(Vf)) at high z.
+
+        TWO CONVENTIONS FOR A ARE IN CIRCULATION. A is not usually written in the
+        config file, so H decides which one applies:
+
+        H = 1, or H not given (the standard logistic - newer, fitted curves)
+            A = log10(Vc) - log10(Vf), computed from the Vf and Vc already in the
+            file. The upper asymptote is then exactly Vc and the curve sits
+            halfway between Vf and Vc, in log space, at z0.
+
+        H > 1 (the original ADV assessment workbooks - hand-tuned curves)
+            A = log10(Vc). The "height adjustment factor" H in those workbooks was
+            turned by hand until the curve passed through a chosen midpoint volume,
+            which converges on H = log10(Vc)/(log10(Vc) - log10(Vf)). In these
+            files Vc is really 10**A, not the ceiling: the two differ by a few
+            percent. Read this way, such a model keeps exactly the curve it has
+            always had.
+
+        The split is safe because H = 1 cannot be a deliberate hand-tuned curve:
+        in that convention it puts the upper asymptote at Vc * Vf, which needs a
+        floor of 1 ML to mean anything. Any realistic floor gives an H well above
+        1 (a 10,000 ML floor under a 140,000 ML ceiling gives 4.6). At Callide an
+        H = 1 file read the old way asymptoted at 1.5 billion ML against a full
+        supply volume of 129,041 ML.
+
+        An explicit "A" in the coefficients overrides all of this, for a curve
+        that is neither convention.
+        """
+        Vf = float(self.coefficients['Vf'])
+        Vc = float(self.coefficients['Vc'])
+        # H is the height adjustment factor of the older workbooks; a curve fitted
+        # as a standard logistic has no use for it, so it may be left out.
+        H = float(self.coefficients.get('H', 1.0))
+        explicit_A = 'A' in self.coefficients
+        if explicit_A:
+            A = float(self.coefficients['A'])
+            print(f'  A = {A:.6f} taken from the config file')
+        elif abs(H - 1.0) < 1e-6:
+            A = float(np.log10(Vc) - np.log10(Vf))
+            print(f'  A = log10(Vc) - log10(Vf) = {A:.6f} - H is 1, so the curve is '
+                  f'read as the standard logistic between Vf and Vc')
+        else:
+            A = float(np.log10(Vc))
+            print(f'  A = log10(Vc) = {A:.6f} - H is not 1, so the curve is read in '
+                  f'the original (hand-tuned H) convention')
+        ceiling = 10.0 ** (A / H + np.log10(Vf))
+        print(f'  ADV asymptotes: {Vf:,.0f} ML at low z, {ceiling:,.0f} ML at high z')
+        if ceiling > 2.0 * Vc:
+            logistic_A = np.log10(Vc) - np.log10(Vf)
+            remedy = (f'the "A" of {A:.6f} in the config file is not the {logistic_A:.6f} '
+                      f'(= log10(Vc) - log10(Vf))\n      a standard logistic needs - remove '
+                      f'"A" to have it computed'
+                      if explicit_A else
+                      f'check H = {H}. For a curve fitted as a standard logistic '
+                      f'(ceiling = Vc) set H to 1')
+            print(f'  *** WARNING: the ADV ceiling of {ceiling:,.0f} ML is far above '
+                  f'Vc = {Vc:,.0f} ML.\n'
+                  f'      If this curve was meant to asymptote to Vc, {remedy}.')
+        self.A, self.H = A, H
+
     def test_z_bounds(self, lake_z):
         condition = (self.lower_z < lake_z) & (lake_z < self.upper_z)
         return condition
@@ -307,13 +373,13 @@ class ExceedanceCurveLayer:
             return np.full(lake_z.shape, float(self.value_ML))
 
         elif self.type == 'sigmoid':
-            # set the coefficients
+            # set the coefficients. A and H are resolved once at load time and
+            # carry the file's convention with them - see _resolve_sigmoid.
             k = self.coefficients['k']
             Vf = self.coefficients['Vf']
             Vc = self.coefficients['Vc']
-            H = self.coefficients['H']
             z0 = self.coefficients['z0']
-            log_vol = np.log10(Vc) / (H + np.exp(-k * (lake_z - z0))) + np.log10(Vf)
+            log_vol = self.A / (self.H + np.exp(-k * (lake_z - z0))) + np.log10(Vf)
             volume = np.around(10 ** log_vol, 2)
             if volume_cap == 'ceiling':
                 volume = np.minimum(volume, Vc)

@@ -60,35 +60,55 @@ def _read_sq(sq_path, fsv):
     return s_abs, o
 
 
+def _read_indexed(path, description, sims_list_column):
+    """Read a .csv or .parquet table whose first column is its index.
+
+    Both the inflow hydrographs and the MCDF are written in either format by a
+    Monte Carlo run, so both are read through here. Parquet needs pyarrow.
+
+    ``description`` and ``sims_list_column`` only shape the error messages.
+    """
+    extension = os.path.splitext(path)[1].lower()
+    if extension not in ('.csv', '.parquet'):
+        raise ValueError(
+            f'{description} files must be .csv or .parquet, got "{extension}": {path}'
+        )
+
+    if not os.path.isfile(path):
+        # The same file is often kept in both formats, so point at the
+        # counterpart rather than just reporting the missing name.
+        counterpart = os.path.splitext(path)[0] + (
+            '.parquet' if extension == '.csv' else '.csv')
+        hint = f'\n  A {os.path.splitext(counterpart)[1]} version does exist: {counterpart}' \
+               f'\n  Update the "{sims_list_column}" column in the sims list to match.' \
+               if os.path.isfile(counterpart) else ''
+        raise FileNotFoundError(f'{description} file not found: {path}{hint}')
+
+    if extension == '.csv':
+        return pd.read_csv(path, index_col=0)
+
+    df = pd.read_parquet(path)
+    # Parquet written with index=False carries the index as an ordinary first
+    # column, so it must be promoted explicitly - there is no positional
+    # index_col here.
+    df.set_index(df.columns[0], inplace=True)
+    return df
+
+
 def _read_inflows(inflow_path):
     """Read an inflow hydrograph file, indexed by time (hours), one column per sim.
 
     Accepts .csv or .parquet. Parquet needs pyarrow installed.
     """
-    extension = os.path.splitext(inflow_path)[1].lower()
-    if extension not in ('.csv', '.parquet'):
-        raise ValueError(
-            f'Inflow files must be .csv or .parquet, got "{extension}": {inflow_path}'
-        )
+    return _read_indexed(inflow_path, 'Inflow', 'Inflow')
 
-    if not os.path.isfile(inflow_path):
-        # The same hydrographs are often kept in both formats, so point at the
-        # counterpart rather than just reporting the missing name.
-        counterpart = os.path.splitext(inflow_path)[0] + (
-            '.parquet' if extension == '.csv' else '.csv')
-        hint = f'\n  A {os.path.splitext(counterpart)[1]} version does exist: {counterpart}' \
-               f'\n  Update the "Inflow" column in the sims list to match.' \
-               if os.path.isfile(counterpart) else ''
-        raise FileNotFoundError(f'Inflow file not found: {inflow_path}{hint}')
 
-    if extension == '.csv':
-        return pd.read_csv(inflow_path, index_col=0)
+def _read_mcdf(mcdf_path):
+    """Read a Monte Carlo dataframe, one row per realisation.
 
-    df = pd.read_parquet(inflow_path)
-    # Parquet written with index=False carries time as an ordinary first column,
-    # so it must be promoted explicitly - there is no positional index_col here.
-    df.set_index(df.columns[0], inplace=True)
-    return df
+    Accepts .csv or .parquet. Parquet needs pyarrow installed.
+    """
+    return _read_indexed(mcdf_path, 'MCDF', 'Input MCDF')
 
 
 def _build_routing_grid(el_els, v_els, fsv, sq_storage, sq_flow, n_grid=20000):
@@ -420,7 +440,7 @@ class ReservoirRoutingSimulator:
     def _load_mcdf(self):
         mcdf_path = str(self.sim_row['Input MCDF'])
         print(f'Loading MCDF: {mcdf_path}')
-        self.mcdf = pd.read_csv(mcdf_path, index_col=0)
+        self.mcdf = _read_mcdf(mcdf_path)
         if len(self.mcdf) != self.inflows_arr.shape[1]:
             raise ValueError(
                 f'MCDF row count ({len(self.mcdf)}) does not match number of '
@@ -545,7 +565,7 @@ class ReservoirRoutingSimulator:
         else:
             mcdf_path = str(self.sim_row['Input MCDF'])
             print(f'Loading MCDF for analysis (fallback to input): {mcdf_path}')
-            self.mcdf = pd.read_csv(mcdf_path, index_col=0)
+            self.mcdf = _read_mcdf(mcdf_path)
 
     def _tpt_config(self):
         """Pull TPT params from the row's Config file JSON, with sensible defaults
