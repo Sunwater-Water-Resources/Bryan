@@ -86,9 +86,10 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   default; the optional `ADV source` sims-list column (`lake_z` / `lake_z correlated`) instead
   resamples it from the mcdf `lake_z` column via the lake config distribution, so one set of
   inflows can be re-routed under different antecedent storage distributions.
-- Inflow hydrographs for `reservoir routing` may be `.csv` or `.parquet` (`_read_inflows`).
-  Parquet written with `index=False` carries time as an ordinary column, so it is promoted
-  to the index on read — do not assume a positional `index_col` works for both formats.
+- Both the inflow hydrographs and the input MCDF for `reservoir routing` may be `.csv` or
+  `.parquet`; both go through `_read_indexed`. Parquet written with `index=False` carries the
+  index as an ordinary column, so it is promoted on read — do not assume a positional
+  `index_col` works for both formats.
 - `lib/RORBmodel.py` — `RorbModel`: equivalent wrapper for RORB.
 
 ### Routing & baseflow (`lib/Routing.py`)
@@ -96,6 +97,18 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 
 ### Lake / antecedent conditions (`lib/Lake.py`)
 - `LakeConditions`, `StorageCurve`, `VolumeExceedanceCurve`, `ExceedanceCurveLayer`, `Correlator`.
+- The `sigmoid` ADV curve is `log10 V(z) = A / (H + exp(-k(z - z0))) + log10(Vf)`. **`A` has two
+  conventions and `H` is what tells them apart** — see `_resolve_sigmoid` and
+  `Manual/SubDocs/config/LakeConfig.md`. `H > 1` is an old hand-tuned workbook curve:
+  `A = log10(Vc)`, and `Vc` is `10**A` rather than the ceiling. `H == 1` (or absent) is a fitted
+  standard logistic: `A = log10(Vc) - log10(Vf)`, and `Vc` is the exact ceiling. Bryan derives
+  `A` rather than requiring it; an explicit `A` coefficient overrides the rule but is rarely
+  needed. Old models are untouched because their `H` is above 1, and `H == 1` can never be a
+  deliberate old-style curve (it would asymptote to `Vc * Vf`, needing a 1 ML floor to mean
+  anything). Getting it wrong fails *silently*: at Callide the ceiling came out at 1.5e9 ML,
+  every realisation started above the top of the `.els`, and only the level frequency curve was
+  blank — the inflow curve still looked fine. Bryan prints the resolved `A`, its convention and
+  both asymptotes on load, and warns when the ceiling lands far above `Vc`.
 
 ### Climate change (`lib/ClimateChange.py`)
 - `ClimateAdjustment` — rainfall/loss uplift and temporal-pattern shift per the 2023 draft ARR
