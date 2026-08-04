@@ -1,6 +1,7 @@
 # Storm config file
 This is the config file for setting up the design storms and uses the keys in the table below. 
 **Table 1: Keys for the storm config file.**
+
 | Key | Description |
 | ----------- | ----------- |
 |```file_paths``` | A dictionary of filepaths. Keys are listed in Table 2 below. |
@@ -9,6 +10,7 @@ This is the config file for setting up the design storms and uses the keys in th
 
 
 **Table 2: Keys for the ```file_paths``` dictionary.**
+
 | Key | Description |
 | ----------- | ----------- |
 |```ARR_datahub_file``` | Relative path to the text (*.txt) file obtained from the ARR datahub. This is used to get the areal reduction factor region and preburst proportions.  |
@@ -22,6 +24,7 @@ This is the config file for setting up the design storms and uses the keys in th
 |```preburst_proportions``` | Relative path to preburst proportions (optional). |
 
 **Table 3: Keys for the ```storm_method_config``` dictionary.**
+
 | Key | Description |
 | ----------- | ----------- |
 | ```aep_changeover_to_extreme``` | A list setting the range in which the temporal patterns switch from ARR to GSDM/GTSMR (e.g. ```[100, 2000]```). The lower bound is excluded and the upper bound is included in the range. So, in the example, only ARR patterns will be used for the 1 in 100 AEP and for the 1 in 2000 AEP either ARR, GSDM, or GTSMR will be used. In this range, the method (ARR/GSDM/GTSMR) is randomly sampled for the Monte Carlo simulations. For the ensemble simulations, the method used in this range must be specified using the ```interim_for_ensemble``` key in the [ensemble config](EnsembleConfig.md) file. |

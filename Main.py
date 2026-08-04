@@ -9,9 +9,11 @@ import json
 import traceback
 import pandas as pd
 import numpy as np
-from lib.Simulator import MonteCarloSimulator, EnsembleSimulator
+from lib.Simulator import MonteCarloSimulator, EnsembleSimulator, Logger
 from lib.ReservoirRouting import ReservoirRoutingSimulator
 from lib import RunLog
+from lib import LogFiles
+from lib.ConsoleTitle import set_console_title
 from datetime import datetime
 
 
@@ -61,11 +63,27 @@ else:
 log_filepath = RunLog.log_filepath(sim_config)
 included = sim_df[sim_df['Include'] == 'yes']
 failures = []
-for index, sim in included.iterrows():
+total = len(included)
+batch = os.path.splitext(os.path.basename(sim_config['simulation_list']))[0]
+
+# One log file per simulation. The sims lists routinely give several rows the same
+# 'Log file' - one per GWL group rather than one per row - and each simulation opens
+# it with "w", so all but one run's log was being thrown away. Give the repeats a
+# distinct name rather than letting them overwrite each other.
+included = LogFiles.resolve_duplicates(included)
+for position, (index, sim) in enumerate(included.iterrows(), start=1):
     log_entry = RunLog.start_entry(sim, filepaths, executable=sys.argv[0], config_file=sys.argv[1])
 
-    print(sim['Config file'])
     model_method = sim['Method']  # Method is: monte carlo | ensemble | reservoir routing
+    # Name the running simulation in the window title bar, so a long batch can be
+    # followed without reading the scroll, and print the same as a header for when
+    # the output is redirected to a file and there is no title bar to set.
+    set_console_title(f'Bryan {position}/{total}: {sim["Output file"]} - {batch}')
+    method_config = sim['Config file'] if pd.notna(sim['Config file']) else '(none)'
+    print(f'\n{"=" * 90}')
+    print(f'Simulation {position} of {total}: {sim["Output file"]}')
+    print(f'  method: {model_method}    method config: {method_config}')
+    print(f'{"=" * 90}')
     try:
         if model_method == 'monte carlo':
             simulator = MonteCarloSimulator(sim, filepaths, test_runs)
@@ -91,10 +109,21 @@ for index, sim in included.iterrows():
 
     # Output the logged info. The simulators redirect stdout to their own log file, so
     # put it back first, else this lands in the log of the simulation that just ran.
+    # Closing the log here rather than leaving it to garbage collection is what keeps
+    # each simulation's output in its own file: an open log still holds buffered
+    # output, and a later flush lands wherever the file offset happens to be.
+    logger = sys.stdout
     sys.stdout = sys.__stdout__
+    if isinstance(logger, Logger):
+        logger.close()
     RunLog.write_entry(RunLog.close_entry(log_entry, status, error), log_filepath)
 
-RunLog.print_summary(failures, len(included))
+RunLog.print_summary(failures, total)
+set_console_title(
+    f'Bryan: {total - len(failures)}/{total} completed'
+    + (f', {len(failures)} FAILED' if failures else '')
+    + f' - {batch}'
+)
 if failures:
     sys.exit(1)
 
