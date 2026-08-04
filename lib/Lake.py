@@ -41,22 +41,38 @@ class LakeConditions:
                 elif str(adv_type).lower() == 'fsv':
                     print(f'The antecedent dam volume will be set to FSV')
                     self.antecedent_type = 'fsv'
+                elif str(adv_type).lower() == 'mav':
+                    print('The antecedent dam volume will be the MAV (the volume at z = 0)')
+                    self.antecedent_type = 'mav'
+                    self.get_config_info(self._lake_config_path(parameters, 'mav'))
                 elif str(adv_type).lower() == 'varying':
                     if parameters['Method'] == 'ensemble':
                         raise Exception('Cannot use varying ADV with the ensemble method - only for Monte Carlo!')
                     else:
                         print(f'The antecedent dam volume will be varying')
                         self.antecedent_type = 'varying'
-                        lake_config = parameters.get('Lake config')
-                        if lake_config:
-                            self.get_config_info(lake_config)
-                        else:
-                            raise Exception('It looks like a lake config filepath has not been given - check the sims list!')
+                        self.get_config_info(self._lake_config_path(parameters, 'varying'))
                 else:
                     raise Exception(
-                        'The ADV of {} is not numeric or the keyword "fsv" or "varying"'.format(adv_type))
+                        'The ADV of {} is not numeric or one of the keywords '
+                        '"fsv", "mav" or "varying"'.format(adv_type))
             # else:
             #     raise Exception('An ADV has not been specified in the Simulation list!')
+
+    @staticmethod
+    def _lake_config_path(parameters, adv_type):
+        """The 'Lake config' filepath from the sims list row, for the ADV keywords
+        that need the exceedance curve.
+
+        A blank cell in the sims list comes back from pandas as NaN, which is
+        truthy - so a plain 'if lake_config:' lets an empty cell through and the
+        failure surfaces much later as open() being handed a float.
+        """
+        lake_config = parameters.get('Lake config')
+        if lake_config is None or pd.isna(lake_config) or not str(lake_config).strip():
+            raise Exception(f'An ADV of "{adv_type}" needs a "Lake config" filepath in the '
+                            f'sims list - the volume comes from its exceedance curve.')
+        return str(lake_config)
 
     @classmethod
     def from_lake_config(cls, json_file):
@@ -80,11 +96,15 @@ class LakeConditions:
         f.close()
 
         # check for and set up any correlations
-        if self.antecedent_type == 'varying':
-            if 'correlation_layer_info' in config_data.keys():
-                self.is_correlated = True
-            if self.is_correlated:
-                self.correlation = Correlator(config_data['correlation_layer_info'])
+        # 'mav' needs the exceedance curve and the cap, but not the correlation:
+        # it reads one point off the curve rather than sampling it, and a
+        # correlation against the rainfall has nothing to act on.
+        if self.antecedent_type in ('varying', 'mav'):
+            if self.antecedent_type == 'varying':
+                if 'correlation_layer_info' in config_data.keys():
+                    self.is_correlated = True
+                if self.is_correlated:
+                    self.correlation = Correlator(config_data['correlation_layer_info'])
 
             # set up the volume exceedance curve
             self.antecedent_volume_curves = VolumeExceedanceCurve(config_data['exceedance_layer_info'],
@@ -114,6 +134,24 @@ class LakeConditions:
         self.full_supply_volume = fsv
         if self.antecedent_type == 'fsv':
             self.antecedent_volume = fsv
+        elif self.antecedent_type == 'mav':
+            self.antecedent_volume = self._resolve_mav()
+
+    def _resolve_mav(self):
+        """The MAV: the antecedent volume the lake config's exceedance curve gives
+        at z = 0, i.e. the median of the distribution a 'varying' ADV samples from.
+
+        Resolved here rather than in the constructor because the fsv cap has to be
+        applied against the full supply volume of the dam actually being run, which
+        is not known until the model (or the rating curve, for reservoir routing)
+        has been loaded. Capping and layer selection go through the same code a
+        sampled z would, so the MAV is exactly the z = 0 member of that sample.
+        """
+        volume = self.antecedent_volume_curves.get_lake_volume(0.0, self.volume_cap)
+        if self.volume_cap == 'fsv' and self.full_supply_volume:
+            volume = min(volume, self.full_supply_volume)
+        print(f'The MAV (volume at z = 0) is {volume:.1f} ML')
+        return volume
 
     def get_lake_volume(self, lake_z):
         # this is not used anymore in the URBS model

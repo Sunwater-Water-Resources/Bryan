@@ -2,6 +2,7 @@
 This is the config file for managing the hydrologic model inputs and uses the keys in the tables below.
 
 Firstly, the keys common to **both** the URBS and RORB models
+
 | Config file | Description |
 | ----------- | ----------- |
 |```model_exe``` | Absolute path to the URBS or RORB executable. |
@@ -11,6 +12,7 @@ Firstly, the keys common to **both** the URBS and RORB models
 |```full_supply_volume``` | **Optional for the URBS model - depending on the dam routing method**. The full supply volume (ML) for the dam. For URBS models care should be taken to ensure that this matches the volume at the full supply level in the *els* file. If using the level--based method for dam routing in URBS, this key is not needed - the FSL is extracted from the vec file and the FSV is inferred from the els file.   
 
 Secondly, the keys used in the **URBS** model
+
 | Config file | Description |
 | ----------- | ----------- |
 |```vec_file``` | Name of the model file. |
@@ -30,7 +32,7 @@ These parameters are passed to URBS using the **alpha (keyword) command-line mod
 
 And lucky last, the keys used in the **RORB** model:
 
- Config file | Description |
+| Config file | Description |
 | ----------- | ----------- |
 |```cat_file``` | Filename (or path?) to the catchment file. |
 |```par_file``` | Filename (or path?) to the par file. |

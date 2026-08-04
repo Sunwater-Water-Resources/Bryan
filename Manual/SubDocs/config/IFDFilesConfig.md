@@ -1,5 +1,6 @@
 # IFD config file
 This config file contains all the rainfall depth information and uses the keys listed in the table below.  
+
 | Config file | Description |
 | ----------- | ----------- |
 | ```folder``` | Relative path to folder where IFD data is located.|
