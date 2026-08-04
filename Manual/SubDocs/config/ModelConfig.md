@@ -34,7 +34,7 @@ And lucky last, the keys used in the **RORB** model:
 
 | Config file | Description |
 | ----------- | ----------- |
-|```cat_file``` | Filename (or path?) to the catchment file. |
-|```par_file``` | Filename (or path?) to the par file. |
+|```cat_file``` | Filename of the RORB catchment (_*.catg_) file. A filename only - it is looked for inside ```model_folder```. Bryan copies it into the storms folder and edits that copy, so the model file itself is never modified. |
+|```par_file``` | Filename of the RORB parameter (_*.par_) file. A filename only, again inside ```model_folder```. It is read as a template: Bryan writes a separate par file per simulation, with the rainfall losses filled in. See [the RORB wrapper](RORB_model.md). |
 |```results_folder``` | Absolute path to where the final results should be stored.  |
 
