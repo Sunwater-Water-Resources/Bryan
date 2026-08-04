@@ -3,7 +3,10 @@ This is the config file for managing antecedent lake levels and uses the keys in
 
 It is used by Monte Carlo simulations where the ```ADV``` key in the [simulation list](../sim_list.md) is set to *varying*, and by reservoir routing simulations where the ```ADV source``` key resamples the ADV from the ```lake_z``` column of an existing mcdf file.  
 
+It is also needed wherever the ```ADV``` key is set to *mav*, which uses a single antecedent volume read off the exceedance curve below at ```z = 0``` - the median of the distribution that *varying* samples from. Any ```volume_cap``` applies to it, against the full supply volume of the dam being run, and the correlation layers are not used (there is nothing to correlate when one point is read off the curve rather than sampled).  
+
 **Table 1: Config file keys**
+
 | Config file | Description |
 | ----------- | ----------- |
 | ```exceedance_layer_info``` | Here, a list (```[]```) or a single entry of probability distribution information for sampling the antecedent lake volume is provided. Using a list enables several probability distributions to be applied, with different relationships across different ranges of AEPs (provided as standard normal variates). If only one distribution is needed, the list will contain only one dictionary and the square brackets can be excluded. See Table 2 below for more information on the keys used in the dictionaries in the list. This file is only needed in Monte Carlo simulations where the ```ADV``` key in the simulation list has been specified as *varying*. |
@@ -11,6 +14,7 @@ It is used by Monte Carlo simulations where the ```ADV``` key in the [simulation
 |```volume_cap```|(Optional) This key is used to handle the capping of the sampled ADV to FSV. By default, if the sampled ADV happens to be larger than the FSV, Bryan caps the ADV to the FSV. However, historical records might indicate that lake levels are at times above FSL prior to a large storm. Thus, this capping can be turned off by setting this key to ```none```.|
 
 **Table 2: ```exceedance_layer_info``` keys**
+
 | Key | Description |
 | ----------- | ----------- |
 |```lower_z```| Lower bound of the AEP range for this probability band using standard normal variate scale. Use -99 if this band applies to the left-hand tail. |
@@ -35,6 +39,7 @@ the config file. **```H``` is what tells them apart**, so Bryan works ```A``` ou
 ```Vf``` and ```Vc``` -- which the user has already provided -- according to ```H```:
 
 **Table 2a: the two sigmoid conventions**
+
 | | Older models (```H``` > 1) | Newer models (```H``` = 1, or omitted) |
 | --- | --- | --- |
 | ```A``` | ```log10(Vc)``` | ```log10(Vc) - log10(Vf)``` |
@@ -106,6 +111,7 @@ volume at ```Vc```, which is a no-op for a newer-style curve (```Vc``` is alread
 asymptote) but does bite on an older-style one, where the true ceiling sits above ```Vc```.
 
 **Table 3: ```correlation_layer_info``` keys**
+
 | Key | Description |
 | ----------- | ----------- |
 |```lower_z```| Lower bound of the AEP range for this probability band using standard normal variate scale. Use -99 if this band applies to the left-hand tail. |

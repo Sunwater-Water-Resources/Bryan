@@ -16,8 +16,10 @@ Invoked from Main.py when an Excel sim-list row has Method == 'reservoir routing
 """
 import os
 import re
+import sys
 import time
 import json
+import platform
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -26,6 +28,8 @@ import matplotlib.pyplot as plt
 from scipy.special import ndtr, ndtri
 
 from lib.Lake import LakeConditions
+from lib.EnbAnalysis import analyse_ensemble
+from lib.Simulator import Logger
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +327,18 @@ def compute_std_quantiles(peaks, aeps, lower_aep, upper_aep, aep_of_pmp=None):
 
 class ReservoirRoutingSimulator:
     """Re-route fixed inflow hydrographs from a prior URBS run under an alternative
-    rating curve, then optionally re-apply the Total Probability Theorem.
+    rating curve, then optionally re-analyse the result.
+
+    Takes the output of either scheme. Which one is in front of it is worked out
+    from the columns of the input database (_detect_scheme), and it decides both
+    how the antecedent dam volume is resolved and how the routed peaks are
+    analysed:
+
+      monte carlo - one row per realisation, with the m / n sample position.
+                    Re-analysed with the Total Probability Theorem (FastTPT).
+      ensemble    - one row per AEP x duration x temporal pattern. Re-analysed
+                    with lib/EnbAnalysis.py: the median pattern of each duration
+                    and the critical duration for each AEP.
 
     Required Excel sim-list columns:
       Include, Method (= 'reservoir routing'), Output file,
@@ -332,13 +347,15 @@ class ReservoirRoutingSimulator:
 
     Optional columns:
       Store hydrographs (default 'yes'), Output suffix, Config file,
-      ADV source, Lake config, Log file, Comment.
+      ADV, ADV source, Lake config, Log file, Comment.
 
-    'Config file' should be the Monte Carlo config the input mcdf was generated
-    with: the TPT parameters come from its scheme_config, and the mcdf sample is
-    checked against them before the results are analysed (_validate_sample).
+    'Input MCDF' names the input database for both schemes ('Input database' is
+    accepted as an alias). 'Config file' should be the Monte Carlo config the
+    input mcdf was generated with: the TPT parameters come from its
+    scheme_config, and the mcdf sample is checked against them before the results
+    are analysed (_validate_sample). It is not used by the ensemble scheme.
 
-    'ADV source' selects where the initial storage comes from:
+    -- Monte Carlo input: 'ADV source' selects where the initial storage comes from:
       mcdf              - the ADV column of the input mcdf (default, and what
                           happens if the column is absent)
       lake_z            - the ADV is recomputed from the lake_z column of the
@@ -350,6 +367,21 @@ class ReservoirRoutingSimulator:
                           Only for mcdf files sampled without a correlation - the
                           lake_z written by a correlated Monte Carlo run already
                           has the correlation in it.
+
+    -- Ensemble input: the ADV is a single value for the whole run, so it comes
+    from the 'ADV' column of the sims list, read the same way the ensemble method
+    itself reads it (lib/Lake.py):
+      <a number>        - that many ML
+      fsv               - the full supply volume of the *new* rating curve. This
+                          is the one to use when re-routing under a different
+                          dam: taking the ADV from the input database instead
+                          would silently start every event at the old dam's FSV.
+      mav               - the volume the 'Lake config' exceedance curve gives at
+                          z = 0, i.e. the median of the distribution a Monte Carlo
+                          run samples. Capped against the new curve's FSV like fsv.
+      database          - the ADV column of the input database, i.e. whatever the
+                          source run started from. For reproducing that run.
+    'ADV source' is a Monte Carlo concept and is ignored for ensemble input.
     """
 
     ADV_SOURCES = ('mcdf', 'lake_z', 'lake_z correlated')
@@ -361,16 +393,19 @@ class ReservoirRoutingSimulator:
         self.test_runs = test_runs
         self.basename = str(sim_row['Output file'])
 
-        print(f'\n=== ReservoirRoutingSimulator: {self.basename} ===')
-
         self.hydrographs_folder = str(sim_row['Hydrographs folder'])
         self.results_folder = str(sim_row['Results folder'])
         os.makedirs(self.hydrographs_folder, exist_ok=True)
         os.makedirs(self.results_folder, exist_ok=True)
 
+        self._start_log()
+        print(f'\n=== ReservoirRoutingSimulator: {self.basename} ===')
+        self._log_inputs()
+
         self.run_models = str(sim_row['Run models']).strip().lower() == 'yes'
         self.do_analysis = str(sim_row['Analyse results']).strip().lower() == 'yes'
         self.adv_source = self._get_adv_source()
+        self.scheme = None  # set by _detect_scheme once the database is read
 
         if self.run_models:
             self._load_curves()
@@ -387,6 +422,98 @@ class ReservoirRoutingSimulator:
         elapsed = time.time() - self.start
         print(f'\nReservoirRoutingSimulator finished in {elapsed:.2f} s '
               f'({elapsed / 60:.2f} min)')
+
+    # ----------------------------------------------------------------- log
+
+    def _log_path(self):
+        """Where this simulation's log goes.
+
+        The sims-list 'Log file' if there is one, else a file beside the results
+        so a reservoir routing run always leaves a record - QA needs to be able to
+        tie a set of results back to the inputs that produced it, and this method
+        used to write nothing at all.
+        """
+        if 'Log file' in self.sim_row.index and pd.notna(self.sim_row['Log file']):
+            path = str(self.sim_row['Log file']).strip()
+            if path:
+                return path
+        return os.path.join(self.results_folder, f'{self.basename}{self._suffix()}_log.txt')
+
+    def _start_log(self):
+        """Tee the console output to the log file, as the other two methods do."""
+        self.logger = None
+        log_path = self._log_path()
+        folder = os.path.dirname(log_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        try:
+            self.logger = Logger(log_path)
+            sys.stdout = self.logger
+        except OSError as error:
+            # A log that cannot be opened is not a reason to lose the simulation.
+            print(f'WARNING: could not open the log file "{log_path}": {error}')
+
+    @staticmethod
+    def _file_details(path):
+        """Size and modification time of an input file, for the log.
+
+        Which file was read matters as much as its name when results are being
+        checked months later - two runs can name the same relative path and get
+        different data.
+        """
+        try:
+            stat = os.stat(path)
+            when = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stat.st_mtime))
+            size = stat.st_size
+            for unit, scale in (('MB', 1e6), ('kB', 1e3)):
+                if size >= scale:
+                    return f'{size / scale:,.1f} {unit}, modified {when}'
+            return f'{size:,d} bytes, modified {when}'
+        except OSError:
+            return 'NOT FOUND'
+
+    def _log_inputs(self):
+        """Write everything that determines this simulation's results.
+
+        Printed rather than returned so it lands in both the log file and the
+        console, and written before anything is loaded so that a run which fails
+        on a missing input still records what it was looking for.
+        """
+        row = self.sim_row
+        print(f'\n{"-" * 78}\nSIMULATION INPUTS\n{"-" * 78}')
+        print(f'  run at            {time.strftime("%Y-%m-%d %H:%M:%S")} '
+              f'on {platform.node()} ({platform.system()} {platform.release()})')
+        print(f'  python            {platform.python_version()}')
+        print(f'  working folder    {os.getcwd()}')
+        print(f'  log file          {self._log_path()}')
+
+        print('\n  Sims list row:')
+        # Everything the sims list carries, so the log is a complete statement of
+        # what was asked for - including any columns added since this was written.
+        for key in row.index:
+            value = row[key]
+            if pd.isna(value):
+                value = ''
+            print(f'    {str(key):<22} {value}')
+
+        print('\n  Input files:')
+        for label, column in (('input database', 'Input MCDF'),
+                              ('input database', 'Input database'),
+                              ('inflows', 'Inflow'),
+                              ('ELS (storage)', 'ELS file'),
+                              ('SQ (rating)', 'SQ file'),
+                              ('lake config', 'Lake config'),
+                              ('method config', 'Config file')):
+            if column not in row.index or pd.isna(row[column]) or not str(row[column]).strip():
+                continue
+            path = str(row[column])
+            print(f'    {label:<16} {os.path.abspath(path)}')
+            print(f'    {"":<16}   {self._file_details(path)}')
+
+        print('\n  Outputs:')
+        print(f'    {"results folder":<16} {os.path.abspath(self.results_folder)}')
+        print(f'    {"hydrographs":<16} {os.path.abspath(self.hydrographs_folder)}')
+        print(f'{"-" * 78}')
 
     # ------------------------------------------------------------------ IO
 
@@ -431,25 +558,113 @@ class ReservoirRoutingSimulator:
                 f'"ADV source" of "{source}" is not recognised. '
                 f'Use one of: {" | ".join(self.ADV_SOURCES)}'
             )
-        if source == 'mcdf':
-            print('ADV source: the ADV column of the input MCDF')
-        else:
-            print(f'ADV source: {source} - the ADV will be resampled from the lake config file')
+        # Not reported here: the scheme of the input database is not known yet, and
+        # "ADV source" applies to Monte Carlo input only. _load_mcdf says what was
+        # actually used once it does know.
         return source
 
+    def _database_path(self):
+        """The input database, under either of the two accepted column names."""
+        for column in ('Input database', 'Input MCDF'):
+            if column in self.sim_row.index and pd.notna(self.sim_row[column]):
+                return str(self.sim_row[column]), column
+        raise ValueError('The sims list needs an "Input MCDF" (or "Input database") '
+                         'filepath for the reservoir routing method.')
+
+    def _detect_scheme(self):
+        """Work out whether the input database came from a Monte Carlo or an
+        ensemble run, from the columns each scheme writes.
+
+        The Monte Carlo scheme writes the sample position (m, n) of every
+        realisation; the ensemble scheme writes the duration and temporal pattern
+        of every event. Neither writes the other's, so the two are distinguishable
+        without another sims-list column to get out of step with the data.
+        """
+        columns = set(self.mcdf.columns)
+        is_mc = {'m', 'n'} <= columns
+        is_enb = {'duration', 'tp'} <= columns and not is_mc
+        if is_mc:
+            scheme = 'monte carlo'
+        elif is_enb:
+            scheme = 'ensemble'
+        else:
+            raise ValueError(
+                'The input database is neither a Monte Carlo nor an ensemble result:\n'
+                '  a Monte Carlo database has "m" and "n" columns (the sample position),\n'
+                '  an ensemble database has "duration" and "tp" columns.\n'
+                f'  This one has: {", ".join(sorted(columns))}'
+            )
+        print(f'Input database is from the {scheme} scheme')
+        return scheme
+
     def _load_mcdf(self):
-        mcdf_path = str(self.sim_row['Input MCDF'])
-        print(f'Loading MCDF: {mcdf_path}')
+        mcdf_path, column = self._database_path()
+        print(f'Loading input database ({column}): {mcdf_path}')
         self.mcdf = _read_mcdf(mcdf_path)
         if len(self.mcdf) != self.inflows_arr.shape[1]:
             raise ValueError(
-                f'MCDF row count ({len(self.mcdf)}) does not match number of '
+                f'Input database row count ({len(self.mcdf)}) does not match number of '
                 f'inflow columns ({self.inflows_arr.shape[1]}).'
             )
-        if self.adv_source == 'mcdf':
+        self.scheme = self._detect_scheme()
+        if self.scheme == 'ensemble':
+            self.adv = self._ensemble_adv()
+        elif self.adv_source == 'mcdf':
+            print('ADV source: the ADV column of the input MCDF')
             self.adv = self.mcdf['ADV'].to_numpy(dtype=float)
         else:
+            print(f'ADV source: {self.adv_source} - the ADV will be resampled '
+                  f'from the lake config file')
             self.adv = self._sample_adv_from_lake_z()
+
+    def _ensemble_adv(self):
+        """The antecedent dam volume for an ensemble re-route.
+
+        An ensemble run holds the lake at one starting volume for every event, so
+        the ADV comes from the sims list rather than per row. The sims-list values
+        are read by LakeConditions exactly as the ensemble method itself reads
+        them, so a number and the "fsv" and "mav" keywords behave identically here
+        - except that both keywords resolve against the rating curve being routed,
+        not the one the input database was generated with. That is the point:
+        taking the input database's own ADV under a new curve would start every
+        event at the old dam's full supply volume.
+        """
+        if 'ADV source' in self.sim_row.index and pd.notna(self.sim_row['ADV source']):
+            print('NOTE: "ADV source" applies to Monte Carlo input only and is ignored '
+                  'for an ensemble - the ADV comes from the "ADV" column of the sims list.')
+        if 'ADV' not in self.sim_row.index or pd.isna(self.sim_row['ADV']):
+            raise ValueError('The sims list needs an "ADV" for an ensemble re-route: '
+                             'a volume in ML, "fsv", "mav", or "database".')
+
+        adv_value = self.sim_row['ADV']
+        n_sims = self.inflows_arr.shape[1]
+
+        if isinstance(adv_value, str) and adv_value.strip().lower() == 'database':
+            if 'ADV' not in self.mcdf.columns:
+                raise ValueError('The input database has no "ADV" column to take the '
+                                 'antecedent dam volume from.')
+            adv = self.mcdf['ADV'].to_numpy(dtype=float)
+            print(f'ADV taken from the input database: {np.unique(adv)} ML')
+            return adv
+
+        if isinstance(adv_value, str) and adv_value.strip().lower() == 'varying':
+            # LakeConditions only blocks this for Method == 'ensemble', and this row
+            # says 'reservoir routing', so it would otherwise fall through to the
+            # lake config and sample 130 different starting volumes.
+            raise ValueError('An "ADV" of "varying" cannot be used with ensemble input - '
+                             'an ensemble holds one starting volume for the whole run. '
+                             'Use a volume in ML, "fsv", "mav", or "database".')
+
+        lake = LakeConditions(self.sim_row)
+        lake.set_full_supply_volume(self.fsv)
+        if lake.antecedent_volume is None:
+            raise ValueError(f'The "ADV" of "{adv_value}" did not resolve to a volume.')
+        volume = float(lake.antecedent_volume)
+        print(f'ADV for all {n_sims} events: {volume:.1f} ML '
+              f'(FSV of the routed curve = {self.fsv:.1f} ML)')
+        self.mcdf['ADV_input'] = self.mcdf['ADV'] if 'ADV' in self.mcdf.columns else np.nan
+        self.mcdf['ADV'] = volume
+        return np.full(n_sims, volume)
 
     def _sample_adv_from_lake_z(self):
         """Recompute the ADV for every realisation from the sampled lake z values
@@ -542,15 +757,29 @@ class ReservoirRoutingSimulator:
             df.to_csv(path)
             print(f'  ({time.time() - t0:.2f} s)')
 
+    def _output_base(self):
+        """The output basename the results are written under.
+
+        The two schemes name their databases differently, because each has to be
+        found again by the code that analyses it: the Monte Carlo mcdf keeps the
+        '__mcdf' tag the rest of Bryan expects, while the ensemble database is
+        '<base>.csv' beside the plots/ and csv/ folders that lib/EnbAnalysis.py
+        writes into - the same layout EnsembleSimulator produces.
+        """
+        if self.scheme == 'ensemble':
+            return os.path.join(self.results_folder, f'{self.basename}{self._suffix()}')
+        return os.path.join(self.results_folder, f'{self.basename}__mcdf')
+
     def _write_mcdf(self):
         # nanmax is critical: inflow series interpolated via 'slinear' can have
-        # trailing NaNs (sims with shorter URBS runs), and the routing arrays
+        # trailing NaNs (sims with shorter URBS runs, and every duration but the
+        # longest in an ensemble hydrograph file), and the routing arrays
         # propagate those NaNs to the tail of the level/outflow series.
         self.mcdf['inflow'] = np.nanmax(self.inflows_arr, axis=0)
         self.mcdf['outflow'] = np.nanmax(self.O, axis=0)
         self.mcdf['level'] = np.nanmax(self.L, axis=0)
-        out_path = os.path.join(self.results_folder, f'{self.basename}__mcdf.csv')
-        print(f'Writing new MCDF: {out_path}')
+        out_path = f'{self._output_base()}.csv'
+        print(f'Writing new {self.scheme} database: {out_path}')
         self.mcdf.to_csv(out_path)
 
     # --------------------------------------------------------------- analyse
@@ -558,14 +787,20 @@ class ReservoirRoutingSimulator:
     def _ensure_mcdf_loaded(self):
         if hasattr(self, 'mcdf'):
             return
-        out_path = os.path.join(self.results_folder, f'{self.basename}__mcdf.csv')
-        if os.path.isfile(out_path):
-            print(f'Loading MCDF for analysis: {out_path}')
-            self.mcdf = pd.read_csv(out_path, index_col=0)
-        else:
-            mcdf_path = str(self.sim_row['Input MCDF'])
-            print(f'Loading MCDF for analysis (fallback to input): {mcdf_path}')
-            self.mcdf = _read_mcdf(mcdf_path)
+        # The scheme is normally set when the database is read, but an
+        # analysis-only row (Run models = no) has not read one yet, so fall back
+        # to the input and detect from that.
+        mcdf_path, column = self._database_path()
+        for scheme, tag in (('monte carlo', '__mcdf'), ('ensemble', self._suffix())):
+            out_path = os.path.join(self.results_folder, f'{self.basename}{tag}.csv')
+            if os.path.isfile(out_path):
+                print(f'Loading routed {scheme} database for analysis: {out_path}')
+                self.mcdf = pd.read_csv(out_path, index_col=0)
+                self.scheme = self._detect_scheme()
+                return
+        print(f'Loading database for analysis (fallback to input {column}): {mcdf_path}')
+        self.mcdf = _read_mcdf(mcdf_path)
+        self.scheme = self._detect_scheme()
 
     def _tpt_config(self):
         """Pull TPT params from the row's Config file JSON, with sensible defaults
@@ -748,6 +983,18 @@ class ReservoirRoutingSimulator:
               f'rainfall z within each division: consistent.')
 
     def _analyse(self):
+        if self.scheme == 'ensemble':
+            return self._analyse_ensemble()
+        return self._analyse_tpt()
+
+    def _analyse_ensemble(self):
+        """Median pattern per duration and critical duration per AEP - the same
+        analysis EnsembleSimulator runs, over the re-routed peaks."""
+        out_base = self._output_base()
+        print(f'\nEnsemble analysis of the routed results: {out_base}')
+        analyse_ensemble(self.mcdf, out_base)
+
+    def _analyse_tpt(self):
         m_count, n_count, lower_aep, upper_aep, aep_of_pmp = self._tpt_config()
 
         z_low = ndtri(1.0 - 1.0 / lower_aep)
@@ -780,6 +1027,6 @@ class ReservoirRoutingSimulator:
                       lower_aep, upper_aep, aep_of_pmp)
             print(f'  Plot -> {png_path}')
 
-        out_path = os.path.join(self.results_folder, f'{self.basename}__mcdf.csv')
+        out_path = f'{self._output_base()}.csv'
         print(f'\nUpdating MCDF with new *_aep columns: {out_path}')
         self.mcdf.to_csv(out_path)
