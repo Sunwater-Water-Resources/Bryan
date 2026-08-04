@@ -21,8 +21,8 @@ it is authored in and this script translates on the way out:
 
 * ```inline code``` (any run of backticks) becomes `inline code`. Markdeep only
   understands single backticks, and the leftovers swallow table cell separators.
-* ``\|`` in a table cell becomes ``&#124;``. Markdeep splits the cell on an escaped
-  pipe anyway.
+* A backslash-escaped pipe in a table cell becomes ``&#124;``. Markdeep splits the
+  cell on an escaped pipe anyway.
 * A blank line is inserted between a table and any prose butted against it, which
   Markdeep would otherwise pull into the table as a row.
 
