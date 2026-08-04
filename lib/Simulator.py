@@ -6,6 +6,7 @@ from lib.URBSmodel import UrbsModel
 from lib.RORBmodel import RorbModel
 from lib.ClimateChange import ClimateAdjustment
 from lib.EnbScheme import Ensemble
+from lib.EnbAnalysis import analyse_ensemble
 from scipy.special import ndtr
 from scipy import integrate
 import pandas as pd
@@ -32,7 +33,9 @@ class Simulator:
             # log_file = self.config_data['log_file']
             log_file = parameters['Log file']
             print('Creating log file:', log_file)
-            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+            log_folder = os.path.dirname(log_file)
+            if log_folder:  # os.makedirs('') raises - a bare filename has no folder
+                os.makedirs(log_folder, exist_ok=True)
             # log_file = log_file.replace('.csv', 'analysis.csv')
             sys.stdout = Logger(log_file)
             life_of_brian()
@@ -151,7 +154,7 @@ Bryan: Sunwater's Design Flood Simulator
         # Set up the lake
         self.lake = LakeConditions(parameters)
         self.lake.set_full_supply_volume(self.model.full_supply_volume)
-        if self.lake.antecedent_type in ['fixed', 'fsv']:
+        if self.lake.antecedent_type in ['fixed', 'fsv', 'mav']:
             self.model.set_volume_below_fsl(self.lake.get_volume_below_fsl())
 
         # Set up the average rainfall losses for the complete storm
@@ -683,173 +686,11 @@ class EnsembleSimulator(Simulator):
         self.print_elapsed_time()
 
     def analyse_results(self):
-        # output_folder = self.config_data['output_folder']
-        result_types = ['inflow', 'level', 'outflow']
-        result_labels = {'inflow': 'Flow (m³/s)',
-                         'level': 'Elevation (m AHD)',
-                         'outflow': 'Flow (m³/s)'}
-        result_titles = {'inflow': 'Dam inflow',
-                         'level': 'Lake level',
-                         'outflow': 'Dam outflow'}
         sim_filename = f'{self.outputfile}.csv'
-        # sim_path = os.path.join(output_folder, sim_filename)
         print('\nReading the Monte Carlo analysis file:', sim_filename)
         df = pd.read_csv(sim_filename, index_col=0)
-        aep_lst = df['rain_aep'].unique()
-        duration_lst = df['duration'].unique()
-        positions = range(len(duration_lst))
-        pattern_ids = df['tp'].unique()
-        print(df)
+        analyse_ensemble(df, self.outputfile)
 
-        # Set up the critical results dataframe
-        headers = []
-        for result_type in result_types:
-            headers.append(result_type)
-            headers.append(f'{result_type}_duration')
-            headers.append(f'{result_type}_tp')
-        criticals = pd.DataFrame(columns=headers, index=aep_lst)
-        
-        # Create sub-folders for outputs
-        output_path = os.path.join(os.path.dirname(self.outputfile), 'plots')
-        os.makedirs(output_path, exist_ok=True)
-        output_path = os.path.join(os.path.dirname(self.outputfile), 'csv')
-        os.makedirs(output_path, exist_ok=True)
-
-        # Analyse each AEP
-        for aep in aep_lst:
-            print(f'Working on 1 in {aep} AEP events')
-            aep_df = df[df['rain_aep'] == aep]
-            # storm_types = aep_df['storm_method'].unique()
-            # number_of_storm_types = storm_types.shape[0]
-            # pattern_lst_20 = None
-            # if number_of_storm_types == 2:
-            #     print('Found 20 temporal patterns')
-            #     part_1 = pd.DataFrame(columns=['tp'], index=num_patterns, data=num_patterns)
-            #     part_2 = pd.DataFrame(columns=['tp'], index=num_patterns, data=num_patterns)
-            #     part_1['composite'] = storm_types[0] + ": " + part_1['tp'].astype(str)
-            #     part_2['composite'] = storm_types[1] + ": " + part_2['tp'].astype(str)
-            #     pattern_lst_20 = pd.concat([part_1, part_2])
-            #     pattern_lst_20 = pattern_lst_20['composite'].tolist()
-
-            # Set up the box plot
-            fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(9, 4))
-            fig.suptitle(f'1 in {aep} AEP')
-
-            # Set up the median dataframe
-            medians = pd.DataFrame(columns=headers, index=duration_lst)
-
-            # Collate the data for each type: inflows, outflows, and levels
-            for ind, result_type in enumerate(result_types):
-                # if number_of_storm_types == 2:
-                #     result = pd.DataFrame(columns=duration_lst, index=pattern_lst_20)
-                # else:
-                #     result = pd.DataFrame(columns=duration_lst, index=num_patterns)
-                # extract the data for each duration into the result dataframe
-                storm_types = aep_df['storm_method'].unique()
-                number_of_storm_types = storm_types.shape[0]
-                print(f'Found {number_of_storm_types} storm types:', storm_types)
-                result_index = []
-                for storm_type in storm_types:
-                    for pattern_id in pattern_ids:
-                        index_label = f'{storm_type}: {pattern_id}'
-                        result_index.append(index_label)
-                result = pd.DataFrame(index=result_index)
-                for duration_ind, duration in enumerate(duration_lst):
-                    print(f'Working on {duration} hour storm duration')
-                    dur_df = aep_df[aep_df['duration'] == duration]
-                    # median_id = 5
-                    # if dur_df.shape[0] == 10:
-                    #     print('Found ten temporal patterns')
-                    #     dur_df.set_index('tp', inplace=True)
-                    # elif dur_df.shape[0] == 20:
-                        # pattern_lst = dur_df['composite_index'].unique()
-                    dur_df['composite_index'] = dur_df['storm_method'] + ': ' + dur_df['tp'].astype(str)
-                    dur_df.set_index('composite_index', inplace=True)
-                    #     median_id = 10
-                    print(dur_df)
-                    result[duration] = dur_df[result_type]
-                    print(result)
-
-                    local = dur_df[[result_type]].sort_values(by=result_type, ascending=True)
-                    median_id = int(np.around(local.shape[0] / 2, 0))
-                    print('\nGetting median from position:', median_id)
-                    median = local[result_type].iloc[median_id]
-                    median_tp = local.index[median_id]
-                    medians.loc[duration, result_type] = median
-                    medians.loc[duration, f'{result_type}_tp'] = median_tp
-                    medians.loc[duration, f'{result_type}_duration'] = duration
-                    print(f'\n{result_type} results for 1 in {aep} AEP with {duration} hour duration:')
-                    print('Median value is {} of {} for pattern {}'.format(result_labels[result_type],
-                                                                           median,
-                                                                           median_tp))
-                    # Plot the local data points
-                    print(f'\nDuration index: {duration_ind}')
-                    x = np.full(result.shape[0], duration_ind)
-                    print(x)
-                    ax[ind].plot(x, result[duration], '.', mfc='b', markeredgewidth=0.0)
-
-                # Plot the box data
-                print(result)
-                plot_data = []
-                for res in result.columns:
-                    local_result = result[res].dropna()
-                    plot_data.append(local_result)
-                # ax[ind].boxplot(result.to_numpy(), positions=positions, usermedians=medians[result_type])
-                ax[ind].boxplot(plot_data, positions=positions, usermedians=medians[result_type])
-                # plt.show()
-                # Format the plot
-                ax[ind].set_xticks(positions)
-                ax[ind].set_xticklabels(duration_lst)
-                # plt.ylim((-10, 10))
-                # plt.xticks(rotation=90)
-                ax[ind].set_xlabel("Storm duration (hours)")
-                ax[ind].set_ylabel(result_labels[result_type])
-                ax[ind].set_title(result_titles[result_type])
-                ax[ind].grid()
-
-            # Output the plot
-            # output_file = self.outputfile.replace('.csv', f'_{aep}_bp.png')
-            output_file = f'{self.outputfile}_{aep}_bp.png'
-            output_path = os.path.join(os.path.dirname(output_file),
-                                       'plots',
-                                       os.path.basename(output_file))
-            # output_name = sim_path.replace('.csv', '')
-            # output_name = f'{output_name}_{result_type}'
-            print('\nWriting figure to:', output_path)
-            plt.tight_layout()
-            plt.savefig(output_path)
-            # plt.show()
-
-            # Output the medians
-            # outut_file = self.outputfile.replace('.csv', f'_{aep}_med.csv')
-            output_file = f'{self.outputfile}_{aep}_med.csv'
-            # output_path = os.path.join(output_folder, 'csv', output_file)
-            output_path = os.path.join(os.path.dirname(output_file),
-                                       'csv',
-                                       os.path.basename(output_file))
-            medians.index.name = 'aep (1 in x)'
-            medians.to_csv(output_path)
-
-            # Get the critical events
-            for result_type in result_types:
-                local_df = medians[result_type].astype(float)
-                crit_index = local_df.squeeze().argmax()
-                criticals.loc[aep, result_type] = medians[result_type].iloc[crit_index]
-                criticals.loc[aep, f'{result_type}_tp'] = medians[f'{result_type}_tp'].iloc[crit_index]
-                criticals.loc[aep, f'{result_type}_duration'] = medians[f'{result_type}_duration'].iloc[crit_index]
-                # print(crit_durations)
-                # Need to output the storm duration and then the final results!!!
-
-        print('\nFinal results of critical events from median patterns:')
-        print(criticals)
-        # output_file = self.outputfile.replace('.csv', '_critical.csv')
-        output_file = f'{self.outputfile}_critical.csv'
-        # output_path = os.path.join(output_folder, 'csv', output_file)
-        output_path = os.path.join(os.path.dirname(output_file),
-                                   'csv',
-                                   os.path.basename(output_file))
-        criticals.to_csv(output_path)
-        
     def analyse_volumes(self, result_types=['inflow', 'outflow']):
         enb = self.enb
         sim_filename = f'{self.outputfile}.csv'
@@ -1672,21 +1513,53 @@ class MonteCarloSimulator(Simulator):
 
 
 class Logger(object):
+    """Tees stdout to the console and to a simulation's log file.
+
+    The log file is owned by this object and must be closed by whoever installed
+    it - Main.py does that in a finally block, so it happens even when the
+    simulation fails. Do not leave it to garbage collection: an unclosed log is
+    still holding buffered output, and when several simulations in a batch point
+    at the same log path (which the sims lists do - one log per GWL group rather
+    than one per row) the order in which those buffers land decides which run's
+    output ends up in the file. That is what made a later run's log come out
+    holding an earlier run's output.
+    """
+
     def __init__(self, name):
         sys.stdout = sys.__stdout__
         # now direct the stdout to terminal and log file
         self.terminal = sys.stdout
+        self.name = name
         self.log = open(name, "w")
 
     def write(self, message):
         self.terminal.write(message)
-        self.log.write(message)
+        if self.log is not None and not self.log.closed:
+            self.log.write(message)
 
     def flush(self):
-        # this flush method is needed for python 3 compatibility.
-        # this handles the flush command by doing nothing.
-        # you might want to specify some extra behavior here.
-        pass
+        # Actually flush, rather than the no-op this used to be: without it the
+        # tail of a run that crashes hard is lost, and print(..., flush=True)
+        # silently does nothing.
+        try:
+            self.terminal.flush()
+        except Exception:
+            pass
+        if self.log is not None and not self.log.closed:
+            self.log.flush()
+
+    def close(self):
+        """Flush and close the log file. Safe to call more than once."""
+        if self.log is not None and not self.log.closed:
+            self.log.flush()
+            self.log.close()
+
+    def __del__(self):
+        # Backstop only - the close() above is the intended path.
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 def life_of_brian():
