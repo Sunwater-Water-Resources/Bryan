@@ -1,0 +1,14 @@
+# Dependencies for the Bryan run launcher UI (ui/).
+#
+# Deliberately SEPARATE from the repo's requirements.txt and _env_bryan.yml.
+# The UI runs in its own environment and shells out to Bryan's interpreter, so
+# the frozen bryan29 conda env used to reproduce study results is never touched.
+# See ui/README.md.
+
+nicegui>=3.14
+pandas>=2.2
+openpyxl>=3.1
+psutil>=5.9
+
+# tests
+pytest>=8.0

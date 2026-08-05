@@ -24,6 +24,9 @@ Bryan serves many dam catchments.
 - `python Main.py <sims_config.json>` — main entry point. Reads the config, opens the
   simulation list (Excel), and dispatches each row to a simulator by its `Method`:
   `monte carlo`, `ensemble`, or `reservoir routing`.
+- `python ui/main.py [<sims_config.json>]` — the run launcher (browser UI). Picks rows out
+  of a sims list, checks them, and drives `Main.py` for you. Its own environment
+  (`ui/requirements-ui.txt`); see the `ui/` section below.
 - `python RouteFlows.py <routing_sheet.xlsx>` — standalone: adds baseflow to quickflow
   hydrographs (for RORB) and/or routes flows through the dam. Driven by an Excel sheet.
 - `IFD_export.py`, `DownstreamStormGenerator.py`, `StormInstance.py` — top-level helper
@@ -138,6 +141,44 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 
 ### Curve fitting (`lib/InterpolationCurves.py`)
 - `Curve`, `CoercedQuadratic`, `GEV` — used to extrapolate rainfall to rare/extreme AEPs.
+
+### Run launcher (`ui/`)
+A NiceGUI browser app for choosing which sims-list rows to run, checking them, launching
+Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
+
+- **It never imports Bryan's simulators.** The simulators do all their work in `__init__`
+  and reassign `sys.stdout` globally, so the UI runs `Main.py` as a **subprocess** and reads
+  files for progress. It writes a filtered copy of the sims list plus a config pointing at
+  it — Bryan's entry point is untouched.
+- **Three binding rules, pinned by `ui/tests/test_dependency_direction.py`:** nothing in
+  `lib/` may reference `ui`; nothing in `ui/core/` may import `nicegui`; and `ui/` imports
+  Bryan only through `ui/core/bryan.py`, whose allow-list is `lib.RunLog` and `lib.LogFiles`.
+  Those two import only pandas, which is what keeps the UI environment free of scipy and
+  matplotlib. Do not widen the allow-list to pull in a simulator.
+- **The UI never writes a master sims list.** openpyxl cannot store a formula's cached
+  value, so saving a formula-driven workbook from Python turns every formula into an
+  uncached one and Bryan then reads blanks. `TFD_SimsList_LongList_02.xlsx` in the Tinaroo
+  project is already in that state — 96 formula cells, no values, so its first 24 rows read
+  with no `Output file` and no inputs. `ui/core/simslist.audit_formulas` detects it (the
+  test must be `value in (None, "")` — that workbook stores an *empty* `<v>`, so an
+  `is None` check reports it clean). `runwriter._set` forces every written cell to a string
+  type, because openpyxl turns a literal starting with `=` back into an uncached formula.
+- **Chunking is constrained by `Output file`.** `Simulator.initialise_model` makes it the URBS working
+  sub-folder and `UrbsModel.__init__` rmtree's that folder on entry, so rows sharing one are
+  indivisible — and selecting several is blocked outright, since they overwrite each other
+  even sequentially (24 rows share one name in `CLD_RFSL_mc_sims_01.xlsx`). Parallelism
+  defaults to 1 on purpose.
+- **Per-chunk run logs are free**, because `RunLog.log_filepath` builds the path from the
+  raw `simulation_list` string against the CWD. The UI writes a relative
+  `_ui_runs/<id>/chunk_NN.xlsx` and launches with `cwd=project_folder`, so each chunk's log
+  lands in its own run folder. No locking is needed — do not add any.
+- **`stdin=DEVNULL` is deliberate.** The three `input()` calls (`MCScheme`/`EnbScheme.store_simulations`,, `URBSmodel.py:41`) would hang a windowless run forever; with DEVNULL
+  they raise `EOFError`, Main.py catches it per row, and `progress.explain_error` says why.
+- Progress matches run-log rows to simulations **positionally**, never by name: `Simulation`
+  is `Output file` (`RunLog.py:36`) and carries no duration.
+- `ui/tests/test_progress.py` greps `Main.py` and `lib/RunLog.py` for the literal strings it
+  parses. If you change that wording, that test fails — update both together rather than
+  letting the progress display silently go blank.
 
 ### Post-processing utilities (`util/`)
 Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequencyCurves.py`

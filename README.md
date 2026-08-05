@@ -49,6 +49,17 @@ The config file names a simulation list (Excel) and points to per-method config 
 [`Manual/SubDocs/getting_started.md`](Manual/SubDocs/getting_started.md) for the full
 control-flow walkthrough.
 
+There is also a browser UI for choosing which simulations in a list to run, checking their
+inputs first, and following the run:
+
+```
+python ui/main.py <sims_config.json>
+```
+
+It writes its own copy of the simulation list holding the selected rows and runs `Main.py`
+on it, so Bryan itself is unchanged. It installs into its own environment -- see
+[`ui/README.md`](ui/README.md) and [`Manual/SubDocs/ui.md`](Manual/SubDocs/ui.md).
+
 The Python code and the model/project data are kept separate, so one copy of Bryan's code
 serves many dam catchments; models, catchment data, and study outputs are not part of this
 repository.
@@ -59,6 +70,8 @@ repository.
 - `lib/` -- core logic: simulators, storm generation, rainfall, temporal patterns,
   sampling, hydrologic model wrappers, routing, lake conditions, climate change,
   interpolation curves
+- `ui/` -- the run launcher (NiceGUI). `ui/core/` is Bryan-facing logic with no UI
+  imports; `ui/pages/` is the interface; `ui/tests/` runs without URBS or RORB
 - `util/` -- standalone post-processing scripts (frequency plots, representative events,
   design flood interpolation, etc.)
 - `Manual/` -- user guide and technical reference; run `Manual/render_manual.py` to render
