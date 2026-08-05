@@ -843,6 +843,11 @@ class ReservoirRoutingSimulator:
         lower_aep = float(from_config('lower_aep', 2))
         upper_aep = float(from_config('upper_aep', 1e7))
         aep_of_pmp = from_config('aep_of_pmp', None)
+        if aep_of_pmp is None:
+            # Fall back to where a Monte Carlo run gets it - see
+            # _aep_of_pmp_from_storm_config. Without this the PMP AEP is simply
+            # absent from the quantile table, with nothing to say it was dropped.
+            aep_of_pmp = self._aep_of_pmp_from_storm_config()
         if aep_of_pmp is not None:
             aep_of_pmp = float(aep_of_pmp)
 
@@ -859,7 +864,60 @@ class ReservoirRoutingSimulator:
             print('  NOTE: defaulted values are not necessarily those the MCDF was sampled with.\n'
                   '        The AEP bounds set the main division boundaries used by the TPT.')
 
+        if aep_of_pmp is not None and aep_of_pmp >= upper_aep:
+            print(f'  NOTE: the AEP of the PMP (1 in {aep_of_pmp:,.0f}) is at or beyond '
+                  f'the upper AEP\n        (1 in {upper_aep:,.0f}), so it is not added to '
+                  f'the quantile table.')
+
         return m_count, n_count, lower_aep, upper_aep, aep_of_pmp
+
+    def _aep_of_pmp_from_storm_config(self):
+        """The AEP of the PMP from the storm config chain, as a Monte Carlo run gets it.
+
+        A Monte Carlo run never reads this from the method config file: it builds a
+        StormBurst and asks it (Simulator.analyse_results -> StormBurst.get_aep_of_pmp
+        -> ifdCurves.config_data['AEP_of_PMP']), so the value lives in the IFD files
+        config that the storm config's 'rare_ifds' points at.
+
+        Reservoir routing does not re-run the hydrology and so has no StormBurst, and
+        it used to look only for a lower-case 'aep_of_pmp' in the sims-list Config
+        file. Where that key was absent - it is not part of any Monte Carlo config
+        Bryan writes - the PMP AEP was silently missing from the routed quantile
+        tables, so they did not line up with the tables of the run they came from.
+        Callide is exactly this case; Tinaroo only worked because the number had been
+        copied into its mc_config.json by hand, under the other spelling.
+
+        Best effort by design: a broken or absent chain must not lose a simulation
+        that is otherwise fine, so every failure just reports itself and returns None.
+        """
+        storm_config = self.filepaths.get('storm_config') if self.filepaths else None
+        if not storm_config:
+            self.config_sources['aep_of_pmp'] = 'NOT SET (no storm config given)'
+            return None
+
+        try:
+            with open(storm_config) as f:
+                storm_data = json.load(f)
+            rare_ifds = storm_data['file_paths']['rare_ifds']
+
+            # Mirrors StormBurst.set_filepaths: resolve against the storm config's
+            # own folder. The retry covers a config written with the other
+            # separator, which os.path.join does not split.
+            folder = os.path.dirname(storm_config)
+            ifd_path = os.path.normpath(os.path.join(folder, rare_ifds))
+            if not os.path.isfile(ifd_path):
+                swapped = rare_ifds.replace('\\', os.sep).replace('/', os.sep)
+                ifd_path = os.path.normpath(os.path.join(folder, swapped))
+
+            with open(ifd_path) as f:
+                value = json.load(f)['AEP_of_PMP']
+        except (OSError, KeyError, ValueError, TypeError) as error:
+            self.config_sources['aep_of_pmp'] = (
+                f'NOT SET ({type(error).__name__} following the storm config: {error})')
+            return None
+
+        self.config_sources['aep_of_pmp'] = f'IFD files config ({ifd_path})'
+        return value
 
     def _validate_sample(self, m_count, n_count, main_divisions):
         """Check that the MCDF sample matches the scheme it is about to be analysed
