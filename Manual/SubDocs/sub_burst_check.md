@@ -76,7 +76,58 @@ For a production run, the calibrated weights can be applied to the pattern sampl
 - Rerunning the sub-burst check on the weighted-sampling run verifies the neutrality of the ensemble as actually simulated — a worthwhile closing check, since the sampled realisations will differ from the calibration run's.
 - The ```TP weights``` key cannot be combined with replication of the pattern sampling (the ```tp``` replicate), because the replicated patterns were sampled under different weights. Since heavily down-weighted patterns are rarely sampled, their response is also thinly resolved — another reason the weight floor matters.
 
+## The separate question: embedded bursts above the PMP
+
+Everything above is a *frequency* argument. A sub-burst is acceptable if it occurs no more often across the ensemble than the sub-duration IFD implies, and if it occurs too often the remedy is to re-weight the offending patterns. That argument needs a reference curve to hold it up, and the reference curve terminates at the PMP. Above the PMP for a sub-duration there is no assignable frequency — the depth is outside the domain, not merely rare within it — so there is no target for the weight calibration to hit and the only admissible weight is zero. Filtering there is not a contradiction of the unfiltered approach, it is what the approach reduces to at the physical bound.
+
+The admissible bound on a sub-burst of duration *s* within a burst of duration *d* is
+
+```
+bound(s) = PMP_s × max(1, burst_depth / PMP_d)
+```
+
+Where the burst depth is below the PMP this is the absolute physical bound, ```PMP_s```. Where the sampling extrapolates past the AEP of the PMP (the default ```pmp_exceedance_sampling``` of ```extrapolate```) the absolute bound would be infeasible: as *s* approaches *d* the rolling window tends to the whole burst depth, which already exceeds ```PMP_d```. The multiplier scales the bound by the factor by which the realisation exceeds the envelope, so the constraint becomes one on the storm's *shape* — its internal depth-duration profile may not be peakier than the PMP depth-duration envelope — while the magnitude is left free, which is what the extrapolation already asserts at the parent duration. One expression covers both settings of ```pmp_exceedance_sampling```, and it reads the realised burst depth rather than the setting.
+
+### The screen
+
+Bryan does not filter against this bound. It screens for it, in ```screen_pmp_embedded_bursts```, and reports near the top of the simulation log. The screen runs before any sampling because the breach condition does not depend on it. For a pattern holding a fraction ```r_s``` of its depth in the worst window of sub-duration *s*:
+
+- the bound engages once the burst depth exceeds ```D_crit = PMP_s / r_s```;
+- if ```D_crit >= PMP_d```, equivalently ```r_s <= PMP_s / PMP_d```, the pattern never breaches at any depth;
+- between ```D_crit``` and ```PMP_d``` the exceedance ratio grows linearly with depth;
+- above ```PMP_d``` it is **exactly constant** at ```PMP_d / D_crit```, because the sub-burst and the bound scale together.
+
+So the worst case is fully realised at the PMP anchor and the extrapolation adds nothing to it. Severity is bounded, and bounded by a number computed without running anything.
+
+The binding sub-duration is the one with the largest ```r_s / PMP_s```, which is both the first to engage and the most severe. The report gives it, along with ```r_s```, ```D_crit```, the AEP at which the burst depth reaches ```D_crit```, the exceedance ratio at and above the anchor, and the share of that pattern set's sampled realisations above ```D_crit```.
+
+### Climate change
+
+All the depths above are the climate-adjusted ones the run actually simulates. The rainfall uplift scales a duration's whole frequency curve by the same factor at every AEP, so the PMP anchor is uplifted with it, and ```PMP_s``` and ```PMP_d``` each carry their own duration's factor. The uplift factors used are printed above the table.
+
+Two consequences follow, and they pull in opposite directions to what a first reading suggests:
+
+- **A uniform uplift changes nothing.** If every duration took the same factor, ```D_crit``` and the sampled depths would scale together and both the exceedance ratio and the engagement AEP would be untouched. The same is true of the parent duration on its own: the burst depth reaches the PMP at the same AEP whatever the warming level, because both sides move by the same factor.
+- **The uplift is duration dependent**, currently 15%/°C at 1 hour easing to 8%/°C at 24 hours and beyond, so a sub-duration is generally uplifted *more* than its parent. The exceedance ratio becomes ```r_s × PMP_d·u(d) / (PMP_s·u(s))```, and with ```u(s) > u(d)``` warming **eases** the bound rather than tightening it. ```r_s``` itself is a fixed property of the pattern and never moves; only which sub-duration binds can change.
+
+So a climate change run is not the adverse case for this check. Where the parent duration and the binding sub-duration are both 24 hours or longer the factors are equal and nothing moves at all.
+
+ARR areal and point patterns are screened as well as GSDM/GTSMR, each over the AEP window it is actually sampled in. Because the MC scheme samples GSDM/GTSMR patterns above 1 in 2,000, and above that the depth cancels out of the breach condition, most of the screen is a fixed property of the PMP patterns against the PMP depth-duration curve. For a small catchment the ARR patterns cannot get near the PMP and the screen is inert for them. The case worth watching is a catchment large enough that the AEP of the PMP is only half a decade beyond the changeover — at 10⁵ km² it is 1 in 10,000 — where the top of the ARR range does approach the PMP.
+
+### Reading the result
+
+- **Nothing breaches.** The exception does not arise for this catchment and no filtering against the PMP is needed. Worth recording: "we checked and it cannot happen here" is a better answer than an untested safeguard.
+- **Breaches only beyond the sampled range.** Reported as a ```CHECK```. No action for that run, but it will matter if the sampling is extended.
+- **Breaches inside the sampled range.** Reported as a ```WARNING```. Three things to weigh before acting:
+  - *Magnitude, not count.* A few per cent is within the uncertainty of a generalised PMP estimate and a hard clip at the PMP would be spuriously crisp. Twenty per cent or more is structural.
+  - *Which side is wrong.* If GSDM/GTSMR patterns breach, two BoM products disagree, and it is not obvious the pattern is the wrong one. Breaches clustered at sub-durations either side of the join in the composite PMP depth-duration curve point to the curve and its areal treatment; breaches well inside one method's own range point to the patterns. The report lists the binding sub-durations for exactly this reason.
+  - *Consistency with the PMF.* GSDM/GTSMR patterns also produce the deterministic PMF. Clipping them in the Monte Carlo while leaving the PMF alone would lower the derived curve and hold the PMF fixed, pushing the notional AEP of the PMF rarer for a purely procedural reason. Whatever is decided has to apply to both.
+- Before any of that, check whether the breaching sub-durations are anywhere near the reservoir's critical duration. A one-hour exceedance on a catchment with a 24-hour critical duration and meaningful flood storage does not change the routed peak, and the screen is depth-independent so that judgement can be made straight off the table.
+
+The screen also validates the composite PMP depth-duration curve, warning if catchment-average PMP depth is not increasing with duration or PMP intensity is not decreasing. Both would make the ```PMP_s / PMP_d``` ratios meaningless.
+
 ## Limitations and possible extensions
 
+- **The PMP bound is screened, not applied.** If a breach ever needs fixing, note that pre-built filtered patterns cannot do it: the clip depth is ```PMP_s × max(1, depth / PMP_d)```, so how much has to come out depends on the sampled depth. A single filtered pattern would have to assume the fully-clipped case and apply it everywhere above ```D_crit```, putting a step in the pattern there and a kink in the derived frequency curve. Applied on the fly at storm generation the clip goes to zero as the depth approaches ```D_crit``` from above, so the routed flood stays a continuous function of depth.
 - **Pre-burst is not yet covered.** Prepending the pre-burst can create embedded bursts spanning the pre-burst/main-burst boundary, including windows *equal to the parent duration itself*: a rolling window of the storm duration positioned across the boundary can exceed the sampled burst depth, which would breach the method framework. The pre-burst filter partially addresses this (see the enveloping burst filter), but the neutrality check does not yet scan the pre-burst-inclusive series. Extending the check to do so (sub-durations, the parent duration, and enveloping durations against the pre-burst envelope curve) is a natural next step.
 - **Combining parent durations.** The per-duration curves could be combined into an approximate all-durations sub-burst frequency curve. This has not been implemented; treating the durations as independent would be conservative because the same storm population contributes to neighbouring durations.
