@@ -94,3 +94,15 @@ Manual/markdeep.min.js
 !example_project/**/*.xlsx
 example_project/model/*/storms/
 example_project/SimsList_*_log.csv
+
+# ---------------------------
+# Run launcher UI (ui/)
+# ---------------------------
+# Run folders the UI writes into a project. They live beside the model data,
+# not in here, but ignore the name in case anyone runs the UI from the repo.
+_ui_runs/
+
+# The UI's only real-Bryan test fixture. The *.csv and *.xlsx rules above
+# would otherwise delete it silently from a fresh clone, and with it the one
+# test that drives Bryan itself end to end.
+!ui/tests/data_rr/**
