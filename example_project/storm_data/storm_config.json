@@ -2,10 +2,10 @@
   "file_paths": {
     "ARR_datahub_file": "SYNTHETIC_arr_datahub.txt",
     "rare_ifds": "ifd_config.json",
-    "point_patterns": "patterns/SYNTHETIC_point_increments.csv",
-    "areal_patterns": "patterns/SYNTHETIC_areal_increments.csv",
-    "gsdm_patterns": "patterns/SYNTHETIC_gsdm.pat",
-    "gtsmr_patterns": "patterns/SYNTHETIC_gtsmr_~AREA~.pat",
+    "point_patterns": "patterns/ECnorth_Increments.csv",
+    "areal_patterns": "patterns/Areal_ECnorth_Increments.csv",
+    "gsdm_patterns": "patterns/gsdm.pat",
+    "gtsmr_patterns": "patterns/gtsmr_coastal_~AREA~.pat",
     "preburst_patterns": "patterns/SYNTHETIC_preburst_patterns.json"
   },
   "storm_method_config": {

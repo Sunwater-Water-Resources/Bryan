@@ -14,8 +14,8 @@ import stat
 
 import pandas as pd
 
-from make_example_data import (AEP_OF_PMP, AREA_BIN, AREAL_DURATIONS, DAM, DURATIONS,
-                               FSL, HERE, REGION, SCHEME)
+from make_example_data import (AEP_OF_PMP, AREAL_DURATIONS, DAM, DURATIONS,
+                               FSL, HERE, NRM_CLUSTER, SCHEME)
 
 
 def write_json(relative_path, data):
@@ -44,10 +44,10 @@ def storm_config():
         'file_paths': {
             'ARR_datahub_file': 'SYNTHETIC_arr_datahub.txt',
             'rare_ifds': 'ifd_config.json',
-            'point_patterns': 'patterns/SYNTHETIC_point_increments.csv',
-            'areal_patterns': 'patterns/SYNTHETIC_areal_increments.csv',
-            'gsdm_patterns': 'patterns/SYNTHETIC_gsdm.pat',
-            'gtsmr_patterns': 'patterns/SYNTHETIC_gtsmr_~AREA~.pat',
+            'point_patterns': 'patterns/ECnorth_Increments.csv',
+            'areal_patterns': 'patterns/Areal_ECnorth_Increments.csv',
+            'gsdm_patterns': 'patterns/gsdm.pat',
+            'gtsmr_patterns': 'patterns/gtsmr_coastal_~AREA~.pat',
             'preburst_patterns': 'patterns/SYNTHETIC_preburst_patterns.json',
         },
         'storm_method_config': {
@@ -98,15 +98,15 @@ def lake_config():
 
 def climate_config():
     return {
-        'NRM cluster': REGION,
+        'NRM cluster': NRM_CLUSTER,
         'KG classification': 'Cfa',
-        'loss rates file': 'SYNTHETIC_rainfall_loss_rates_of_change.csv',
-        'temporal pattern scaling': 'SYNTHETIC_temporal_pattern_scaling_factors.csv',
+        'loss rates file': 'rainfall_loss_rates_of_change.csv',
+        'temporal pattern scaling': 'temporal_pattern_scaling_factors.csv',
         'weighting files': {
-            'ARR areal': 'Temporal_Pattern_Weighting/SYNTHETIC_areal.csv',
-            'ARR point': 'Temporal_Pattern_Weighting/SYNTHETIC_point.csv',
-            'GSDM': 'Temporal_Pattern_Weighting/SYNTHETIC_gsdm.csv',
-            'GTSMR': 'Temporal_Pattern_Weighting/SYNTHETIC_gtsmr.csv',
+            'ARR areal': 'Temporal_Pattern_Weighting/Areal_ECnorth.csv',
+            'ARR point': 'Temporal_Pattern_Weighting/ECnorth.csv',
+            'GSDM': 'Temporal_Pattern_Weighting/gsdm.csv',
+            'GTSMR': 'Temporal_Pattern_Weighting/gtsmr_coastal.csv',
         },
     }
 

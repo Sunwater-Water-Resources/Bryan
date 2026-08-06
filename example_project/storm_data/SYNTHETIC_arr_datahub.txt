@@ -45,7 +45,7 @@ Version,SYNTHETIC
 Temporal Patterns
 [TP]
 code,Juniper
-Label,Juniper Coast
+Label,East Coast North
 [TP_META]
 Version,SYNTHETIC
 [END_TP]

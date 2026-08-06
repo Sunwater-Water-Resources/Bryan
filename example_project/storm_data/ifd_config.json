@@ -44,7 +44,7 @@
   ],
   "PMP_depths": "ifd/SYNTHETIC_pmp_depths.csv",
   "PMP_scaling": "ifd/SYNTHETIC_pmp_scaling.csv",
-  "AEP_of_PMP": 1100000,
+  "AEP_of_PMP": 1600000,
   "extreme_rainfall_interpolation_method": "GEV",
   "extreme_spatial_smoothing_method": {
     "interpolate_weights": [
