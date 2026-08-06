@@ -36,10 +36,11 @@ routing demo re-routes. These are plausible in shape and magnitude so Bryan beha
 it would on a real study, but none of them came from a rainfall frequency analysis, a PMP
 assessment or a dam. **Do not copy them into a real assessment.**
 
-The real files remain subject to their originators' terms - Australian Rainfall and Runoff /
-Geoscience Australia for the ARR patterns and climate change tables, the Bureau of Meteorology
-for the GSDM and GTSMR patterns. Bryan's own GPL v3 licence covers the code and the invented
-data, not those. They are here only to make the example runnable.
+The real files keep their own terms - Bryan's GPL v3 licence covers the code and the invented
+data, not these. The ARR patterns and climate change tables are published under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Commonwealth of Australia
+(Geoscience Australia), and are included here unmodified; the GSDM and GTSMR patterns are
+Bureau of Meteorology data, subject to the Bureau's terms of use.
 
 So the example applies genuine ARR and BoM regional inputs to a fictional catchment. That is
 the useful combination: the parts you would reuse are correct, and the parts you must replace
