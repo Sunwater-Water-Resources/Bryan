@@ -1,0 +1,12 @@
+{
+  "NRM cluster": "Juniper Coast",
+  "KG classification": "Cfa",
+  "loss rates file": "SYNTHETIC_rainfall_loss_rates_of_change.csv",
+  "temporal pattern scaling": "SYNTHETIC_temporal_pattern_scaling_factors.csv",
+  "weighting files": {
+    "ARR areal": "Temporal_Pattern_Weighting/SYNTHETIC_areal.csv",
+    "ARR point": "Temporal_Pattern_Weighting/SYNTHETIC_point.csv",
+    "GSDM": "Temporal_Pattern_Weighting/SYNTHETIC_gsdm.csv",
+    "GTSMR": "Temporal_Pattern_Weighting/SYNTHETIC_gtsmr.csv"
+  }
+}
