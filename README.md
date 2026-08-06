@@ -115,6 +115,34 @@ setup gotchas worth knowing before building a real project.
 - `IFD_export.py`, `DownstreamStormGenerator.py`, `StormInstance.py` -- legacy/ad-hoc
   tooling with hard-coded paths, not part of the main batch workflow
 
+## Licence
+
+Copyright (C) 2024-2026 Sunwater Limited.
+
+Bryan is free software: you can redistribute it and/or modify it under the terms of the
+**GNU General Public License version 3** as published by the Free Software Foundation. See
+[`LICENSE`](LICENSE) for the full text.
+
+It is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**, without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. Bryan
+produces design flood estimates that inform dam safety decisions; the results, and the
+judgement applied to them, remain the responsibility of the engineer running it.
+
+### Third-party reference data
+
+The licence above covers this repository's code and documentation. It does not, and cannot,
+cover the reference data shipped under [`example_project/`](example_project/README.md) that
+Sunwater does not own:
+
+- the ARR point and areal temporal patterns, and the ARR climate change loss rate, D50
+  scaling and pattern weighting tables (Australian Rainfall and Runoff / Geoscience
+  Australia)
+- the GSDM and GTSMR temporal patterns (Bureau of Meteorology)
+
+Those remain subject to their originators' terms and are included only to make the worked
+example runnable. Everything else in `example_project/` is invented, prefixed `SYNTHETIC_`,
+and covered by this licence like the rest of the repository.
+
 ## Documentation
 
 - [`Manual/Manual.md`](Manual/Manual.md) -- user guide
