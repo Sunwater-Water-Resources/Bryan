@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 import pandas as pd
 import time
+from lib.FileTools import MopWarnings, remove_file, remove_tree
 
 
 class RorbModel:
@@ -28,7 +29,7 @@ class RorbModel:
                                                                config_data['storms_folder'],
                                                                sub_folder))
             # Create sub-folder for storm files. If sub-folder exists from previous run then delete first
-            if os.path.exists(self.storms_folder): shutil.rmtree(self.storms_folder)
+            remove_tree(self.storms_folder)
             os.makedirs(self.storms_folder)
         else:
             self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['storms_folder']))
@@ -45,6 +46,7 @@ class RorbModel:
         # self.time_increment = config_data['time_increment']
         self.batch_file = batch_file
         # self.paramter_string = ''
+        self.mop_warnings = MopWarnings()
         self.results_list = []
         self.inflows = []       # List of series of hydrographs.
         self.outflows = []
@@ -254,10 +256,7 @@ class RorbModel:
         self.wait_for_results(result_name)
 
         for path in (batch_path, par_path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+            remove_file(path)      # left behind for manual re-running if it will not go
 
         return result_name
 
@@ -468,13 +467,15 @@ class RorbModel:
         if skip > 0:
             if sim_id > skip - 1:
                 filepath = os.path.join(self.storms_folder, storm_name)
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+                removed, reason = remove_file(filepath)
+                if not removed:
+                    self.mop_warnings.report(filepath, reason)
 
     def mop_results_files(self, result_name, which='all'):
         result_path = os.path.join(self.storms_folder, f'{result_name}.out')
-        if os.path.exists(result_path):
-            os.remove(result_path)
+        removed, reason = remove_file(result_path)
+        if not removed:
+            self.mop_warnings.report(result_path, reason)
 
     def move_results(self, results_name):
         os.makedirs(self.results_folder, exist_ok=True)
