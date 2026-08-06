@@ -1,10 +1,20 @@
 """
-Build the synthetic data files for the Juniper Creek Dam example project.
+Build the synthetic, catchment-specific data files for the Juniper Creek Dam example.
 
-Everything this writes is invented. The numbers are plausible in shape and magnitude so
-that Bryan behaves the way it would on a real study, but none of them came from a rainfall
-analysis, a PMP assessment, the ARR data hub, or a dam. Files are prefixed SYNTHETIC_ so
-they cannot be mistaken for study data. Do not copy them into a real assessment.
+The example splits its inputs in two.
+
+  Real, and shipped as they come: the generic ARR and BoM regional data - the ARR point and
+  areal temporal patterns for East Coast North, the BoM GSDM and GTSMR patterns, the ARR
+  climate change loss rate and D50 scaling tables, the D50 weighting factors, and the ARF
+  zone. These are published reference data that any study in the region would use unchanged,
+  and the example is more useful for having the real ones. This script does not touch them.
+
+  Synthetic, and written here: everything specific to a catchment that does not exist - the
+  IFD depths, the PMP depths and spatial scaling, the pre-burst depths and patterns, the
+  storm losses, the dam curves, and the stored results used by the routing demo. These are
+  plausible in shape and magnitude so Bryan behaves the way it would on a real study, but
+  none of them came from a rainfall analysis, a PMP assessment or a dam. They are prefixed
+  SYNTHETIC_. Do not copy them into a real assessment.
 
 Run from this folder:  python make_example_data.py
 
@@ -25,17 +35,17 @@ SEED = 20260806
 
 # ----------------------------------------------------------------- the catchment
 DAM = 'Juniper Creek Dam'
-SUBCATCHMENT_AREAS = {  # km2, summing to 900
-    'JC01': 120.0, 'JC02': 95.0, 'JC03': 140.0, 'JC04': 88.0, 'JC05': 76.0,
-    'JC06': 110.0, 'JC07': 65.0, 'JC08': 82.0, 'JC09': 71.0, 'JC10': 53.0,
+SUBCATCHMENT_AREAS = {  # km2, summing to 620
+    'JC01': 83.0, 'JC02': 65.0, 'JC03': 96.0, 'JC04': 61.0, 'JC05': 52.0,
+    'JC06': 76.0, 'JC07': 45.0, 'JC08': 56.0, 'JC09': 49.0, 'JC10': 37.0,
 }
 CATCHMENT_AREA = sum(SUBCATCHMENT_AREAS.values())
-AREA_BIN = 1000          # both the ARR areal and GTSMR pattern bins for 750-1750 km2
-AEP_OF_PMP = 1100000     # 10 ** (log10(900) - 9) inverted, rounded
+AREA_BIN = 500           # both the ARR areal and GTSMR pattern bins for 350-750 km2,
+                         # which is why the catchment is this size: real pattern files exist for it
+AEP_OF_PMP = 1600000     # 10 ** (log10(620) - 9) inverted, rounded
 
 DURATIONS = [2, 3, 6, 9, 12, 18, 24, 36, 48, 72]
 AREAL_DURATIONS = [d for d in DURATIONS if d >= 12]   # shorter ones use the 12 h pattern
-TIMESTEP_MIN = {2: 5, 3: 5, 6: 15, 9: 15, 12: 30, 18: 30, 24: 60, 36: 60, 48: 60, 72: 60}
 IFD_AEPS = [1.582, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]
 
 # The Monte Carlo sampling scheme. Defined here rather than in make_example_configs.py
@@ -44,7 +54,6 @@ IFD_AEPS = [1.582, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]
 # before it will analyse the results.
 SCHEME = {'lower_aep': 2, 'upper_aep': 2000000,
           'number_of_main_divisions': 20, 'number_of_sub_divisions': 10}
-POINT_FREQUENCIES = ['frequent', 'intermediate', 'rare']
 
 # Dam geometry
 FSL = 210.0              # m AHD
@@ -53,7 +62,8 @@ DAM_TOP = 218.0          # crest of the non-overflow section
 ELS_TOP = 220.0          # the storage curve is carried above it, so routing never runs off the end
 SPILLWAY_WIDTH = 300.0   # m, ungated ogee
 
-REGION = 'Juniper Coast'      # label for the temporal patterns and the NRM cluster
+REGION = 'East Coast North'   # the real ARR temporal pattern region the example uses
+NRM_CLUSTER = 'East Coast'    # the real ARR climate change cluster
 # The ARF zone must be one Bryan implements in ArealReduction.get_coefficients:
 # 'East Coast North', 'Northern Coastal' or 'Semi-arid Inland Queensland'. The a-i
 # coefficients in the data hub file are ignored - Bryan uses its own for the named zone.
@@ -85,24 +95,6 @@ def spatial_factors(rng, spread=0.09):
     return pd.Series(np.round(factors, 4), index=names)
 
 
-def temporal_pattern(rng, n_increments, peakiness, peak_position):
-    """One temporal pattern as percentages summing to exactly 100."""
-    x = (np.arange(n_increments) + 0.5) / n_increments
-    shape = np.exp(-0.5 * ((x - peak_position) / peakiness) ** 2)
-    shape = shape * rng.uniform(0.55, 1.45, n_increments)      # storm-to-storm roughness
-    shape = shape + 0.04 * shape.max()                          # no truly dry increments
-    pattern = np.round(100.0 * shape / shape.sum(), 2)
-    pattern[-1] = round(pattern[-1] + (100.0 - pattern.sum()), 2)
-    return pattern
-
-
-def pattern_set(rng, n_increments, n_patterns=10, peakiness=(0.13, 0.30)):
-    """Ten patterns spanning a range of peakiness and timing."""
-    out = []
-    for i in range(n_patterns):
-        p = peakiness[0] + (peakiness[1] - peakiness[0]) * i / (n_patterns - 1)
-        out.append(temporal_pattern(rng, n_increments, p, rng.uniform(0.30, 0.70)))
-    return out
 
 
 # ----------------------------------------------------------------- writers
@@ -136,52 +128,7 @@ def write_pmp_tables(folder, rng):
     return depths
 
 
-def write_point_patterns(path, rng):
-    rows, event = [], 1000
-    for duration in DURATIONS:                       # grouped so each block is contiguous
-        timestep = TIMESTEP_MIN[duration]
-        n = int(duration * 60 / timestep)
-        for frequency in POINT_FREQUENCIES:
-            for pattern in pattern_set(rng, n):
-                event += 1
-                rows.append([event, int(duration * 60), timestep, REGION, frequency]
-                            + [f'{v:g}' for v in pattern])
-    width = max(len(r) for r in rows)
-    with open(path, 'w') as f:
-        f.write('EventID, Duration, TimeStep, Region, AEP, Increments'
-                + ',' * (width - 5) + '\n')
-        for row in rows:
-            f.write(','.join(str(v) for v in row) + ',' * (width - len(row)) + '\n')
 
-
-def write_areal_patterns(path, rng):
-    rows, event = [], 5000
-    for duration in AREAL_DURATIONS:
-        timestep = TIMESTEP_MIN[duration]
-        n = int(duration * 60 / timestep)
-        for pattern in pattern_set(rng, n, peakiness=(0.16, 0.34)):   # areal is smoother
-            event += 1
-            rows.append([event, int(duration * 60), timestep, REGION, AREA_BIN]
-                        + [f'{v:g}' for v in pattern])
-    with open(path, 'w') as f:
-        f.write('EventID,Duration,TimeStep,Region,Area,Increments\n')
-        for row in rows:                    # no trailing commas - the areal reader keeps blanks
-            f.write(','.join(str(v) for v in row) + '\n')
-
-
-def write_pmp_patterns(path, rng, durations, peakiness):
-    """GSDM/GTSMR .pat file: a '<minutes> minutes' marker, then 'increments,timestep', then
-    ten rows of percentages."""
-    lines = [f'{len(durations)},10']
-    for duration in durations:
-        timestep = TIMESTEP_MIN[duration]
-        n = int(duration * 60 / timestep)
-        lines.append(f'{int(duration * 60)} minutes')
-        lines.append(f'{n},{timestep}')
-        for pattern in pattern_set(rng, n, peakiness=peakiness):
-            lines.append(','.join(f'{v:.2f}' for v in pattern))
-    with open(path, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
 
 
 def write_preburst_patterns(path, rng):
@@ -255,47 +202,6 @@ def write_arr_datahub(path, rng):
     with open(path, 'w') as f:
         f.write('\n'.join(text) + '\n')
 
-
-def write_climate_data(folder, rng):
-    os.makedirs(os.path.join(folder, 'Temporal_Pattern_Weighting'), exist_ok=True)
-
-    losses = pd.DataFrame(
-        [['Juniper Coast', 0.6, 2.0, 4.3, 1.1, 3.8, 8.0],
-         ['Juniper Inland', 0.4, 1.1, 2.2, -0.5, 2.0, 7.5]],
-        columns=['Natural Resource Management Cluster', 'IL lower', 'IL mean', 'IL upper',
-                 'CL lower', 'CL mean', 'CL upper'])
-    losses.to_csv(os.path.join(folder, 'SYNTHETIC_rainfall_loss_rates_of_change.csv'),
-                  index=False)
-
-    scaling = pd.DataFrame({'Duration': DURATIONS,
-                            'Cfa': np.round(-0.5 + 0.06 * np.arange(len(DURATIONS)), 2),
-                            'Aw': np.round(-0.4 + 0.05 * np.arange(len(DURATIONS)), 2)})
-    scaling.to_csv(os.path.join(folder, 'SYNTHETIC_temporal_pattern_scaling_factors.csv'),
-                   index=False)
-
-    def weights(extra_column, extra_values, durations):
-        rows = []
-        for duration in durations:
-            for value in extra_values:
-                front = ','.join(str(v) for v in rng.choice(np.arange(1, 11), 3, replace=False))
-                deltas = np.round(0.12 + 0.021 * np.arange(5) + rng.uniform(-0.004, 0.004), 5)
-                row = {'Duration': int(duration * 60)}
-                if extra_column:
-                    row[extra_column] = value
-                row['Front Patterns'] = front
-                row.update({f'DeltaD50-{i + 1}': deltas[i] for i in range(5)})
-                rows.append(row)
-        return pd.DataFrame(rows)
-
-    base = os.path.join(folder, 'Temporal_Pattern_Weighting')
-    weights('AEP', POINT_FREQUENCIES, DURATIONS).to_csv(
-        os.path.join(base, 'SYNTHETIC_point.csv'), index=False)
-    weights('Area', [AREA_BIN], AREAL_DURATIONS).to_csv(
-        os.path.join(base, 'SYNTHETIC_areal.csv'), index=False)
-    weights(None, [None], DURATIONS).to_csv(
-        os.path.join(base, 'SYNTHETIC_gsdm.csv'), index=False)
-    weights('Area', [AREA_BIN], DURATIONS).to_csv(
-        os.path.join(base, 'SYNTHETIC_gtsmr.csv'), index=False)
 
 
 def write_dam_curves(folder):
@@ -437,7 +343,7 @@ def write_routing_inputs(folder, rng, fsv):
 
     # Peak inflow rising with the sampled rainfall, with realisation-to-realisation scatter.
     # This stands in for the rainfall-runoff model the example cannot run.
-    peak = 250.0 * np.exp(0.755 * mcdf['rain_z']) * rng.lognormal(0, 0.16, size)
+    peak = 180.0 * np.exp(0.755 * mcdf['rain_z']) * rng.lognormal(0, 0.16, size)
     mcdf['inflow'] = np.round(peak, 1)
     mcdf.index.name = 'index'
     mcdf.to_csv(os.path.join(folder, 'SYNTHETIC_mc_24h__mcdf.csv'))
@@ -465,18 +371,10 @@ def main():
     print('IFD tables and PMP depths written')
     print('  PMP (mm):', ', '.join(f'{d:g}h {v:g}' for d, v in pmp.items()))
 
-    write_point_patterns(os.path.join(patterns, 'SYNTHETIC_point_increments.csv'), rng)
-    write_areal_patterns(os.path.join(patterns, 'SYNTHETIC_areal_increments.csv'), rng)
-    write_pmp_patterns(os.path.join(patterns, 'SYNTHETIC_gsdm.pat'), rng,
-                       DURATIONS, peakiness=(0.15, 0.32))
-    write_pmp_patterns(os.path.join(patterns, f'SYNTHETIC_gtsmr_{AREA_BIN}.pat'), rng,
-                       DURATIONS, peakiness=(0.18, 0.36))
     write_preburst_patterns(os.path.join(patterns, 'SYNTHETIC_preburst_patterns.json'), rng)
-    print('Temporal patterns written')
-
     write_arr_datahub(os.path.join(storm, 'SYNTHETIC_arr_datahub.txt'), rng)
-    write_climate_data(os.path.join(HERE, 'climate_change'), rng)
-    print('ARR data hub file and climate change tables written')
+    print('Pre-burst patterns and the data hub file written')
+    print('  (the ARR/BoM temporal patterns and climate tables are real and are left alone)')
 
     os.makedirs(os.path.join(HERE, 'sim_options', 'focal_locations'), exist_ok=True)
     write_focal_subcatchments(

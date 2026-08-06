@@ -7,7 +7,7 @@
     "number_of_temporal_patterns": 10,
     "sample_method": "normally distributed"
   },
-  "aep_of_pmp": 1100000,
+  "aep_of_pmp": 1600000,
   "tpt_quantile_analysis": {
     "inflow": {
       "lower": 500,

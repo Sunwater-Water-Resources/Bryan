@@ -13,7 +13,7 @@
     2000,
     10000,
     100000,
-    1100000
+    1600000
   ],
   "storm_method_config": {
     "interim_for_ensemble": "both",
