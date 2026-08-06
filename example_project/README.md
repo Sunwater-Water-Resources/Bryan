@@ -39,8 +39,11 @@ assessment or a dam. **Do not copy them into a real assessment.**
 The real files keep their own terms - Bryan's GPL v3 licence covers the code and the invented
 data, not these. The ARR patterns and climate change tables are published under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Commonwealth of Australia
-(Geoscience Australia), and are included here unmodified; the GSDM and GTSMR patterns are
-Bureau of Meteorology data, subject to the Bureau's terms of use.
+(Geoscience Australia), and are included here unmodified; the GSDM and GTSMR patterns are the Bureau of
+Meteorology's published PMP temporal patterns, freely available as part of its
+[design rainfall data](https://www.bom.gov.au/water/designRainfalls/index.shtml#pmp) and held
+here in the plain-text `.pat` format URBS reads (© Commonwealth of Australia, Bureau of
+Meteorology).
 
 So the example applies genuine ARR and BoM regional inputs to a fictional catchment. That is
 the useful combination: the parts you would reuse are correct, and the parts you must replace
