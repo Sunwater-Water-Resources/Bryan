@@ -1,0 +1,12 @@
+{
+  "NRM cluster": "East Coast",
+  "KG classification": "Cfa",
+  "loss rates file": "rainfall_loss_rates_of_change.csv",
+  "temporal pattern scaling": "temporal_pattern_scaling_factors.csv",
+  "weighting files": {
+    "ARR areal": "Temporal_Pattern_Weighting/Areal_ECnorth.csv",
+    "ARR point": "Temporal_Pattern_Weighting/ECnorth.csv",
+    "GSDM": "Temporal_Pattern_Weighting/gsdm.csv",
+    "GTSMR": "Temporal_Pattern_Weighting/gtsmr_coastal.csv"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "scheme_config": {
+    "lower_aep": 2,
+    "upper_aep": 2000000,
+    "number_of_main_divisions": 20,
+    "number_of_sub_divisions": 10,
+    "number_of_temporal_patterns": 10,
+    "sample_method": "normally distributed"
+  },
+  "aep_of_pmp": 1600000,
+  "tpt_quantile_analysis": {
+    "inflow": {
+      "lower": 500,
+      "upper": 20000,
+      "step": 500
+    },
+    "level": {
+      "lower": 209,
+      "upper": 218,
+      "step": 0.25
+    },
+    "outflow": {
+      "lower": 500,
+      "upper": 20000,
+      "step": 500
+    }
+  }
+}

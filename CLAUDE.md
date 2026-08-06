@@ -172,8 +172,11 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   raw `simulation_list` string against the CWD. The UI writes a relative
   `_ui_runs/<id>/chunk_NN.xlsx` and launches with `cwd=project_folder`, so each chunk's log
   lands in its own run folder. No locking is needed — do not add any.
-- **`stdin=DEVNULL` is deliberate.** The three `input()` calls (`MCScheme`/`EnbScheme.store_simulations`,, `URBSmodel.py:41`) would hang a windowless run forever; with DEVNULL
-  they raise `EOFError`, Main.py catches it per row, and `progress.explain_error` says why.
+- **`stdin=DEVNULL` is deliberate.** The `input()` calls in `MCScheme`/`EnbScheme.store_simulations`
+  would hang a windowless run forever; with DEVNULL they raise `EOFError`, Main.py catches it
+  per row, and `progress.explain_error` says why. There was a third in `URBSmodel`, on a missing
+  URBS executable; it now warns and carries on, so that case fails later and only for a
+  simulation that actually runs the model.
 - Progress matches run-log rows to simulations **positionally**, never by name: `Simulation`
   is `Output file` (`RunLog.py:36`) and carries no duration.
 - `ui/tests/test_progress.py` greps `Main.py` and `lib/RunLog.py` for the literal strings it

@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from lib.MCScheme import SampleScheme
+from lib.MCScheme import SampleScheme, neutrality_margin
 from lib.StormGenerator import StormBurst
 from lib.Lake import LakeConditions
 from lib.URBSmodel import UrbsModel
@@ -25,7 +25,9 @@ class Simulator:
         self.test = test_iterations  # exist after this many realizations. Use zero for not production.
         self.start = time.time()
 
-        if parameters['Run models'].lower() == 'yes':
+        run_models_key = str(parameters['Run models']).lower().strip()
+        self.storms_only = run_models_key == 'storms only'
+        if run_models_key == 'yes' or self.storms_only:
             self.do_runs = True
             # Create and set up the log file
             # log_file = self.config_data['log_file']
@@ -37,6 +39,8 @@ class Simulator:
             # log_file = log_file.replace('.csv', 'analysis.csv')
             sys.stdout = Logger(log_file)
             life_of_brian()
+            if self.storms_only:
+                print('\nStorm-generation only mode: the hydrologic models will not be run')
         else:
             self.do_runs = False
 
@@ -83,6 +87,19 @@ class Simulator:
                 self.do_volumes = ['inflow', 'outflow']
             elif do_volumes in ['inflow', 'outflow']:
                 self.do_volumes = [do_volumes]
+
+        self.do_sub_bursts = False
+        if 'Analyse sub-bursts' in parameters.index:
+            if str(parameters['Analyse sub-bursts']).lower() == 'yes':
+                self.do_sub_bursts = True
+
+        # Optional temporal pattern probability weights (e.g. calibrated for sub-burst
+        # neutrality with util/CalibrateTpWeights.py) applied to the pattern sampling
+        self.tp_weights_file = None
+        if 'TP weights' in parameters.index:
+            tp_weights_file = str(parameters['TP weights']).strip()
+            if tp_weights_file.lower() not in ['', 'nan', 'none', 'no']:
+                self.tp_weights_file = tp_weights_file
                 
         if 'Pre-burst method' in parameters.index:
             self.preburst_method = str(parameters['Pre-burst method']).lower().strip()
@@ -289,12 +306,15 @@ Bryan: Sunwater's Design Flood Simulator
         storm.apply_areal_reduction()  # applying the areal reduction factors - BEFORE extreme rainfall!
         storm.skip_extreme_methods(storm_durations, do_preburst = do_preburst)
         upper_aep = 3000  # dummy value larger than 2000 to force creation of extreme rainfall
+        lower_aep = 2
         if self.method == 'monte carlo':
             scheme_config = self.config_data['scheme_config']
             upper_aep = scheme_config['upper_aep']
+            lower_aep = scheme_config['lower_aep']
         elif self.method == 'ensemble':
             aep_list = self.config_data['aep_list']
             upper_aep = max(aep_list)
+            lower_aep = min(aep_list)
         if upper_aep > 2000:
             storm.set_up_extreme_rainfall(storm_durations)  # importing the PMP depths and setting up extreme depths rarer than 1 in 2,000
             storm.import_gsdm_temporal_patterns(storm_durations)
@@ -303,6 +323,14 @@ Bryan: Sunwater's Design Flood Simulator
         # Import the temporal patterns and associated D50 climate change weightings
         storm.import_arr_areal_patterns(storm_durations)
         storm.import_arr_point_patterns(storm_durations)
+
+        # Screen the temporal patterns for embedded bursts that would exceed the PMP for their
+        # own sub-duration. Depends only on the patterns and the PMP depth-duration curve, so it
+        # runs here - before any sampling - and writes its report to the top of the log.
+        if upper_aep > 2000:
+            storm.screen_pmp_embedded_bursts(
+                storm_durations, aep_bounds=(lower_aep, upper_aep), climate=self.climate,
+                apply_rainfall_uplift=not self.exclusions['rainfall_uplift'])
 
         # Import the preburst patterns
         if do_preburst:
@@ -387,6 +415,10 @@ class EnsembleSimulator(Simulator):
     def __init__(self, parameters, filepaths, test_iterations):
         super().__init__(parameters, filepaths, test_iterations)
         print('\nRunning in ensemble mode!')
+        if self.storms_only:
+            raise Exception('"Run models: storms only" is not supported for the ensemble method - use "yes" or "no"')
+        if self.tp_weights_file is not None:
+            print('WARNING: the "TP weights" key is ignored for the ensemble method (all patterns are run)')
 
         # output_folder = self.config_data['output_folder']
         # scheme_config = self.config_data['scheme_config']
@@ -831,16 +863,22 @@ class MonteCarloSimulator(Simulator):
             print('\nRunning the models...')
             self.run_models()
 
-        if self.do_analysis == True:
-            print('\nAnalysing the model results...')
-            self.analyse_results()
-        elif type(self.do_analysis) is list:
-            print('\nAnalysing the model results...')
-            self.analyse_results(result_types=self.do_analysis)
-            
-        if self.do_volumes:
-            # for result_type in self.do_volumes:
-            self.analyse_volumes(result_types=self.do_volumes)
+        if self.storms_only and (self.do_analysis or self.do_volumes):
+            print('\nStorm-generation only mode: skipping the flow results analysis')
+        else:
+            if self.do_analysis == True:
+                print('\nAnalysing the model results...')
+                self.analyse_results()
+            elif type(self.do_analysis) is list:
+                print('\nAnalysing the model results...')
+                self.analyse_results(result_types=self.do_analysis)
+
+            if self.do_volumes:
+                # for result_type in self.do_volumes:
+                self.analyse_volumes(result_types=self.do_volumes)
+
+        if self.do_sub_bursts:
+            self.analyse_sub_bursts()
 
     def run_models(self):
         mc = self.mc
@@ -949,6 +987,16 @@ class MonteCarloSimulator(Simulator):
             do_filtering = True
             # storm.do_embedded_burst_filtering = True
 
+        # Load the temporal pattern probability weights if provided
+        if self.tp_weights_file is not None:
+            if self.replicates['tp']:
+                raise Exception('Temporal pattern weights ("TP weights") cannot be combined with '
+                                'replication of the temporal pattern sampling ("tp" replicate) - '
+                                'the replicated patterns were sampled under different weights')
+            tp_weights = self.load_tp_weights(self.tp_weights_file)
+        else:
+            tp_weights = None
+
         # Set up  the simulations
         sim_id = 0
         for m in range(mc.m):
@@ -1001,7 +1049,21 @@ class MonteCarloSimulator(Simulator):
                 if self.replicates['tp']:
                     tp_sample = self.replicates_df.loc[sim_id, 'tp']
                 else:
-                    tp_sample = mc.get_temporal_pattern_sample(delta_d50_weighting, delta_d50_patterns)
+                    base_weights = None
+                    if tp_weights is not None:
+                        if storm_method == 'ARR point':
+                            weight_group = f'ARR point|{point_tp_frequency_bin}'
+                        else:
+                            weight_group = storm_method
+                        if weight_group not in tp_weights:
+                            raise Exception(f'No temporal pattern weights provided for "{weight_group}" - '
+                                            'check that the weights file matches this simulation '
+                                            '(storm methods, frequency bins, and AEP range)')
+                        base_weights = tp_weights[weight_group]
+                    tp_sample = mc.get_temporal_pattern_sample(delta_d50_weighting, delta_d50_patterns,
+                                                               base_weights=base_weights)
+                    if base_weights is not None:
+                        mc.df.loc[sim_id, 'tp_weight'] = base_weights[tp_sample]
                 mc.df.loc[sim_id, 'tp'] = tp_sample
                 temporal_pattern = storm.get_temporal_pattern(storm_method=storm_method,
                                                               duration=duration,
@@ -1040,13 +1102,27 @@ class MonteCarloSimulator(Simulator):
                         filtered_temporal_pattern = temporal_pattern.copy()
                         storm.store_hyetographs(sim_id, original_temporal_pattern, filtered_temporal_pattern)
                     mc.df.loc[sim_id, 'embedded_bursts'] = embedded_burst_comment
+                    # Measure the (post-filter) sub-burst depths for the neutrality check
+                    sub_burst_mm, ifd_mm, _ = storm.measure_sub_bursts(temporal_pattern, rain_sample_z,
+                                                                       duration, ave_rain, storm_method,
+                                                                       climate_adjustment=rain_climate_adj)
                 else:
-                    embedded_burst_comment = storm.check_embedded_burst(temporal_pattern, rain_sample_z,
-                                                                        duration, ave_rain, storm_method,
-                                                                        climate_adjustment=rain_climate_adj)  # ,
-                    # buffer = 1.0)
+                    sub_burst_mm, ifd_mm, measure_error = storm.measure_sub_bursts(temporal_pattern, rain_sample_z,
+                                                                                   duration, ave_rain, storm_method,
+                                                                                   climate_adjustment=rain_climate_adj)
+                    if measure_error is not None:
+                        embedded_burst_comment = f'Error: {measure_error}'
+                    else:
+                        embedded_burst_comment = storm.embedded_burst_comment_from_measurement(sub_burst_mm, ifd_mm)
                     mc.df.loc[sim_id, 'embedded_bursts'] = embedded_burst_comment
-                    
+
+                # Track main-burst sub-burst depths (mm) and the matching same-z IFD reference (mm)
+                # so a sub-burst frequency curve can be derived by TPT and compared with the IFD
+                if sub_burst_mm is not None:
+                    for dur in sub_burst_mm.index:
+                        mc.df.loc[sim_id, f'subburst_{dur:g}h'] = sub_burst_mm[dur]
+                        mc.df.loc[sim_id, f'ifd_{dur:g}h'] = ifd_mm[dur]
+
                 #if embedded_burst_comment.upper().startswith('ERROR:'):
                 #    self.terminate_model_runs(print_msg=embedded_burst_comment, run_data=mc.df.loc[sim_id])
 
@@ -1142,6 +1218,14 @@ class MonteCarloSimulator(Simulator):
                     return
                 
 
+                # Storm-generation only mode: skip the hydrologic model
+                if self.storms_only:
+                    sim_id += 1
+                    # Exit if testing
+                    if 0 < self.test < sim_id:
+                        break
+                    continue
+
                 # create storm file and run the URBS model
                 simulation_period = model.get_simulation_period(duration)
                 if self.model_type == 'URBS':
@@ -1235,7 +1319,7 @@ class MonteCarloSimulator(Simulator):
         print(mc.df.head())
 
         # Store the hydrographs to file
-        if self.store_hydrographs:
+        if self.store_hydrographs and not self.storms_only:
             # result_filename = sim_filename.replace('.csv', '')
             model.store_hydrographs(self.outputfile)
 
@@ -1366,10 +1450,77 @@ class MonteCarloSimulator(Simulator):
             
             for duration in durations:
                 output_name = f'{self.outputfile}_{result_type}Vol{duration}h'
-                mc.compute_std_quantiles(result_type=f'Vol{duration}h', 
+                mc.compute_std_quantiles(result_type=f'Vol{duration}h',
                                          output_filename=f'{output_name}.csv')
                 mc.plot_tpt_results_2(result_type=f'Vol{duration}h',
                                       output_filename=f'{output_name}.png')
+
+    def load_tp_weights(self, filepath):
+        # Load temporal pattern probability weights (as written by util/CalibrateTpWeights.py):
+        # rows are the weight groups (storm method, plus the frequency bin for ARR point
+        # patterns, e.g. 'ARR point|rare'), columns are the pattern indices 0-9
+        print('\nOpening the temporal pattern weights file:', filepath)
+        weights_df = pd.read_csv(filepath, index_col=0)
+        number_of_patterns = self.mc.number_of_temporal_patterns
+        if len(weights_df.columns) != number_of_patterns:
+            raise Exception(f'The temporal pattern weights file has {len(weights_df.columns)} weight '
+                            f'columns but {number_of_patterns} temporal patterns are expected')
+        print('Applying temporal pattern probability weights to the sampling:')
+        print(weights_df)
+        weights = {}
+        for group, row in weights_df.iterrows():
+            w = row.to_numpy(dtype=float)
+            if np.isnan(w).any() or w.min() < 0 or w.sum() <= 0:
+                raise Exception(f'Invalid temporal pattern weights for "{group}"')
+            weights[str(group)] = w / w.sum()      # normalise (tolerate rounding in the csv)
+        return weights
+
+    def analyse_sub_bursts(self):
+        # Derive frequency curves for the sub-burst depths within the sampled storms by TPT and
+        # compare with the same-z IFD reference recorded during the model runs. This supports the
+        # ensemble AEP-neutrality check on embedded bursts: a sub-burst TPT curve sitting above
+        # the IFD reference indicates sub-bursts occur more often than the IFD statistics imply.
+        mc = self.mc
+        sim_filename = self.outputfile + '__mcdf.csv'
+        print('\nOpening Monte Carlo analysis file:', sim_filename)
+        mc.df = pd.read_csv(sim_filename, index_col=0)
+
+        # Get the AEP of the PMP for the standard AEP set
+        storm = StormBurst(self.filepaths['storm_config'], generate_storms=False)
+        mc.aep_of_pmp = storm.get_aep_of_pmp()
+
+        sub_cols = [col for col in mc.df.columns if col.startswith('subburst_')]
+        if not sub_cols:
+            print('No sub-burst columns found in the Monte Carlo analysis file.')
+            print('Sub-burst depths are recorded during the model runs - re-run the models to analyse sub-bursts.')
+            return
+
+        summary = {}
+        for col in sub_cols:
+            dur = col.replace('subburst_', '')      # e.g. '6h'
+            ifd_col = f'ifd_{dur}'
+            missing = mc.df[col].isna().sum()
+            if missing:
+                print(f'WARNING: {missing} realisations have no {dur} sub-burst measurement (treated as non-exceedances)')
+
+            print(f'\nAnalysing the {dur} sub-burst depths')
+            output_name = f'{self.outputfile}_subburst{dur}'
+            mc.compute_std_quantiles(result_type=col, output_filename=f'{output_name}.csv')
+
+            # Same-z IFD reference from the per-realisation values recorded during the runs
+            reference = mc.df[['rain_z', 'storm_method', ifd_col]].dropna()
+            mc.plot_tpt_results_2(col, f'{output_name}.png', reference=reference)
+
+            summary[dur] = neutrality_margin(mc.quantiles[col], reference, col, ifd_col)
+
+        summary_df = pd.concat(summary, axis=1)
+        summary_df.index.name = 'aep (1 in x)'
+        summary_file = f'{self.outputfile}_subburst_neutrality.csv'
+        print('\nSub-burst neutrality margins (TPT sub-burst depth / same-z IFD depth):')
+        print('Values above 1.0 indicate sub-bursts occur more often than the IFD implies')
+        print(summary_df)
+        print('Writing neutrality summary:', summary_file)
+        summary_df.to_csv(summary_file)
 
 
 class Logger(object):

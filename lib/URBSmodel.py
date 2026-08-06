@@ -36,9 +36,12 @@ class UrbsModel:
             self.full_supply_volume = config_data['full_supply_volume']
         self.urbs_exe = config_data['model_exe']
         if not os.path.exists(self.urbs_exe):
-            print("WARNING: The URBS path could not be found:", path_to_check)
-            print('Pausing the simulation... hit enter to ignore the warning above.')
-            input()
+            # Warn and carry on rather than waiting on a keypress: an overnight batch has
+            # nobody to hit enter, and the simulation should fail through to the run log
+            # like any other missing input. A run that only analyses stored results, or
+            # generates storms, does not need the executable at all.
+            print('WARNING: The URBS executable could not be found:', self.urbs_exe)
+            print('         Any simulation that runs the model will fail.')
         self.model_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['model_folder']))
         self.vec_file = config_data['vec_file']
         self.baseflow_vec_file = '{}_baseflow.vec'.format(Path(self.vec_file).stem)
