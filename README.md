@@ -130,18 +130,23 @@ judgement applied to them, remain the responsibility of the engineer running it.
 
 ### Third-party reference data
 
-The licence above covers this repository's code and documentation. It does not, and cannot,
-cover the reference data shipped under [`example_project/`](example_project/README.md) that
-Sunwater does not own:
+The licence above covers this repository's code and documentation. It does not cover the
+reference data shipped under [`example_project/`](example_project/README.md) that Sunwater
+does not own, which keeps its own terms:
 
-- the ARR point and areal temporal patterns, and the ARR climate change loss rate, D50
-  scaling and pattern weighting tables (Australian Rainfall and Runoff / Geoscience
-  Australia)
-- the GSDM and GTSMR temporal patterns (Bureau of Meteorology)
+**Australian Rainfall and Runoff data** -- the ARR point and areal temporal patterns, and the
+climate change loss rate, D50 scaling and pattern weighting tables. Published under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Commonwealth of Australia
+(Geoscience Australia), obtained via the [ARR data hub](https://data.arr-software.org/about).
+Redistribution is permitted, including commercially, with attribution. These files are
+included unmodified.
 
-Those remain subject to their originators' terms and are included only to make the worked
-example runnable. Everything else in `example_project/` is invented, prefixed `SYNTHETIC_`,
-and covered by this licence like the rest of the repository.
+**Bureau of Meteorology data** -- the GSDM and GTSMR temporal patterns
+(`example_project/storm_data/patterns/gsdm.pat` and `gtsmr_coastal_500.pat`). Subject to the
+Bureau's terms of use.
+
+Everything else in `example_project/` is invented, prefixed `SYNTHETIC_`, and covered by this
+licence like the rest of the repository.
 
 ## Documentation
 
