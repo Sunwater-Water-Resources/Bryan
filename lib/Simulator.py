@@ -306,12 +306,15 @@ Bryan: Sunwater's Design Flood Simulator
         storm.apply_areal_reduction()  # applying the areal reduction factors - BEFORE extreme rainfall!
         storm.skip_extreme_methods(storm_durations, do_preburst = do_preburst)
         upper_aep = 3000  # dummy value larger than 2000 to force creation of extreme rainfall
+        lower_aep = 2
         if self.method == 'monte carlo':
             scheme_config = self.config_data['scheme_config']
             upper_aep = scheme_config['upper_aep']
+            lower_aep = scheme_config['lower_aep']
         elif self.method == 'ensemble':
             aep_list = self.config_data['aep_list']
             upper_aep = max(aep_list)
+            lower_aep = min(aep_list)
         if upper_aep > 2000:
             storm.set_up_extreme_rainfall(storm_durations)  # importing the PMP depths and setting up extreme depths rarer than 1 in 2,000
             storm.import_gsdm_temporal_patterns(storm_durations)
@@ -320,6 +323,14 @@ Bryan: Sunwater's Design Flood Simulator
         # Import the temporal patterns and associated D50 climate change weightings
         storm.import_arr_areal_patterns(storm_durations)
         storm.import_arr_point_patterns(storm_durations)
+
+        # Screen the temporal patterns for embedded bursts that would exceed the PMP for their
+        # own sub-duration. Depends only on the patterns and the PMP depth-duration curve, so it
+        # runs here - before any sampling - and writes its report to the top of the log.
+        if upper_aep > 2000:
+            storm.screen_pmp_embedded_bursts(
+                storm_durations, aep_bounds=(lower_aep, upper_aep), climate=self.climate,
+                apply_rainfall_uplift=not self.exclusions['rainfall_uplift'])
 
         # Import the preburst patterns
         if do_preburst:
