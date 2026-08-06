@@ -9,6 +9,7 @@ import pandas as pd
 from scipy import interpolate
 import sys
 import time
+from lib.FileTools import MopWarnings, remove_file, remove_tree
 
 
 class UrbsModel:
@@ -54,7 +55,7 @@ class UrbsModel:
         # Create sub-folder for output files. If sub-folder exists from previous run then delete first
         if sub_folder is not None:
             self.output_folder = os.path.join(self.model_folder, sub_folder)
-            if os.path.exists(self.output_folder): shutil.rmtree(self.output_folder)
+            remove_tree(self.output_folder)
             os.makedirs(self.output_folder)
             self.copy_catchment_data_file()     # Copy to output folder
         else:
@@ -66,7 +67,7 @@ class UrbsModel:
                                                                config_data['storms_folder'],
                                                                sub_folder))
             # Create sub-folder for storm files. If sub-folder exists from previous run then delete first
-            if os.path.exists(self.storms_folder): shutil.rmtree(self.storms_folder)
+            remove_tree(self.storms_folder)
             os.makedirs(self.storms_folder)
         else:
             self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file),
@@ -83,6 +84,7 @@ class UrbsModel:
         self.time_increment = config_data['time_increment']
         self.batch_file = batch_file
         self.paramter_string = ''
+        self.mop_warnings = MopWarnings()
         self.results_list = []
         self.inflows = []
         self.outflows = []
@@ -701,8 +703,9 @@ class UrbsModel:
         if skip > 0:
             if sim_id > skip - 1:
                 filepath = os.path.join(self.storms_folder, storm_name)
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+                removed, reason = remove_file(filepath)
+                if not removed:
+                    self.mop_warnings.report(filepath, reason)
     
     # Reinstated
     def mop_results_files(self, results_name, which='all'):
@@ -715,8 +718,9 @@ class UrbsModel:
 
         for ext in extensions:
             fullpath = f'{filepath}.{ext}'
-            if os.path.exists(fullpath):
-                os.remove(fullpath)
+            removed, reason = remove_file(fullpath)
+            if not removed:
+                self.mop_warnings.report(fullpath, reason)
 
     def move_results(self, results_name):
         all_files = glob.glob(os.path.join(self.output_folder, f'{results_name}.*'), recursive=True)
