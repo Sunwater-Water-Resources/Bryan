@@ -13,6 +13,12 @@ from lib.FileTools import MopWarnings, remove_file, remove_tree
 
 
 class UrbsModel:
+    RUN_ATTEMPTS = 3          # a failed URBS launch is retried this many times in total
+    RESULT_TIMEOUT = 60.0     # seconds to wait for URBS results to appear and unlock
+    RUN_RETRY_DELAY = 2.0     # seconds between attempts, multiplied by the attempt number
+    RETRY_WAIT = 10.0         # seconds to wait for results before retrying, against the
+                              # full timeout on the last attempt
+
     def __init__(self, config_file, batch_file='_run.bat', dam_location=None, sub_folder=None):
         # open the config file and get contents
         f = open(config_file)
@@ -465,6 +471,40 @@ class UrbsModel:
             self.paramter_string
             )
 
+        # Run URBS, retrying if it produces no results. A launch can fail transiently -
+        # something on the machine holding the batch file or the executable for a moment -
+        # and the run then produces nothing while still exiting zero. Re-running the same
+        # batch and storm file cannot change the answer, so a retry either succeeds
+        # identically or fails again for a real reason. Without it a single hiccup at one
+        # realisation loses the whole Monte Carlo run.
+        for attempt in range(1, self.RUN_ATTEMPTS + 1):
+            output = self.launch_urbs(batch_path)
+            # Only the last attempt waits the full timeout. Earlier ones give up quickly:
+            # if URBS wrote nothing there is nothing to wait for, and a genuinely broken
+            # model would otherwise burn the full timeout once per attempt per realisation.
+            last = attempt == self.RUN_ATTEMPTS
+            try:
+                # Block until the results are fully on disk so the next run cannot start
+                # (and get_max_results cannot read) while URBS is still writing them
+                self.wait_for_results(result_name, run_output=output,
+                                      timeout=None if last else self.RETRY_WAIT)
+                break
+            except RuntimeError as error:
+                if attempt == self.RUN_ATTEMPTS:
+                    raise
+                print(f'WARNING: URBS produced no results for {result_name} on attempt '
+                      f'{attempt} of {self.RUN_ATTEMPTS}:')
+                print(f'         {str(error).splitlines()[0]}')
+                print('         Retrying with the same batch and storm file.')
+                time.sleep(self.RUN_RETRY_DELAY * attempt)
+
+        try:
+            os.remove(batch_path)
+        except OSError:
+            pass
+
+    def launch_urbs(self, batch_path):
+        """Run one URBS batch file and return everything it printed."""
         try:
             p = subprocess.Popen(["cmd.exe", "/c", batch_path],
                                  stdout=subprocess.PIPE,
@@ -472,8 +512,6 @@ class UrbsModel:
                                  stdin=subprocess.DEVNULL,
                                  shell=True,
                                  )
-            # p.wait()
-            # p.kill()
             output, _ = p.communicate()
             output = output.decode(errors='replace') if output else ''
 
@@ -481,28 +519,20 @@ class UrbsModel:
                 raise RuntimeError(
                     f"URBS process failed with exit code {p.returncode}\n\nOutput:\n{output}"
                 )
-
-
         except OSError as e:
             print(f'An error occurred when trying to run URBS batch file: {e}')
             sys.exit(1)
+        return output
 
-        # Block until the results are fully on disk so the next run cannot start
-        # (and get_max_results cannot read) while URBS is still writing them
-        self.wait_for_results(result_name, run_output=output)
-
-        try:
-            os.remove(batch_path)
-        except OSError:
-            pass
-
-    def wait_for_results(self, result_name, run_output='', timeout=60.0, poll=0.25):
+    def wait_for_results(self, result_name, run_output='', timeout=None, poll=0.25):
         """Wait until the URBS result files for this run are completely written.
 
         URBS (or the OS, on slow/network drives) can still be flushing result files
         when the batch process returns. The .p summary must exist and be non-empty,
         and no result file may still be locked by a writer, before continuing.
         """
+        if timeout is None:
+            timeout = self.RESULT_TIMEOUT
         result_path = os.path.join(self.output_folder, f'{result_name}.p')
         companions = [os.path.join(self.output_folder, f'{result_name}.{ext}')
                       for ext in ('q', 'h')]
