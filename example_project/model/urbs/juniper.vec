@@ -1,0 +1,41 @@
+Juniper Creek Dam - SYNTHETIC STUB, not a working URBS model
+C This file exists so the URBS config in this example has something to point at.
+C It will not run in URBS. Replace with a calibrated vec file for a real study.
+CATCHMENT DATA FILE = juniper.cat
+MODEL: SPLIT
+USES: L, Sc, I
+DEFAULT PARAMETERS: alpha = 0.30 m = 0.80 beta = 1.50
+*
+RAIN #1
+SUB AREA #1 = 120
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #2
+SUB AREA #2 = 95
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #3
+SUB AREA #3 = 140
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #4
+SUB AREA #4 = 88
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #5
+SUB AREA #5 = 76
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #6
+SUB AREA #6 = 110
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #7
+SUB AREA #7 = 65
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #8
+SUB AREA #8 = 82
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #9
+SUB AREA #9 = 71
+ROUTE THRU L = 5.0 Sc = 1.0
+RAIN #10
+SUB AREA #10 = 53
+ROUTE THRU L = 5.0 Sc = 1.0
+DAM ROUTE FSL=210.0 DATAFILE=SYNTHETIC_juniper.els il=190000.0 PRINT JuniperDam.
+PRINT JuniperDam.
+END OF CATCHMENT DATA.

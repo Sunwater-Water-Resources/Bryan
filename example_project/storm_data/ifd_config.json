@@ -1,0 +1,55 @@
+{
+  "col_suffix": "_AEP",
+  "durations": [
+    {
+      "duration": 2,
+      "filename": "ifd/SYNTHETIC_ifd_2h.csv"
+    },
+    {
+      "duration": 3,
+      "filename": "ifd/SYNTHETIC_ifd_3h.csv"
+    },
+    {
+      "duration": 6,
+      "filename": "ifd/SYNTHETIC_ifd_6h.csv"
+    },
+    {
+      "duration": 9,
+      "filename": "ifd/SYNTHETIC_ifd_9h.csv"
+    },
+    {
+      "duration": 12,
+      "filename": "ifd/SYNTHETIC_ifd_12h.csv"
+    },
+    {
+      "duration": 18,
+      "filename": "ifd/SYNTHETIC_ifd_18h.csv"
+    },
+    {
+      "duration": 24,
+      "filename": "ifd/SYNTHETIC_ifd_24h.csv"
+    },
+    {
+      "duration": 36,
+      "filename": "ifd/SYNTHETIC_ifd_36h.csv"
+    },
+    {
+      "duration": 48,
+      "filename": "ifd/SYNTHETIC_ifd_48h.csv"
+    },
+    {
+      "duration": 72,
+      "filename": "ifd/SYNTHETIC_ifd_72h.csv"
+    }
+  ],
+  "PMP_depths": "ifd/SYNTHETIC_pmp_depths.csv",
+  "PMP_scaling": "ifd/SYNTHETIC_pmp_scaling.csv",
+  "AEP_of_PMP": 1100000,
+  "extreme_rainfall_interpolation_method": "GEV",
+  "extreme_spatial_smoothing_method": {
+    "interpolate_weights": [
+      1000,
+      2000
+    ]
+  }
+}

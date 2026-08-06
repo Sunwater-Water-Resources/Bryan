@@ -1,0 +1,41 @@
+Juniper Creek Dam - SYNTHETIC STUB, not a working RORB model
+C This file exists so Bryan can find the dam routing line and copy a catg into
+C the storms folder. It will not run in RORB.
+1
+2
+JC01
+1,0.00
+2
+JC02
+1,0.00
+2
+JC03
+1,0.00
+2
+JC04
+1,0.00
+2
+JC05
+1,0.00
+2
+JC06
+1,0.00
+2
+JC07
+1,0.00
+2
+JC08
+1,0.00
+2
+JC09
+1,0.00
+2
+JC10
+1,0.00
+16
+JuniperDam
+0,1,190000.0,0.0
+7
+0
+C AREAS
+120,95,140,88,76,110,65,82,71,53

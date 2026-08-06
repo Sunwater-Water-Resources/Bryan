@@ -1,0 +1,28 @@
+{
+  "model_type": "RORB",
+  "model_exe": "C:\\RORB\\RORBWin.exe",
+  "model_folder": "rorb",
+  "storms_folder": "rorb/storms",
+  "results_folder": "rorb/results",
+  "cat_file": "juniper.catg",
+  "par_file": "juniper.par",
+  "ADV_name": "JuniperDam",
+  "full_supply_volume": 190000.0,
+  "simulation_periods": {
+    "2": 50,
+    "3": 51,
+    "6": 54,
+    "9": 57,
+    "12": 60,
+    "18": 66,
+    "24": 72,
+    "36": 84,
+    "48": 96,
+    "72": 144
+  },
+  "max_keys": {
+    "inflow": "JuniperDam",
+    "level": "JuniperDam",
+    "outflow": "JuniperDam"
+  }
+}
