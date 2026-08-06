@@ -64,6 +64,41 @@ The Python code and the model/project data are kept separate, so one copy of Bry
 serves many dam catchments; models, catchment data, and study outputs are not part of this
 repository.
 
+## Try it without a model
+
+[`example_project/`](example_project/README.md) is a complete, self-contained project for a
+catchment that does not exist -- Juniper Creek Dam, 620 km² over ten subcatchments. It is
+there so a new user has working config files to copy, and can run something end to end before
+pointing Bryan at a real study.
+
+URBS and RORB are licensed programs this repository does not ship, but two of the three
+methods do not need them, and those are the ones set up to run:
+
+```
+cd example_project
+./run_storms_only.sh     # or run_storms_only.bat on Windows
+./run_routing.sh
+```
+
+- **`run_storms_only`** is a Monte Carlo row with `Run models` set to `storms only`: rainfall
+  setup, areal reduction, storm method sampling, all four temporal pattern sets, the embedded
+  burst filter, the sub-burst neutrality check and the PMP embedded burst screen. It writes
+  the results database without calling a hydrologic model.
+- **`run_routing`** re-routes a stored set of inflow hydrographs through the dam: Modified
+  Puls routing, antecedent volume handling, the Total Probability Theorem, quantile tables
+  and frequency curve plots.
+
+Between them they cover the whole chain except the rainfall-runoff step. Complete URBS and
+RORB config templates are included for that step, and both construct on a machine without the
+executables, so a setup can be checked before a licence is involved.
+
+The generic ARR and BoM reference data is real -- the ARR point and areal temporal patterns,
+the BoM GSDM and GTSMR patterns, the ARR climate change tables. Everything specific to the
+fictional catchment is invented and prefixed `SYNTHETIC_`: the IFD depths, PMP depths, dam
+curves and stored results. Copy the config structure, not the numbers. See
+[`example_project/README.md`](example_project/README.md) for the full split and a list of
+setup gotchas worth knowing before building a real project.
+
 ## Repository layout
 
 - `Main.py`, `RouteFlows.py` -- top-level entry points (thin dispatchers)
@@ -74,6 +109,7 @@ repository.
   imports; `ui/pages/` is the interface; `ui/tests/` runs without URBS or RORB
 - `util/` -- standalone post-processing scripts (frequency plots, representative events,
   design flood interpolation, etc.)
+- `example_project/` -- a runnable, self-contained example project for a fictional catchment
 - `Manual/` -- user guide and technical reference; run `Manual/render_manual.py` to render
   the Markdown to browsable HTML (Markdeep)
 - `IFD_export.py`, `DownstreamStormGenerator.py`, `StormInstance.py` -- legacy/ad-hoc
@@ -85,3 +121,5 @@ repository.
 - `Manual/Bryan_Technical_Reference_v1.pdf` -- authoritative technical reference
 - [`Manual/change_log.md`](Manual/change_log.md) -- design decisions and config-format
   changes
+- [`example_project/README.md`](example_project/README.md) -- the worked example, and what
+  to watch for when setting up a real project
