@@ -142,8 +142,11 @@ Redistribution is permitted, including commercially, with attribution. These fil
 included unmodified.
 
 **Bureau of Meteorology data** -- the GSDM and GTSMR temporal patterns
-(`example_project/storm_data/patterns/gsdm.pat` and `gtsmr_coastal_500.pat`). Subject to the
-Bureau's terms of use.
+(`example_project/storm_data/patterns/gsdm.pat` and `gtsmr_coastal_500.pat`). These are the
+Bureau's published PMP temporal patterns, freely available as part of its
+[design rainfall data](https://www.bom.gov.au/water/designRainfalls/index.shtml#pmp), held
+here in the plain-text `.pat` format URBS reads. © Commonwealth of Australia (Bureau of
+Meteorology); see the Bureau's terms of use.
 
 Everything else in `example_project/` is invented, prefixed `SYNTHETIC_`, and covered by this
 licence like the rest of the repository.
