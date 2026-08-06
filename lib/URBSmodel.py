@@ -525,11 +525,35 @@ class UrbsModel:
             if ready:
                 return
             if time.monotonic() > deadline:
-                raise RuntimeError(
-                    f'URBS finished but its result file was not completely written '
-                    f'within {timeout} seconds: {result_path}\n\nURBS output:\n{run_output}'
-                )
+                raise RuntimeError(self.results_not_written_message(result_path, timeout,
+                                                                   run_output))
             time.sleep(poll)
+
+    def results_not_written_message(self, result_path, timeout, run_output):
+        """Say what actually went wrong when the results never turned up.
+
+        The readiness test cannot tell "still being flushed" from "never written", so a
+        URBS run that failed to produce output at all times out here looking like a slow
+        disk. Report which of the two it was, and the free space, because the usual cause
+        of the second is a full disk - most often after ``Mop up files`` has been turned
+        off for a large Monte Carlo run, which leaves every realisation's output in place.
+        """
+        if not os.path.exists(result_path):
+            what = 'URBS exited without writing its result file at all'
+        elif os.path.getsize(result_path) == 0:
+            what = 'URBS exited leaving its result file empty'
+        else:
+            what = (f'URBS finished but its result file was still locked or incomplete '
+                    f'after {timeout} seconds')
+        try:
+            free_gb = shutil.disk_usage(self.output_folder).free / 1024 ** 3
+            space = f'\nFree space on the results drive: {free_gb:.1f} GB'
+            if free_gb < 5:
+                space += ('\nThat is low. If "Mop up files" is off, turn it back on - every '
+                          '\nrealisation keeps ~15 URBS output files when it is off.')
+        except OSError:
+            space = ''
+        return (f'{what}: {result_path}{space}\n\nURBS output:\n{run_output}')
 
     def create_storm_file(self, rainfall_depths, temporal_pattern, data_interval, filename, run_duration,
                           storm_duration, storm_duration_excl_pb, initial_loss, continuing_loss, ari=1, ensemble=0):
