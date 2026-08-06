@@ -3,6 +3,8 @@ This file contains classes used to create the design storms: temporal patterns, 
 pre bursts, initial losses
 """
 
+import contextlib
+import io
 import os
 import pandas as pd
 import numpy as np
@@ -455,14 +457,13 @@ class StormBurst:
         else:
             return 40000
 
-    def filter_temppat(self, temporal_pattern,
-                       z, main_burst_duration, ave_rain, storm_method, 
-                       buffer=1.0, climate_adjustment = None):
-        
-        original_temporal_pattern = temporal_pattern.copy()
-        
+    def build_temppat_filter_curve(self, z, main_burst_duration, ave_rain, storm_method,
+                                   climate_adjustment=None):
         # Construct temppat filter curve
-        # For given Z, get depths for all durations < storm duration, return as a pd.Series
+        # For given Z, get catchment-average depths for all durations < storm duration,
+        # normalised as a percentage of the main burst depth, returned as a pd.Series.
+        # Returns (curve, error_msg): error_msg is None unless a sub-duration depth
+        # exceeds the main burst depth (IFD inconsistency), in which case curve is None.
         data = {}
         z_2000 = ndtri(1 - 1 / 2000.0)
         duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
@@ -476,8 +477,7 @@ class StormBurst:
                         storm_method_1 = 'GSDM'
                     elif dur >= duration_changeover[1]:
                         storm_method_1 = 'GTSMR'
-
-                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False)
+                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method_1, print_msg=False)
                 embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
             elif self.rainfall.extreme_spatial_method == 'interpolate_weights':
                 if z <= z_2000:
@@ -487,21 +487,65 @@ class StormBurst:
                     embedded_ave = self.rainfall.catchment_ave_curves[dur].get_depth_z(z).array[0]
             else:
                 raise Exception('Invalid')
-            
+
             if climate_adjustment is not None:
                 embedded_ave = embedded_ave * climate_adjustment[dur]
-            
+
             normalised = embedded_ave / ave_rain * 100                              # Normalise as percentage of main burst depth
             if normalised > 100:
                 print(f'{main_burst_duration}h rain depth: {ave_rain}mm')
                 print(f'{dur}h rain depth: {embedded_ave}mm')
                 error_msg = f'{dur}h embedded burst depth exceeds {main_burst_duration}h burst depth for z: {z}'
-                return original_temporal_pattern, error_msg
-            data[dur] = normalised        
-        
+                return None, error_msg
+            data[dur] = normalised
+
         temppat_filter_curve = pd.Series(data)
         temppat_filter_curve.sort_index(ascending=True, inplace=True)
-        
+        return temppat_filter_curve, None
+
+    def measure_sub_bursts(self, temporal_pattern, z, main_burst_duration, ave_rain,
+                           storm_method, climate_adjustment=None):
+        # Measure the maximum rolling-window depth in the temporal pattern for each standard
+        # sub-duration, for the ensemble AEP-neutrality check on embedded bursts.
+        # Returns (sub_burst_mm, ifd_mm, error_msg): catchment-average sub-burst depths (mm)
+        # and the matching same-z IFD reference depths (mm), both indexed by sub-duration.
+        temppat_filter_curve, error_msg = self.build_temppat_filter_curve(z, main_burst_duration, ave_rain,
+                                                                          storm_method, climate_adjustment)
+        if error_msg is not None:
+            return None, None, error_msg
+
+        max_burst = {}
+        for dur in temppat_filter_curve.index:
+            window = dur / self.timesteps
+            if not window.is_integer():
+                continue
+            max_burst[dur] = temporal_pattern.rolling(int(window)).sum().max()
+
+        sub_burst_mm = pd.Series(max_burst) * ave_rain / 100.0
+        ifd_mm = temppat_filter_curve.loc[sub_burst_mm.index] * ave_rain / 100.0
+        return sub_burst_mm, ifd_mm, None
+
+    def embedded_burst_comment_from_measurement(self, sub_burst_mm, ifd_mm):
+        # Summarise a sub-burst measurement as an embedded burst comment (unfiltered patterns)
+        condition = sub_burst_mm / ifd_mm
+        if condition.max() > 1:
+            text = f'{condition.idxmax()}h burst exceeds by {condition.max()-1:.1%}'
+            embedded_burst_comment = f'Unfiltered embedded bursts: {text}'
+        else:
+            embedded_burst_comment = 'No embedded bursts'
+        return embedded_burst_comment
+
+    def filter_temppat(self, temporal_pattern,
+                       z, main_burst_duration, ave_rain, storm_method,
+                       buffer=1.0, climate_adjustment = None):
+
+        original_temporal_pattern = temporal_pattern.copy()
+
+        temppat_filter_curve, error_msg = self.build_temppat_filter_curve(z, main_burst_duration, ave_rain,
+                                                                          storm_method, climate_adjustment)
+        if error_msg is not None:
+            return original_temporal_pattern, error_msg
+
         embedded_burst_comment = "No embedded bursts"
         # storm_duration = temporal_pattern.index[-1]  # get storm duration 
         
@@ -586,72 +630,348 @@ class StormBurst:
 
         return temporal_pattern, embedded_burst_comment
     
-    def check_embedded_burst(self, temporal_pattern,                        
-                             z, main_burst_duration, ave_rain, storm_method, 
+    def check_embedded_burst(self, temporal_pattern,
+                             z, main_burst_duration, ave_rain, storm_method,
                              buffer=1.0, climate_adjustment = None):
-        
-        # Construct temppat filter curve
-        # For given Z, get depths for all durations < storm duration, return as a pd.Series
-        data = {}
-        z_2000 = ndtri(1 - 1 / 2000.0)
-        duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
-        for dur in self.rainfall.durations:
-            if dur >= main_burst_duration:
-                continue
-            if self.rainfall.extreme_spatial_method == 'interpolate_depths':
-                storm_method_1 = storm_method
-                if z > z_2000:
-                    if dur <= duration_changeover[0]:
-                        storm_method_1 = 'GSDM'
-                    elif dur >= duration_changeover[1]:
-                        storm_method_1 = 'GTSMR'
-                embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method_1, print_msg=False)
-                embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)  # Catchment average rain
-            elif self.rainfall.extreme_spatial_method == 'interpolate_weights':
-                if z <= z_2000:
-                    embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False, for_filtering=True)
-                    embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
-                else:
-                    embedded_ave = self.rainfall.catchment_ave_curves[dur].get_depth_z(z).array[0]
-            else:
-                raise Exception('Invalid')
 
-            # embedded_depth = self.rainfall.get_depth_z(z=z, duration=dur, storm_method=storm_method, print_msg=False)
-            # embedded_ave = self.get_average_rain(embedded_depth, print_msg=False)                       # Catchment average rain
-            
-            if climate_adjustment is not None:
-                embedded_ave = embedded_ave * climate_adjustment[dur]
-            
-            normalised = embedded_ave / ave_rain * 100                              # Normalise as percentage of main burst depth
-            if normalised > 100:
-                print(f'{main_burst_duration}h rain depth: {ave_rain}mm')
-                print(f'{dur}h rain depth: {embedded_ave}mm')
-                return f'Error: {dur}h embedded burst depth exceeds {main_burst_duration}h burst depth for z: {z}'
-            data[dur] = normalised        
-        
-        temppat_filter_curve = pd.Series(data)
-        temppat_filter_curve.sort_index(ascending=True, inplace=True)
-        
-        max_burst = {}
-        for dur in temppat_filter_curve.index:
-            window = dur / self.timesteps
-            if window.is_integer(): 
-                window = int(window)
-            else: 
-                continue
-                # return f'Error: duration {dur} is not a multiple of timestep {self.timesteps}'
-            
-            max_burst[dur] = temporal_pattern.rolling(window).sum().max()
-        
-        curve_max = pd.Series(max_burst)
-        condition = curve_max / temppat_filter_curve
-        if condition.max() > 1:
-            text = f'{condition.idxmax()}h burst exceeds by {condition.max()-1:.1%}'
-            embedded_burst_comment = f'Unfiltered embedded bursts: {text}'
+        sub_burst_mm, ifd_mm, error_msg = self.measure_sub_bursts(temporal_pattern, z, main_burst_duration,
+                                                                  ave_rain, storm_method, climate_adjustment)
+        if error_msg is not None:
+            return f'Error: {error_msg}'
+        return self.embedded_burst_comment_from_measurement(sub_burst_mm, ifd_mm)
+
+    def catchment_average_depth_z(self, z, duration, storm_method):
+        # Catchment-average burst depth (mm) at standard normal variate z, for the given
+        # duration and storm method. Mirrors the depth lookup in build_temppat_filter_curve.
+        z_2000 = ndtri(1 - 1 / 2000.0)
+        if self.rainfall.extreme_spatial_method == 'interpolate_weights' and z > z_2000:
+            return float(self.rainfall.catchment_ave_curves[duration].get_depth_z(z).array[0])
+        depth = self.rainfall.get_depth_z(z=z, duration=duration, storm_method=storm_method,
+                                          print_msg=False, for_filtering=True)
+        return float(self.get_average_rain(depth, print_msg=False))
+
+    def extreme_methods_for_duration(self, duration):
+        # The GSDM/GTSMR methods that can be sampled at this duration - mirrors apply_extreme_method
+        duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
+        if duration <= duration_changeover[0]:
+            methods = ['GSDM']
+        elif duration >= duration_changeover[1]:
+            methods = ['GTSMR']
         else:
-            embedded_burst_comment = 'No embedded bursts'
-        return embedded_burst_comment
-    
+            methods = ['GSDM', 'GTSMR']
+        return [m for m in methods if not self.skip_method == m.lower()]
+
+    def pmp_screen_pattern_sets(self, duration, aep_bounds):
+        # Enumerate the temporal pattern sets that can be sampled at this duration, each with the
+        # AEP window over which it is actually sampled.
+        # Returns a list of dicts: label, storm_method, patterns (DataFrame), timestep, aep_lo, aep_hi
+        aep_changeover = self.storm_method_config['aep_changeover_to_extreme']
+        run_lo, run_hi = aep_bounds
+        sets = []
+
+        # ARR patterns are sampled up to the top of the changeover zone
+        arr_hi = min(run_hi, aep_changeover[1])
+        if arr_hi > run_lo:
+            arr_method = self.apply_rare_method(duration)
+            if arr_method == 'ARR areal' and self.areal_temporal_patterns is not None:
+                all_patterns = self.areal_temporal_patterns.temporal_patterns
+                if duration in all_patterns:
+                    sets.append({'label': 'ARR areal', 'storm_method': 'ARR areal',
+                                 'patterns': all_patterns[duration],
+                                 'timestep': self.areal_temporal_patterns.timesteps[duration],
+                                 'aep_lo': run_lo, 'aep_hi': arr_hi})
+            elif arr_method == 'ARR point' and self.point_temporal_patterns is not None:
+                all_patterns = self.point_temporal_patterns.temporal_patterns
+                if duration in all_patterns:
+                    timestep = self.point_temporal_patterns.timesteps[duration]
+                    # AEP windows matching point_tp_frequency_bins
+                    bins = {'frequent': (0.0, 100 / 14.4),
+                            'intermediate': (100 / 14.4, 100 / 3.2),
+                            'rare': (100 / 3.2, np.inf)}
+                    for frequency, (bin_lo, bin_hi) in bins.items():
+                        if frequency not in all_patterns[duration]:
+                            continue
+                        lo = max(run_lo, bin_lo)
+                        hi = min(arr_hi, bin_hi)
+                        if hi <= lo:
+                            continue
+                        sets.append({'label': f'ARR point ({frequency})', 'storm_method': 'ARR point',
+                                     'patterns': all_patterns[duration][frequency],
+                                     'timestep': timestep, 'aep_lo': lo, 'aep_hi': hi})
+
+        # GSDM/GTSMR patterns are sampled from the bottom of the changeover zone
+        ext_lo = max(run_lo, aep_changeover[0])
+        if run_hi > ext_lo:
+            for storm_method in self.extreme_methods_for_duration(duration):
+                if storm_method == 'GSDM':
+                    patterns_obj = self.gsdm_temporal_patterns
+                else:
+                    patterns_obj = self.gtsmr_temporal_patterns
+                if patterns_obj is None or duration not in patterns_obj.temporal_patterns:
+                    continue
+                sets.append({'label': storm_method, 'storm_method': storm_method,
+                             'patterns': patterns_obj.temporal_patterns[duration],
+                             'timestep': patterns_obj.timesteps[duration],
+                             'aep_lo': ext_lo, 'aep_hi': run_hi})
+        return sets
+
+    def rainfall_uplift_factors(self, durations, climate, apply_rainfall_uplift=True):
+        # Rainfall uplift factor per duration, as a dict keyed by float duration. The uplift
+        # scales the whole frequency curve for a duration, so it applies to the PMP anchor as
+        # well as to the sampled depths. It is duration dependent (currently 15%/degC at 1 hour
+        # easing to 8%/degC at 24 hours and beyond), so factors differ between a sub-duration
+        # and its parent. Printed as one line rather than two per duration.
+        if climate is None or not apply_rainfall_uplift:
+            return {float(d): 1.0 for d in durations}
+        factors = {}
+        with contextlib.redirect_stdout(io.StringIO()):
+            for duration in durations:
+                factors[float(duration)] = float(climate.get_rainfall_uplift_factor(duration=duration))
+        if any(abs(f - 1.0) > 1e-9 for f in factors.values()):
+            print('\nRainfall uplift factors applied (to the PMP depths as well as the sampled depths):')
+            print('  ' + '  '.join(f'{d:g}h {f:.3f}' for d, f in sorted(factors.items())))
+        return factors
+
+    def check_pmp_depth_duration_curve(self):
+        # The screen compares sub-burst depths against ratios of the composite PMP depth-duration
+        # curve, so that curve has to be monotonic in depth and decreasing in intensity.
+        pmp_depth = self.rainfall.pmp.catchment_depth.sort_index()
+        messages = []
+        durations = list(pmp_depth.index)
+        for short, long in zip(durations[:-1], durations[1:]):
+            if pmp_depth[long] < pmp_depth[short]:
+                messages.append(f'WARNING: PMP depth decreases from {short}h to {long}h '
+                                f'({pmp_depth[short]:.0f}mm to {pmp_depth[long]:.0f}mm)')
+            if pmp_depth[long] / long > pmp_depth[short] / short:
+                messages.append(f'WARNING: PMP intensity increases from {short}h to {long}h '
+                                f'({pmp_depth[short] / short:.1f} to {pmp_depth[long] / long:.1f} mm/h)')
+        return messages
+
+    def screen_pmp_embedded_bursts(self, storm_durations, aep_bounds,
+                                   climate=None, apply_rainfall_uplift=True):
+        """
+        Screen the temporal patterns for embedded bursts that would exceed the PMP for their own
+        sub-duration. This is a pre-simulation check: it depends only on the patterns and the
+        catchment-average PMP depth-duration curve, not on the sampling.
+
+        For a pattern holding a fraction r_s of its depth in the worst window of sub-duration s,
+        the sub-burst reaches the sub-duration PMP once the burst depth exceeds
+
+            D_crit = PMP_s / r_s
+
+        Above the PMP anchor the sampled depth and the bound scale together (the bound being
+        PMP_s * max(1, depth / PMP_d)), so the exceedance ratio stops growing and holds at
+        PMP_d / D_crit. A pattern with D_crit >= PMP_d never breaches at any depth.
+
+        All depths here are the climate-adjusted ones the run actually simulates. The rainfall
+        uplift scales a duration's whole frequency curve, PMP anchor included, so PMP_s and
+        PMP_d carry their own duration's factor. Because the factor is duration dependent, a
+        sub-duration is generally uplifted more than its parent, which makes the exceedance
+        ratio climate dependent even though r_s is a fixed property of the pattern.
+
+        Returns a DataFrame with one row per (duration, pattern set, pattern).
+        """
+        if self.rainfall is None or self.rainfall.pmp is None:
+            print('\nPMP embedded burst screen skipped - extreme rainfall has not been set up.')
+            return pd.DataFrame()
+
+        print('\n' + '=' * 100)
+        print('PMP EMBEDDED BURST SCREEN')
+        print('=' * 100)
+        print('Checking each temporal pattern for embedded bursts that would exceed the PMP for')
+        print('their own sub-duration. D_crit is the burst depth at which the bound first engages;')
+        print('the exceedance ratio is constant at PMP_d / D_crit once the depth reaches the PMP')
+        print('anchor, so it bounds the severity however far the sampling extrapolates.')
+
+        for message in self.check_pmp_depth_duration_curve():
+            print(message)
+
+        pmp_depth = self.rainfall.pmp.catchment_depth
+        pmp_lookup = {float(d): float(v) for d, v in pmp_depth.items()}
+        z_2000 = ndtri(1 - 1 / 2000.0)
+        z_pmp = ndtri(1 - 1 / self.rainfall.pmp.aep_of_pmp)
+        z_table_lo = ndtri(1 - 1 / 2.0)
+
+        # The rainfall uplift scales the whole frequency curve for a duration, PMP anchor
+        # included, so the PMP depths are uplifted here by their own duration's factor. The
+        # factor is duration dependent, so a sub-duration is generally uplifted more than its
+        # parent and the exceedance ratio is climate dependent even though r_s is not.
+        uplift_lookup = self.rainfall_uplift_factors(
+            sorted(set(list(pmp_lookup)) | {float(d) for d in storm_durations}),
+            climate, apply_rainfall_uplift)
+
+        rows = []
+        depth_tables = {}
+        for duration in sorted(storm_durations):
+            if float(duration) not in pmp_lookup:
+                print(f'\nCHECK:   No PMP depth for the {duration}h storm duration - not screened.')
+                continue
+            uplift = uplift_lookup[float(duration)]
+            pmp_parent = pmp_lookup[float(duration)] * uplift
+            sub_durations = [d for d in sorted(self.rainfall.durations)
+                             if d < duration and float(d) in pmp_lookup]
+            if not sub_durations:
+                continue
+
+            for pattern_set in self.pmp_screen_pattern_sets(duration, aep_bounds):
+                timestep = pattern_set['timestep']
+                patterns = pattern_set['patterns']
+                storm_method = pattern_set['storm_method']
+
+                # Depth-vs-z table for converting D_crit to an AEP. ARR depths are only defined
+                # up to 1 in 2,000, which is also where ARR patterns stop being sampled.
+                table_hi = z_2000 if storm_method.startswith('ARR') else z_pmp
+                table_key = (duration, storm_method)
+                if table_key not in depth_tables:
+                    z_axis = np.linspace(z_table_lo, table_hi, 60)
+                    depths = np.array([self.catchment_average_depth_z(z, duration, storm_method)
+                                       for z in z_axis]) * uplift
+                    depth_tables[table_key] = (z_axis, depths)
+                z_axis, depths = depth_tables[table_key]
+
+                for pattern_number in patterns.columns:
+                    pattern = patterns[pattern_number]
+                    total = pattern.sum()
+                    if total <= 0:
+                        continue
+
+                    # The binding sub-duration is the one with the largest r_s / PMP_s, which is
+                    # both the first to engage and the most severe (PMP_d is fixed for the row).
+                    binding = None
+                    for sub_duration in sub_durations:
+                        window = sub_duration / timestep
+                        if not float(window).is_integer():
+                            continue
+                        r_s = pattern.rolling(int(window)).sum().max() / total
+                        if not np.isfinite(r_s) or r_s <= 0:
+                            continue
+                        pmp_sub = pmp_lookup[float(sub_duration)] * uplift_lookup[float(sub_duration)]
+                        d_crit = pmp_sub / r_s
+                        if binding is None or d_crit < binding['d_crit']:
+                            binding = {'sub_duration': sub_duration, 'r_s': r_s,
+                                       'pmp_sub': pmp_sub, 'd_crit': d_crit}
+                    if binding is None:
+                        continue
+
+                    ratio = pmp_parent / binding['d_crit']
+                    aep_crit = np.nan
+                    table_top_aep = float(1 / (1 - ndtr(table_hi)))
+                    share = 0.0
+                    if ratio > 1.0:
+                        # Depth is monotonic in z, so interpolate z at D_crit
+                        if binding['d_crit'] <= depths[0]:
+                            z_crit = z_axis[0]
+                        elif binding['d_crit'] >= depths[-1]:
+                            z_crit = np.nan
+                        else:
+                            z_crit = float(np.interp(binding['d_crit'], depths, z_axis))
+                        if np.isfinite(z_crit):
+                            aep_crit = float(1 / (1 - ndtr(z_crit)))
+                            z_lo = ndtri(1 - 1 / pattern_set['aep_lo']) if pattern_set['aep_lo'] > 1 else z_table_lo
+                            z_hi = ndtri(1 - 1 / pattern_set['aep_hi']) if np.isfinite(pattern_set['aep_hi']) else table_hi
+                            if z_hi > z_lo:
+                                share = float(np.clip((z_hi - z_crit) / (z_hi - z_lo), 0.0, 1.0))
+
+                    rows.append({'duration': duration,
+                                 'pattern_set': pattern_set['label'],
+                                 'storm_method': storm_method,
+                                 'pattern': pattern_number,
+                                 'sub_duration': binding['sub_duration'],
+                                 'r_s': binding['r_s'],
+                                 'pmp_sub_mm': binding['pmp_sub'],
+                                 'pmp_parent_mm': pmp_parent,
+                                 'uplift_sub': uplift_lookup[float(binding['sub_duration'])],
+                                 'uplift_parent': uplift,
+                                 'd_crit_mm': binding['d_crit'],
+                                 'ratio_at_pmp': ratio,
+                                 'aep_crit': aep_crit,
+                                 'depth_curve_top_aep': table_top_aep,
+                                 'sampled_aep_lo': pattern_set['aep_lo'],
+                                 'sampled_aep_hi': pattern_set['aep_hi'],
+                                 'share_of_realisations': share,
+                                 'breaches': bool(ratio > 1.0),
+                                 'breaches_in_window': bool(share > 0.0)})
+
+        screen_df = pd.DataFrame(rows)
+        self.report_pmp_embedded_burst_screen(screen_df)
+        return screen_df
+
+    def report_pmp_embedded_burst_screen(self, screen_df):
+        # Print the screen results and the warning
+        if screen_df.empty:
+            print('\nNo temporal patterns were screened.')
+            print('=' * 100)
+            return
+
+        def format_aep(row):
+            if not np.isfinite(row['aep_crit']):
+                return f'> 1 in {row["depth_curve_top_aep"]:,.0f}'
+            return f'1 in {row["aep_crit"]:,.0f}'
+
+        breaching = screen_df[screen_df['breaches']]
+        if breaching.empty:
+            worst = screen_df.loc[screen_df['ratio_at_pmp'].idxmax()]
+            print('\nNo temporal pattern reaches the PMP for any of its sub-durations, at any depth.')
+            print(f'Closest is pattern {worst["pattern"]} of the {worst["pattern_set"]} set for the '
+                  f'{worst["duration"]}h storm: were its burst depth to reach the {worst["duration"]}h PMP,')
+            print(f'its {worst["sub_duration"]}h sub-burst would reach {worst["ratio_at_pmp"]:.0%} of the '
+                  f'{worst["sub_duration"]}h PMP.')
+            print('No filtering of embedded bursts against the PMP is required for this simulation.')
+            print('=' * 100)
+            return
+
+        print('\nPatterns whose worst sub-burst reaches the PMP for its own sub-duration:')
+        print(f'\n{"storm":>7} {"pattern set":<22} {"tp":>3} {"sub-dur":>8} {"r_s":>6} '
+              f'{"D_crit":>9} {"engages at":>14} {"ratio":>7} {"share":>7}')
+        for _, row in breaching.sort_values(['duration', 'pattern_set', 'pattern']).iterrows():
+            print(f'{row["duration"]:>6}h {row["pattern_set"]:<22} {row["pattern"]:>3} '
+                  f'{row["sub_duration"]:>7}h {row["r_s"]:>6.3f} '
+                  f'{row["d_crit_mm"]:>7.0f}mm {format_aep(row):>14} '
+                  f'{row["ratio_at_pmp"]:>6.2f}x {row["share_of_realisations"]:>6.1%}')
+        print('\n  D_crit     burst depth at which the sub-burst first reaches the sub-duration PMP')
+        print('  engages at AEP at which the burst depth reaches D_crit')
+        print('             all depths are climate adjusted, PMP included, each at its own uplift')
+        print('  ratio      sub-burst / bound once the burst depth reaches the PMP anchor - the ceiling')
+        print('  share      share of sampled realisations for that pattern set above D_crit')
+
+        in_window = screen_df[screen_df['breaches_in_window']]
+        counts = breaching['sub_duration'].value_counts().sort_index()
+        print('\nBinding sub-durations: ' +
+              ', '.join(f'{sub}h x{n}' for sub, n in counts.items()))
+        if len(breaching) >= 3:
+            print('Breaches clustered either side of a join in the composite PMP depth-duration curve')
+            print('point to the curve rather than to the patterns.')
+
+        if in_window.empty:
+            print(f'\nCHECK:   {len(breaching)} of {len(screen_df)} patterns can breach the PMP, but only at')
+            print('         depths beyond the AEP range being sampled. No action needed for this run.')
+            print('=' * 100)
+            return
+
+        worst = in_window.loc[in_window['ratio_at_pmp'].idxmax()]
+        excess = worst['ratio_at_pmp'] - 1
+        print(f'\nWARNING: {len(in_window)} of {len(screen_df)} temporal patterns produce a sub-burst above')
+        print('         the PMP for its own sub-duration within the sampled AEP range.')
+        print(f'         Worst is pattern {worst["pattern"]} of the {worst["pattern_set"]} set for the '
+              f'{worst["duration"]}h storm: its')
+        print(f'         {worst["sub_duration"]}h sub-burst exceeds the {worst["sub_duration"]}h PMP by '
+              f'{excess:.1%} at and above the PMP anchor, engaging')
+        print(f'         from {format_aep(worst)} '
+              f'({worst["share_of_realisations"]:.1%} of that pattern set\'s realisations).')
+        if excess < 0.05:
+            print(f'         An exceedance of {excess:.1%} is within the uncertainty of a generalised PMP')
+            print('         estimate - a hard clip at the PMP would be spuriously crisp.')
+        elif excess < 0.2:
+            print(f'         An exceedance of {excess:.1%} is beyond rounding on the PMP estimate but not')
+            print('         structural. Check the areal and method treatment of the binding sub-duration.')
+        else:
+            print(f'         An exceedance of {excess:.1%} is structural, not estimate uncertainty.')
+        if (in_window['storm_method'].isin(['GSDM', 'GTSMR'])).any():
+            print('         Some breaching patterns are GSDM/GTSMR patterns, which also feed the')
+            print('         deterministic PMF - filtering them here but not there would lower the')
+            print('         derived curve while holding the PMF fixed.')
+        print('=' * 100)
+
     # Not used
     def filter_preburst_pattern(self, temporal_pattern, initial_loss_normalised):
         

@@ -160,9 +160,14 @@ def test_returncode_explanations(code, expected):
 
 
 def test_eoferror_is_explained_in_terms_of_the_input_calls():
-    """stdin=DEVNULL turns three hangs into three fast failures."""
+    """stdin=DEVNULL turns the remaining hangs into fast failures.
+
+    The URBS executable prompt was the third; it now warns and carries on, so a
+    missing executable never reaches here.
+    """
     text = progress.explain_error("EOFError: EOF when reading a line")
-    assert "open in Excel" in text and "URBS executable" in text
+    assert "open in Excel" in text
+    assert "URBS" not in text
 
 
 def test_missing_file_error_is_explained():

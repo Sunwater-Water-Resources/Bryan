@@ -6,3 +6,5 @@ For the Monte Carlo simulations, the total probability theorem is used to extrac
 For the ensemble method, the median (Rank 6) of the inflow, lake level, and outflow is identified for each AEP and storm duration, and then the critical storm duration is identified for the inflow, lake level, and outflow. Again, csv files are created of the outputs and box plots are created of the analysis. 
 
 A [reservoir routing](sim_list.md#thereservoirroutingmethod) simulation is analysed by whichever of these two applies to the results it was given: the total probability theorem where it re-routed a Monte Carlo run, and the medians and critical durations where it re-routed an ensemble. The outputs are the same in each case, so a re-routed result can be compared directly against the run it came from.
+
+For Monte Carlo simulations, an additional analysis is available to help decide whether embedded bursts should be filtered: a frequency curve of the sub-burst depths within the sampled storms is derived by the total probability theorem and compared with the IFD. See [the sub-burst check](sub_burst_check.md).

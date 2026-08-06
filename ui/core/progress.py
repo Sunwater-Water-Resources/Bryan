@@ -234,9 +234,14 @@ def explain_error(error: str) -> str:
     """Turn a run-log Error into something actionable.
 
     ``EOFError`` is the one worth explaining: the UI launches Bryan with
-    ``stdin=DEVNULL``, so the three ``input()`` prompts in MCScheme.store_simulations,
-    lib/EnbScheme.py:60 and lib/URBSmodel.py:41 raise instead of hanging a
+    ``stdin=DEVNULL``, so the ``input()`` prompts in MCScheme.store_simulations
+    (lib/MCScheme.py:162) and lib/EnbScheme.py:60 raise instead of hanging a
     windowless process forever. Bryan catches that per row and carries on.
+
+    There used to be a third, in lib/URBSmodel.py, when the URBS executable was
+    not where the model config said. That one now warns and carries on instead,
+    so a missing executable no longer shows up here - it fails later, and only
+    for a simulation that actually runs the model.
     """
     if not error:
         return ""
@@ -244,9 +249,8 @@ def explain_error(error: str) -> str:
         return (
             "Bryan asked a question on the console, which a background run "
             "cannot answer, so the simulation failed instead of hanging. The "
-            "two causes are an output CSV still open in Excel "
-            "(MCScheme/EnbScheme.store_simulations) and a URBS executable "
-            "that is not where the model config says (lib/URBSmodel.py:41)."
+            "cause is an output CSV still open in Excel "
+            "(MCScheme/EnbScheme.store_simulations)."
         )
     if error.startswith(("FileNotFoundError", "NotADirectoryError")):
         return ("An input file was not where the sims list said. Paths resolve "

@@ -1,0 +1,11 @@
+Juniper Creek Dam - SYNTHETIC STUB RORB parameter file
+C Bryan reads this as a template and writes one par file per simulation with the
+C rainfall losses filled in. Replace with a calibrated par file for a real study.
+Run name: juniper
+Catchment file: juniper.catg
+Storm file: placeholder.stm
+Number of interstation areas: 1
+Kc: 2.10
+m: 0.80
+Initial loss (mm): 30.0
+Continuing loss (mm/h): 2.0

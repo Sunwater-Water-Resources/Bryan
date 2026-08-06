@@ -1,0 +1,13 @@
+{
+  "exceedance_layer_info": {
+    "type": "sigmoid",
+    "coefficients": {
+      "k": 2.0,
+      "Vf": 45000.0,
+      "H": 1,
+      "z0": 0.9,
+      "Vc": 190000.0
+    }
+  },
+  "volume_cap": "fsv"
+}

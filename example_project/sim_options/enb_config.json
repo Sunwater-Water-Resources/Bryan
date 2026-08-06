@@ -1,0 +1,22 @@
+{
+  "storm_durations": [
+    12,
+    18,
+    24,
+    36,
+    48,
+    72
+  ],
+  "aep_list": [
+    100,
+    1000,
+    2000,
+    10000,
+    100000,
+    1600000
+  ],
+  "storm_method_config": {
+    "interim_for_ensemble": "both",
+    "extreme_pattern_for_ensemble": "GTSMR"
+  }
+}

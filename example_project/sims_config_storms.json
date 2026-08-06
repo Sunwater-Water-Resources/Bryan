@@ -1,0 +1,9 @@
+{
+  "simulation_list": "SimsList_storms.xlsx",
+  "test_runs": 0,
+  "filepaths": {
+    "model_config": "model/rorb_config.json",
+    "storm_config": "storm_data/storm_config.json",
+    "climate_config": "climate_change/climate_config.json"
+  }
+}

@@ -109,12 +109,20 @@ class SampleScheme:
         print(f'Sampling rainfall from {main_division} main division and {sub_division} sub division with z of {z}')
         return z
 
-    def get_temporal_pattern_sample(self, front_w, front_patterns, m=3):
+    def get_temporal_pattern_sample(self, front_w, front_patterns, m=3, base_weights=None):
         # the 'm' parameter is the number of more forward loaded events
         # used in the weightings: top third (3 out of 10) was used in the Sharpe analysis
+        # base_weights: optional temporal pattern probability weights (e.g. calibrated for
+        # sub-burst neutrality) - composed with the D50 shift weightings
         # returns integer between 0 and 9
         if front_w < 0.1001:
-            sample = np.random.randint(self.number_of_temporal_patterns)
+            if base_weights is None:
+                sample = np.random.randint(self.number_of_temporal_patterns)
+            else:
+                patterns = list(range(self.number_of_temporal_patterns))
+                probabilities = np.asarray(base_weights, dtype=float)
+                probabilities = probabilities / probabilities.sum()
+                sample = np.random.choice(patterns, p=probabilities)
         else:
             # back_w = (self.number_of_temporal_patterns - 3 * front_w) / (self.number_of_temporal_patterns - m)
             back_w = (1 - 3 * front_w) / (self.number_of_temporal_patterns - m)
@@ -135,6 +143,10 @@ class SampleScheme:
             # print(f'Front weighting: {front_w} | Back weighting: {back_w} | Sum check: {check}')
             # print(patterns)
             # print(probabilities)
+            if base_weights is not None:
+                # Compose the D50 shift weightings with the pattern probability weights
+                probabilities = np.asarray(probabilities) * np.asarray(base_weights, dtype=float)
+                probabilities = probabilities / probabilities.sum()
             sample = np.random.choice(patterns, p=probabilities)
         return sample
 
@@ -302,7 +314,11 @@ class SampleScheme:
 
         # Get aep of quantiles for each simulation
         print(f'\nRunning TPT analysis for {result_type}...')
-        tpt = TotalProbTheorem(self.m, self.n, self.main_divisions, mcdf[['m', result_type]])
+        tpt_cols = ['m', result_type]
+        if 'tp_w' in mcdf.columns:
+            print('Found a tp_w column: applying temporal pattern probability weights in the TPT')
+            tpt_cols.append('tp_w')
+        tpt = TotalProbTheorem(self.m, self.n, self.main_divisions, mcdf[tpt_cols])
         # tpt.tpt_limits = {'lower': mcdf.loc[mcdf['m'] == 0, result_type].mean(),
         #                   'upper': mcdf.loc[mcdf['m'] == self.m - 1, result_type].mean()}
         tpt.tpt_limits = {'lower': self.lower_aep * 0.98, 'upper': self.upper_aep * 1.02}
@@ -324,6 +340,7 @@ class SampleScheme:
 
         # change the interpolation to being in log-normal space
         std_norm_var = ndtri(1 - std_aeps_frac)
+        ascending = ascending.dropna()      # e.g. sub-burst measurements missing for some realisations
         ascending['z'] = ndtri(1 - ascending[f'{result_type}_aep'])
         ascending.sort_values('z', inplace=True)
         quantiles = np.interp(std_norm_var,
@@ -372,7 +389,11 @@ class SampleScheme:
 
         return std_aeps
 
-    def plot_tpt_results_2(self, result_type, output_filename, show_fig=False, percentiles=None):
+    def plot_tpt_results_2(self, result_type, output_filename, show_fig=False, percentiles=None,
+                           reference=None):
+        # reference: optional dataframe with columns ['rain_z', 'storm_method', <values>] holding a
+        # per-realisation reference curve (e.g. the same-z IFD depths for the sub-burst check),
+        # plotted as one dashed branch per storm method
         fig, ax = plt.subplots()
 
         # inserting the main data points
@@ -405,7 +426,15 @@ class SampleScheme:
         x = df['aep (1 in x)']
         z = ndtri(1 - 1 / x)
         y = df[result_type]
-        ax.plot(z, y, '-', color='k')
+        ax.plot(z, y, '-', color='k', label='TPT')
+
+        # Inserting the reference curve if provided (same-z IFD for the sub-burst neutrality check)
+        if reference is not None:
+            ref_col = reference.columns[-1]
+            for method, group in reference.groupby('storm_method'):
+                group = group.sort_values('rain_z')
+                ax.plot(group['rain_z'], group[ref_col], '--', linewidth=1.2, label=f'IFD ({method})')
+            ax.legend()
 
         # Formatting the plot
         min_flow = y.min()
@@ -427,6 +456,10 @@ class SampleScheme:
             duration = result_type[3: 6]
             duration = duration.replace('h', '')
             plot_labels = {result_type: f'{duration} hr Volume (m³)'}
+        if result_type[0: 9] == 'subburst_':
+            duration = result_type[9:]
+            duration = duration.replace('h', '')
+            plot_labels = {result_type: f'{duration} hr sub-burst depth (mm)'}
         std_aeps = np.array(self.get_standard_aeps())
         std_z = ndtri(1 - 1 / std_aeps)
         ax.set_xticks(std_z)
@@ -500,8 +533,14 @@ class TotalProbTheorem:
         n = self.n
         compute_df = self.compute_df
         edge_df = self.edge_df
-        compute_df['num'] = self.mcdf.groupby('m').apply(lambda div: sum(div[result_type] > peak_value))
-        compute_df['pH'] = compute_df['num'] / self.n
+        if 'tp_w' in self.mcdf.columns:
+            # Weighted pattern probabilities (e.g. calibrated temporal pattern weights):
+            # pH is the weighted exceedance fraction within each main division
+            compute_df['pH'] = self.mcdf.groupby('m').apply(
+                lambda div: (div['tp_w'] * (div[result_type] > peak_value)).sum() / div['tp_w'].sum())
+        else:
+            compute_df['num'] = self.mcdf.groupby('m').apply(lambda div: sum(div[result_type] > peak_value))
+            compute_df['pH'] = compute_df['num'] / self.n
 
         # # Special treatment for first and last intervals as per Nathan and Weinmann 2013
         # pQr0 = compute_df.loc[0, 'pH']
@@ -546,3 +585,28 @@ class TotalProbTheorem:
         #        aep = np.nan
         return aep
 
+
+
+def interpolate_reference_curve(reference, ref_col, std_z):
+    # Interpolate a per-realisation reference curve at the standard-AEP z values.
+    # reference: dataframe with columns ['rain_z', 'storm_method', ref_col]. The curve is
+    # interpolated per storm method (the reference is branched in the ARR to GSDM/GTSMR
+    # changeover zone) and the lowest branch is adopted (conservative). Gaps between branches
+    # are bridged; NaN is returned beyond the sampled z range.
+    branches = []
+    for method, group in reference.groupby('storm_method'):
+        group = group.sort_values('rain_z')
+        branches.append(np.interp(std_z, group['rain_z'], group[ref_col],
+                                  left=np.nan, right=np.nan))
+    curve = pd.DataFrame(branches).min(axis=0)              # skips NaN (branch out of range)
+    curve = pd.Series(curve.to_numpy(), index=std_z).interpolate(method='index', limit_area='inside')
+    return curve
+
+
+def neutrality_margin(quant_df, reference, col, ifd_col):
+    # Ratio of the TPT sub-burst quantile to the same-z IFD depth at the standard AEPs.
+    # Values above 1.0 indicate sub-bursts occur more often than the IFD implies.
+    std_z = ndtri(1 - quant_df['probability'].to_numpy())
+    ifd_at_std = interpolate_reference_curve(reference, ifd_col, std_z)
+    margin = quant_df[col].to_numpy() / ifd_at_std.to_numpy()
+    return pd.Series(np.around(margin, 3), index=quant_df['aep (1 in x)'].to_numpy())

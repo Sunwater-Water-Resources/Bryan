@@ -85,6 +85,15 @@ References/
 # ---------------------------
 *.md.html
 Manual/markdeep.min.js
+# ---------------------------
+# The example project ships its own (synthetic) data - see example_project/README.md
+# The blanket *.csv / *.xlsx rules above would otherwise drop most of it.
+# Its results/ folder stays ignored, being run output.
+# ---------------------------
+!example_project/**/*.csv
+!example_project/**/*.xlsx
+example_project/model/*/storms/
+example_project/SimsList_*_log.csv
 
 # ---------------------------
 # Run launcher UI (ui/)
