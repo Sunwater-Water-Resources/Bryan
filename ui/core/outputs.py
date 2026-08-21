@@ -11,7 +11,8 @@ what lets the UI say whether a row has already run without launching anything.
     reservoir routing   <Results folder>/<Output file>__mcdf.csv          (MC input)
                         <Results folder>/<Output file><suffix>.csv        (ensemble)
                         <Results folder>/<Output file>__<type>_quantiles<suffix>.csv
-                                                        lib/ReservoirRouting.py:770,771,1019
+                        <Results folder>/<Output file>__inflow_volumes<suffix>.csv
+                                                        lib/ReservoirRouting.py
 
 ``lib/ReservoirRouting.py:787-803`` (``_ensure_mcdf_loaded``) already probes the
 two reservoir-routing paths to find a previously-routed database, so this module
@@ -28,7 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .columns import ENSEMBLE, MONTE_CARLO, RESERVOIR_ROUTING, normalise_method
+from .columns import (ENSEMBLE, MONTE_CARLO, RESERVOIR_ROUTING,
+                      analyses_volumes, normalise_method)
 from .paths import cell_text, resolve_value
 
 RESULT_TYPES = ("inflow", "level", "outflow")
@@ -132,6 +134,11 @@ def _reservoir_outputs(row, project_folder, output_file) -> OutputSet:
         results_folder / f"{basename}__{kind}_quantiles{suffix}.csv"
         for kind in RESULT_TYPES
     )
+    if analyses_volumes(row):
+        # One table of every event's volumes. The per-duration quantile files
+        # beside it are named for the durations in the row's Config file, which
+        # the UI does not open, so they are left out rather than guessed at.
+        secondary += (results_folder / f"{basename}__inflow_volumes{suffix}.csv",)
     hydrographs = resolve_value(project_folder, row.get("Hydrographs folder"))
     folders = (results_folder,) + ((hydrographs,) if hydrographs else ())
 

@@ -189,3 +189,24 @@ def test_run_log_history_is_read_but_not_used_to_decide(project):
 def test_rerun_worthy_covers_the_states_a_bulk_action_should_select():
     assert set(completion.RERUN_WORTHY) == {
         completion.NOT_RUN, completion.STALE, completion.INCOMPLETE}
+
+
+def test_a_volume_row_lists_the_volume_table_it_writes(project):
+    """The volume table is secondary - it says what the row writes, and never
+    decides whether the row has run."""
+    from core import outputs
+
+    columns = TINAROO_COLUMNS + ["Analyse volumes"]
+    row = reservoir_row(**{"Output file": "out", "Output suffix": "opt",
+                           "Analyse volumes": "yes"})
+    config, sims = setup(project, [row], columns=columns)
+
+    written = outputs.outputs_for(sims.frame.loc[0], config.project_folder)
+    names = [path.name for path in written.secondary]
+    assert "out__inflow_volumes_opt.csv" in names
+    assert not any("inflow_volumes" in path.name for path in written.primary)
+
+    plain = reservoir_row(**{"Output file": "out", "Output suffix": "opt"})
+    config, sims = setup(project, [plain], columns=columns)
+    written = outputs.outputs_for(sims.frame.loc[0], config.project_folder)
+    assert not any("inflow_volumes" in path.name for path in written.secondary)

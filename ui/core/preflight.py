@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 from . import completion as completion_module
 from .columns import (REPLICATE_FILE_ALIASES, RESERVOIR_ROUTING,
-                      climate_requirement, method_is_exact, normalise_method,
-                      requirements_for, runs_models)
+                      analyses_volumes, climate_requirement, method_is_exact,
+                      normalise_method, requirements_for, runs_models)
 from .outputs import collision_key
 from .paths import cell_text, is_blank, resolve_value
 
@@ -116,7 +116,8 @@ def _missing_columns(frame, selected) -> list[Issue]:
         method = normalise_method(row.get("Method"))
         if not method:
             continue
-        for requirement in requirements_for(method, runs_models(row)):
+        for requirement in requirements_for(method, runs_models(row),
+                                            analyses_volumes(row)):
             if requirement.present_in(columns) is None:
                 missing.setdefault(requirement.name, []).append(index)
 
@@ -145,7 +146,8 @@ def _blank_required(frame, selected) -> list[Issue]:
         method = normalise_method(row.get("Method"))
         if not method:
             continue
-        for requirement in requirements_for(method, runs_models(row)):
+        for requirement in requirements_for(method, runs_models(row),
+                                            analyses_volumes(row)):
             name = requirement.present_in(columns)
             # A blank Config file is legitimate for reservoir routing with
             # ensemble input - sim_list.md says to leave it blank.
@@ -171,7 +173,8 @@ def _missing_inputs(frame, config, selected) -> list[Issue]:
         if not method:
             continue
         missing = []
-        for requirement in requirements_for(method, runs_models(row)):
+        for requirement in requirements_for(method, runs_models(row),
+                                            analyses_volumes(row)):
             if not requirement.is_path:
                 continue
             name = requirement.present_in(frame.columns)
