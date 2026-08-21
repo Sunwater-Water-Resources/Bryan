@@ -25,7 +25,9 @@ All config files are [JSON](config/json_files.md) files that set up the inputs t
 	}
 }
 ```
-There is an optional key ```test run``` that is used for testing the code during development. If this key is included, the number of simulations in the monte carlo simulations will be killed early, only running the number of simulations provided to this key (e.g. ```test run: 4``` will exit the code after running four simulations). If ```test run: 0```, the simulations will not be killed early - the simulations will run through to completion as normal.  
+There is an optional key ```test_runs``` that is used for testing the code during development. If this key is included, the monte carlo simulations are killed early, only running the number of simulations provided to this key (e.g. ```"test_runs": 4``` will exit the code after running four simulations). If ```"test_runs": 0```, the simulations are not killed early - they run through to completion as normal. (Earlier versions of this manual called the key ```test run```. Bryan reads ```test_runs```; a config written the other way is ignored, and the run goes through to completion with nothing said.)
+
+Every key of the main config file is set out on the [simulation config file](config/SimsConfig.md) page, including the optional ```project_folder``` key and the two different folders that paths in it resolve against.  
 
 From here, all simulations are controlled through the simulation list (Excel file, discussed below). A summary of the workflow is shown below. 
 
