@@ -1,6 +1,7 @@
 # Config files
 Bryan uses several config files for managing the catchment-specific inputs to the modelling. The config files use the [JSON](config/json_files.md) file format. The following config files are expected:
 
+- [Simulation config file](config/SimsConfig.md) is the main config file, the one the batch file passes to Bryan. It names the simulation list and points at the model, storm and climate config files.
 - [Monte Carlo config file](config/MonteCarloConfig.md) is used to set up the monte carlo framework, modelling method and result analysis parameters.
 - [Ensemble config file](config/EnsembleConfig.md) is used to set up the ensemble method framework, modelling method and result analysis parameters.
 - [IFD config file](config/IFDFilesConfig.md) is used to set up the rainfall depth information.
