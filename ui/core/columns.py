@@ -181,6 +181,23 @@ def runs_models(row) -> bool:
     return cell_text(row.get("Run models")).lower() in RUN_MODES_THAT_RUN
 
 
+def volume_column(row) -> str | None:
+    """The row's 'Analyse volumes' header, whatever its case or padding.
+
+    lib/Volumes.py accepts the same variations - the column is optional and
+    typed in by hand - so the UI has to recognise the same headers Bryan will,
+    or it under-reports what a row needs.
+    """
+    keys = getattr(row, "index", None)
+    keys = keys if keys is not None else row.keys()
+    if "Analyse volumes" in keys:
+        return "Analyse volumes"
+    for name in keys:
+        if str(name).strip().lower() in ("analyse volumes", "analyze volumes"):
+            return str(name)
+    return None
+
+
 def analyses_volumes(row) -> bool:
     """Whether the row switches on the flood volume analysis.
 
@@ -188,7 +205,10 @@ def analyses_volumes(row) -> bool:
     volumes off the inflow hydrographs, so a row that sets this needs its
     'Inflow' file even when Run models is no.
     """
-    return cell_text(row.get("Analyse volumes")).lower() not in VOLUME_MODES_THAT_SKIP
+    column = volume_column(row)
+    if column is None:
+        return False
+    return cell_text(row.get(column)).lower() not in VOLUME_MODES_THAT_SKIP
 
 
 def included(row) -> bool:
@@ -276,7 +296,7 @@ def unused_columns(columns) -> list[str]:
 __all__ = [
     "MONTE_CARLO", "ENSEMBLE", "RESERVOIR_ROUTING", "METHODS",
     "ColumnRequirement", "normalise_method", "runs_models", "included",
-    "analyses_volumes",
+    "analyses_volumes", "volume_column",
     "requirements_for", "path_columns_for", "climate_requirement",
     "unused_columns", "is_blank", "cell_text",
     "INPUT_DATABASE_ALIASES", "REPLICATE_FILE_ALIASES", "KNOWN_UNUSED",
