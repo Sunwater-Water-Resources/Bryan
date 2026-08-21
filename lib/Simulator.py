@@ -7,7 +7,8 @@ from lib.RORBmodel import RorbModel
 from lib.ClimateChange import ClimateAdjustment
 from lib.EnbScheme import Ensemble
 from lib.EnbAnalysis import analyse_ensemble
-from lib.Volumes import DEFAULT_VOLUME_DURATIONS, rolling_max_volumes
+from lib.Volumes import (DEFAULT_VOLUME_DURATIONS, rolling_max_volumes,
+                         volume_setting)
 from scipy.special import ndtr
 import pandas as pd
 import os
@@ -80,13 +81,10 @@ class Simulator:
             analyse_lst = str(parameters['Analyse results']).split(',')
             self.do_analysis = [x.strip().lower() for x in analyse_lst]
         
-        self.do_volumes = False
-        if 'Analyse volumes' in parameters.index:
-            do_volumes = str(parameters['Analyse volumes']).lower()
-            if do_volumes == 'yes':
-                self.do_volumes = ['inflow', 'outflow']
-            elif do_volumes in ['inflow', 'outflow']:
-                self.do_volumes = [do_volumes]
+        # Shared with the reservoir routing method, and it reports what it read:
+        # an 'Analyse volumes' column that is ignored - a header with different
+        # capitalisation, say - is indistinguishable from a broken feature.
+        self.do_volumes = volume_setting(parameters)
 
         self.do_sub_bursts = False
         if 'Analyse sub-bursts' in parameters.index:

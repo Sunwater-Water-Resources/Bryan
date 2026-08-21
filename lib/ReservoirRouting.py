@@ -34,7 +34,8 @@ from scipy.special import ndtr, ndtri
 
 from lib.Lake import LakeConditions
 from lib.EnbAnalysis import analyse_ensemble
-from lib.Volumes import DEFAULT_VOLUME_DURATIONS, rolling_max_volumes
+from lib.Volumes import (DEFAULT_VOLUME_DURATIONS, rolling_max_volumes,
+                         volume_setting)
 from lib.Simulator import Logger
 
 
@@ -587,24 +588,13 @@ class ReservoirRoutingSimulator:
     def _get_volume_setting(self):
         """Whether to analyse the inflow volumes - the 'Analyse volumes' column.
 
-        'yes' and 'inflow' both mean the inflow volumes. Only the inflow is
-        offered: the outflow and storage volumes of a routed run follow from the
-        peak level and the rating curve, which are analysed already.
+        Read by lib/Volumes.py, as the other two methods read it, which is what
+        makes a mis-capitalised header and an unrecognised value say so instead
+        of quietly doing nothing. Only the inflow is offered: the outflow and
+        storage volumes of a routed run follow from the peak level and the
+        rating curve, which are analysed already.
         """
-        if 'Analyse volumes' not in self.sim_row.index:
-            return False
-        if pd.isna(self.sim_row['Analyse volumes']):
-            return False
-        setting = ' '.join(str(self.sim_row['Analyse volumes']).split()).lower()
-        if setting in ('', 'no', 'none', 'false'):
-            return False
-        if setting in ('yes', 'inflow', 'inflows', 'true'):
-            return True
-        raise ValueError(
-            f'"Analyse volumes" of "{setting}" is not recognised for the reservoir '
-            f'routing method. Use "yes" (or "inflow") to analyse the inflow volumes, '
-            f'or "no". The outflow and storage volumes are not analysed here.'
-        )
+        return bool(volume_setting(self.sim_row, available=('inflow',)))
 
     def _database_path(self):
         """The input database, under either of the two accepted column names."""
@@ -1180,13 +1170,21 @@ class ReservoirRoutingSimulator:
                          lower_aep, upper_aep, aep_of_pmp)
         return self._tpt
 
-    def _tpt_result(self, frame, result_type, ylabel=None):
+    def _tpt_result(self, frame, result_type, ylabel=None, file_label=None):
         """One column through the TPT: an exceedance AEP for every row, the
         standard quantile table, and the frequency curve plot.
 
         The AEP column is written back into `frame`, which is the routed mcdf for
         the peaks and the volume table for the volumes.
+
+        `file_label` names the output files when that differs from the column,
+        which is how the volumes match what Simulator.analyse_volumes writes: a
+        file tagged 'inflowVol24h' holding a column called 'Vol24h'. The
+        post-processing in util/ reads both (util/MaxQuantiles.py picks the
+        files by name and the column by result type), so neither is free to
+        change.
         """
+        file_label = file_label if file_label else result_type
         tpt, lower_aep, upper_aep, aep_of_pmp = self._tpt_setup()
         group_ids = self.mcdf['m'].to_numpy(dtype=int)
         rain_aeps = self.mcdf['rain_aep'].to_numpy(dtype=float)
@@ -1200,12 +1198,12 @@ class ReservoirRoutingSimulator:
         std_q = compute_std_quantiles(peaks, aeps, lower_aep, upper_aep, aep_of_pmp)
         std_q = std_q.rename(columns={'value': result_type})
         out_q = os.path.join(self.results_folder,
-                             f'{self.basename}__{result_type}_quantiles{suffix}.csv')
+                             f'{self.basename}__{file_label}_quantiles{suffix}.csv')
         std_q.to_csv(out_q, index=False)
         print(f'  TPT + quantiles in {time.time() - t0:.2f} s -> {out_q}')
 
         png_path = os.path.join(self.results_folder,
-                                f'{self.basename}__{result_type}_tpt{suffix}.png')
+                                f'{self.basename}__{file_label}_tpt{suffix}.png')
         _plot_tpt(result_type, rain_aeps, peaks, std_q, png_path,
                   lower_aep, upper_aep, aep_of_pmp, ylabel=ylabel)
         print(f'  Plot -> {png_path}')
@@ -1246,22 +1244,26 @@ class ReservoirRoutingSimulator:
             return
 
         # Positional, like everything else that lines the hydrograph columns up
-        # with the database rows.
-        vol_df = pd.DataFrame({f'inflowVol{duration}h': values
+        # with the database rows. The columns are named as
+        # Simulator.analyse_volumes names them ('Vol24h'), because that is what
+        # the post-processing in util/ reads; the 'inflow' part of the name is
+        # carried by the filenames, again as the Monte Carlo method does it.
+        vol_df = pd.DataFrame({f'Vol{duration}h': values
                                for duration, values in volumes.items()},
                               index=self.mcdf.index)
         sample_columns = [column for column in
                           ('m', 'n', 'rain_z', 'rain_aep', 'storm_method', 'duration', 'tp')
                           if column in self.mcdf.columns]
         vol_df = pd.concat([self.mcdf[sample_columns], vol_df], axis=1)
-        vol_columns = [f'inflowVol{duration}h' for duration in volumes]
+        vol_columns = [f'Vol{duration}h' for duration in volumes]
 
         if self.scheme == 'ensemble':
             self._analyse_volumes_ensemble(vol_df, vol_columns)
         else:
             for duration, column in zip(volumes, vol_columns):
                 self._tpt_result(vol_df, column,
-                                 ylabel=f'{duration} hour inflow volume (ML)')
+                                 ylabel=f'{duration} hour inflow volume (ML)',
+                                 file_label=f'inflow{column}')
 
         out_path = os.path.join(self.results_folder,
                                 f'{self.basename}__inflow_volumes{self._suffix()}.csv')
@@ -1281,5 +1283,5 @@ class ReservoirRoutingSimulator:
         analyse_ensemble(vol_df, out_base,
                          result_types=vol_columns,
                          result_labels={column: 'Volume (ML)' for column in vol_columns},
-                         result_titles={column: f'{column[len("inflowVol"):-1]} hour '
+                         result_titles={column: f'{column[len("Vol"):-1]} hour '
                                                 f'inflow volume' for column in vol_columns})

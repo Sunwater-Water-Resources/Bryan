@@ -195,3 +195,15 @@ def test_a_volume_row_that_does_not_run_needs_no_inflow_when_switched_off(projec
     reported = " ".join(issue.message for issue in preflight.check(sims, config, [0])
                         if issue.code == "missing-input")
     assert "Inflow" not in reported
+
+
+def test_a_mis_capitalised_volume_header_is_still_recognised(project):
+    """lib/Volumes.py accepts it, so pre-flight has to see it too."""
+    columns = TINAROO_COLUMNS + ["Analyse Volumes"]
+    row = reservoir_row(**{"Output file": "out", "Run models": "no",
+                           "Analyse Volumes": "yes"})
+    config, sims = setup(project, [row], columns=columns, make_inputs=False)
+
+    reported = " ".join(issue.message for issue in preflight.check(sims, config, [0])
+                        if issue.code == "missing-input")
+    assert "Inflow" in reported

@@ -109,8 +109,11 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - `Analyse volumes` (`yes`/`inflow`) adds the inflow volume analysis: the peak volume in a moving
   window of each duration from `volume_durations` in the row's `Config file`, through the same
   analysis as the peaks (TPT or `analyse_ensemble`). Inflow only, deliberately — outflow and
-  storage volumes follow from the peak level and the rating curve. The windows themselves come
-  from `lib/Volumes.py`, shared with `Simulator.analyse_volumes`.
+  storage volumes follow from the peak level and the rating curve. The windows and the reading of
+  the sims-list column both come from `lib/Volumes.py`, shared with `Simulator.analyse_volumes`.
+  Output naming follows the Monte Carlo method's, because `util/MaxQuantiles.py` and
+  `util/PlotFrequencyCurves.py` read both: the **files** are tagged `inflowVol24h`, the **column**
+  inside them is `Vol24h`. Neither is free to change.
 - An ensemble inflow file is **ragged**: one file spans every duration, each padded with NaN
   after its own simulation period. This works without special handling — `interpolate('slinear')`
   does not fill trailing NaN, the routing propagates them, and the `np.nanmax` in `_write_mcdf`

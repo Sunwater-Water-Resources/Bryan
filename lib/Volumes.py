@@ -73,3 +73,79 @@ def rolling_max_volumes(flows_arr, dt_hours, durations):
               f'volumes from {volumes[duration].min():,.0f} to '
               f'{volumes[duration].max():,.0f} ML')
     return volumes
+
+
+# ---------------------------------------------------------------------------
+# The 'Analyse volumes' column of the simulation list
+# ---------------------------------------------------------------------------
+
+VOLUME_COLUMN = 'Analyse volumes'
+_SETTINGS_OFF = ('', 'no', 'none', 'false', 'off', 'nan')
+_SETTINGS_ALL = ('yes', 'true', 'both', 'all')
+_SETTINGS_FOR = {'inflow': 'inflow', 'inflows': 'inflow',
+                 'outflow': 'outflow', 'outflows': 'outflow'}
+
+
+def volume_column(row):
+    """The row's 'Analyse volumes' header, whatever its case or padding, or None.
+
+    The column is optional and typed into the spreadsheet by hand, so an exact
+    match on one spelling turns a header of 'Analyse Volumes' into a feature
+    that quietly does nothing. Exact first, then a tolerant scan that says what
+    it matched.
+    """
+    if VOLUME_COLUMN in row.index:
+        return VOLUME_COLUMN
+    for column in row.index:
+        if str(column).strip().lower() in ('analyse volumes', 'analyze volumes'):
+            print(f'Reading the volume setting from the "{column}" column '
+                  f'(the documented spelling is "{VOLUME_COLUMN}")')
+            return column
+    return None
+
+
+def volume_setting(row, available=('inflow', 'outflow')):
+    """The result types the row's 'Analyse volumes' column asks for, as a list.
+
+    An empty list means no volume analysis - and it says why, because a column
+    that is ignored looks exactly like a feature that does not work. That is how
+    this reads for every method, so a row behaves the same wherever it is run.
+
+    ``available`` is what the method can analyse: the reservoir routing method
+    offers the inflow volumes only, so asking it for the outflow says so rather
+    than silently giving nothing.
+    """
+    column = volume_column(row)
+    if column is None:
+        print(f'No "{VOLUME_COLUMN}" column in the simulation list '
+              f'- the volumes are not analysed')
+        return []
+
+    setting = ' '.join(str(row[column]).split()).lower()
+    if setting in _SETTINGS_OFF:
+        described = 'blank' if setting in ('', 'nan') else f'"{setting}"'
+        print(f'"{VOLUME_COLUMN}" is {described} - the volumes are not analysed')
+        return []
+
+    if setting in _SETTINGS_ALL:
+        wanted = list(available)
+    elif setting in _SETTINGS_FOR:
+        wanted = [_SETTINGS_FOR[setting]]
+    else:
+        raise ValueError(
+            f'"{VOLUME_COLUMN}" of "{setting}" is not recognised. Use "yes" for '
+            f'every volume this method analyses ({", ".join(available)}), one of '
+            f'those on its own, or "no".'
+        )
+
+    refused = [kind for kind in wanted if kind not in available]
+    if refused:
+        raise ValueError(
+            f'"{VOLUME_COLUMN}" of "{setting}" asks for the '
+            f'{" and ".join(refused)} volumes, which this method does not analyse. '
+            f'It analyses the {" and ".join(available)} volumes.'
+        )
+
+    print(f'"{VOLUME_COLUMN}" = "{setting}" - analysing the '
+          f'{" and ".join(wanted)} volumes')
+    return wanted
