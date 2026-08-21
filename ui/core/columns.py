@@ -33,6 +33,13 @@ METHODS = (MONTE_CARLO, ENSEMBLE, RESERVOIR_ROUTING)
 # an unknown value as 'runs' is the conservative way round.
 RUN_MODES_THAT_RUN = ("yes", "storms only")
 
+# 'Analyse volumes' values that switch the volume analysis OFF. Everything else
+# switches it on: Simulator.__init__ and
+# ReservoirRoutingSimulator._get_volume_setting accept different spellings
+# ('yes'/'inflow'/'outflow'), and an unknown value is the conservative way
+# round here too - it only ever adds an input to check.
+VOLUME_MODES_THAT_SKIP = ("", "no", "none", "false")
+
 # Read for every row of every method, before any method dispatch:
 #   Main.py:77,81,82 and lib/RunLog.py:36,42,43,49
 UNIVERSAL_ALWAYS = (
@@ -174,18 +181,33 @@ def runs_models(row) -> bool:
     return cell_text(row.get("Run models")).lower() in RUN_MODES_THAT_RUN
 
 
+def analyses_volumes(row) -> bool:
+    """Whether the row switches on the flood volume analysis.
+
+    It matters for reservoir routing: lib/ReservoirRouting.py measures the
+    volumes off the inflow hydrographs, so a row that sets this needs its
+    'Inflow' file even when Run models is no.
+    """
+    return cell_text(row.get("Analyse volumes")).lower() not in VOLUME_MODES_THAT_SKIP
+
+
 def included(row) -> bool:
     """Main.py:64 - an exact, case-sensitive compare, so 'Yes' silently skips."""
     return row.get("Include") == "yes"
 
 
-def requirements_for(method: str, running: bool) -> list[ColumnRequirement]:
+def requirements_for(method: str, running: bool,
+                     volumes: bool = False) -> list[ColumnRequirement]:
     """Every column Bryan will read for a row of this method and run mode.
 
     When ``running`` is False the 'when_running' columns are left out entirely:
     ``Simulator.__init__`` returns at its do_runs guard before reading them, and
     a reservoir-routing row that only re-analyses never opens its .sq or its
     inflows. Reporting them as required would flag good analysis-only rows.
+
+    ``volumes`` is the one exception to that: a reservoir-routing row analysing
+    the inflow volumes opens the hydrographs whatever Run models says, because
+    that is where the volumes are measured. Pass ``analyses_volumes(row)``.
     """
     out: dict[str, ColumnRequirement] = {}
 
@@ -206,6 +228,10 @@ def requirements_for(method: str, running: bool) -> list[ColumnRequirement]:
             add(name, "always")
         for name in RESERVOIR_WHEN_RUNNING:
             add(name, "when_running", name in PATH_COLUMNS_RESERVOIR)
+        if volumes:
+            # ReservoirRoutingSimulator._ensure_inflows_loaded: the volume
+            # analysis reads the hydrographs even for an analysis-only row.
+            add("Inflow", "always", True)
         if running:
             add("Input MCDF", "when_running", True, ("Input database",))
     else:
@@ -250,6 +276,7 @@ def unused_columns(columns) -> list[str]:
 __all__ = [
     "MONTE_CARLO", "ENSEMBLE", "RESERVOIR_ROUTING", "METHODS",
     "ColumnRequirement", "normalise_method", "runs_models", "included",
+    "analyses_volumes",
     "requirements_for", "path_columns_for", "climate_requirement",
     "unused_columns", "is_blank", "cell_text",
     "INPUT_DATABASE_ALIASES", "REPLICATE_FILE_ALIASES", "KNOWN_UNUSED",

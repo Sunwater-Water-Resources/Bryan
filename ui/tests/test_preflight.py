@@ -167,3 +167,31 @@ def test_blocked_rows_are_collected(project):
     config, sims = setup(project, rows)
     issues = preflight.check(sims, config, [0, 1])
     assert preflight.blocked_rows(issues) == {0, 1}
+
+
+def test_the_inflow_is_required_by_a_volume_row_that_does_not_run(project):
+    """'Analyse volumes' reads the hydrographs whatever 'Run models' says.
+
+    ReservoirRoutingSimulator._ensure_inflows_loaded measures the volumes off
+    the inflow file, so the usual analysis-only exemption does not apply to it.
+    """
+    columns = TINAROO_COLUMNS + ["Analyse volumes"]
+    row = reservoir_row(**{"Output file": "out", "Run models": "no",
+                           "Analyse volumes": "yes"})
+    config, sims = setup(project, [row], columns=columns, make_inputs=False)
+
+    reported = " ".join(issue.message for issue in preflight.check(sims, config, [0])
+                        if issue.code == "missing-input")
+    assert "Inflow" in reported
+    assert "SQ file" not in reported, "the rating curve is still not read"
+
+
+def test_a_volume_row_that_does_not_run_needs_no_inflow_when_switched_off(project):
+    columns = TINAROO_COLUMNS + ["Analyse volumes"]
+    row = reservoir_row(**{"Output file": "out", "Run models": "no",
+                           "Analyse volumes": "no"})
+    config, sims = setup(project, [row], columns=columns, make_inputs=False)
+
+    reported = " ".join(issue.message for issue in preflight.check(sims, config, [0])
+                        if issue.code == "missing-input")
+    assert "Inflow" not in reported
