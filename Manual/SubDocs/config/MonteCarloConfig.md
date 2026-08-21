@@ -8,6 +8,7 @@ This is the main config file for the Monte Carlo simulations and uses the keys i
 | ```scheme_config```| A dictionary parameterising the Monte Carlo scheme - see Table 2. The information in the table is used to set up the sampling framework for rainfall depths and storm temporal patterns.|
 |```tpt_quantile_analysis```| A dictionary containing the information used to analyse the results of the Monte Carlo analysis using the Total Probability Theorem - see Table 3.  
 |  ```confidence_intervals``` | A dictionary containing the information used in the analysis of the Monte Carlo results to determine the confidence intervals - ***this is a work in progress***.  |
+| ```volume_durations```| ++Optional:++ A list of the durations, in hours, that the flood volume analysis integrates over; e.g. ```"volume_durations": [24, 48, 72, 120]```. These are moving-window analysis durations, not storm durations, so they are usually longer than the storms. Read by the ```reservoir routing``` method when the simulation list sets ```Analyse volumes```; the monte carlo method itself uses a fixed list of 24, 36, 48, 72, 96 and 120 hours. May also be given inside ```scheme_config```, which is looked at first. |
 
 **Table 2: Keys used in the ```scheme_config``` key**
 

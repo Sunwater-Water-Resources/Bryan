@@ -7,8 +7,8 @@ from lib.RORBmodel import RorbModel
 from lib.ClimateChange import ClimateAdjustment
 from lib.EnbScheme import Ensemble
 from lib.EnbAnalysis import analyse_ensemble
+from lib.Volumes import DEFAULT_VOLUME_DURATIONS, rolling_max_volumes
 from scipy.special import ndtr
-from scipy import integrate
 import pandas as pd
 import os
 import numpy as np
@@ -731,27 +731,21 @@ class EnsembleSimulator(Simulator):
             
             time_inc = hyd_df.index[2] - hyd_df.index[1]
             print('Integrating volume using: ', time_inc, 'h time steps.')
-            hyd_df.fillna(0, inplace=True)   # Replace NaNs with zero. For hydrographs shorter than required duration. Recommend extending simulation periods if practical.
-            
-            durations = duration_lst
-            data = []
-            for duration in durations:
-                window = duration / time_inc
-                if window.is_integer(): 
-                    window = int(window)
-                else: 
-                    print(f'Unable to integrate {duration}h duration with {time_inc}h time steps')
-                    continue
-                
-                print(f'Calculating max {duration}h volumes')
-                vol = hyd_df.rolling(window).apply(integrate.trapz).max() 
-                vol = vol / 1000 * 60 * 60 * time_inc           # Convert from m3/s to ML
-                data.append(vol)
-            
-            vol_df = pd.concat(data, axis=1)
+            # lib/Volumes.py fills the gaps in a padded hydrograph itself, and is
+            # shared with the reservoir routing method so the window cannot drift.
+            volumes = rolling_max_volumes(hyd_df.to_numpy(dtype=float), time_inc,
+                                          duration_lst)
+            if not volumes:
+                print('No storm duration could be integrated - no volumes analysed.')
+                return
+
+            # Only the durations that were integrated: a skipped one used to be
+            # dropped here while the columns were still named from the full list,
+            # which failed on the length mismatch.
+            vol_types = [f'Vol{duration}h' for duration in volumes]
+            vol_df = pd.DataFrame(dict(zip(vol_types, volumes.values())),
+                                  index=hyd_df.columns)
             print(vol_df)
-            vol_types = [f'Vol{dur}h' for dur in durations]
-            vol_df.columns = vol_types
             vol_df.index = vol_df.index.to_series().map(lambda x: int(x.split('_')[1]))
         
             vol_df = pd.concat([enb.df[['rain_z', 'rain_aep', 'mean_rain_mm', 'duration', 'tp', 'storm_method']], vol_df], axis=1)
@@ -1421,25 +1415,20 @@ class MonteCarloSimulator(Simulator):
             
             time_inc = hyd_df.index[2] - hyd_df.index[1]
             print('Integrating volume using: ', time_inc, 'h time steps.')
-            hyd_df.fillna(0, inplace=True)   # Replace NaNs with zero. For hydrographs shorter than required duration. Recommend extending simulation periods if practical.
-            
-            durations = [24, 36, 48, 72, 96, 120]
-            data = []
-            for duration in durations:
-                window = duration / time_inc
-                if window.is_integer(): 
-                    window = int(window)
-                else: 
-                    print(f'Unable to integrate {duration}h duration with {time_inc}h time steps')
-                    continue
-                
-                print(f'Calculating max {duration}h volumes')
-                vol = hyd_df.rolling(window).apply(integrate.trapz).max() 
-                vol = vol / 1000 * 60 * 60 * time_inc           # Convert from m3/s to ML
-                data.append(vol)
-            
-            vol_df = pd.concat(data, axis=1)
-            vol_df.columns = [f'Vol{dur}h' for dur in durations]
+            # lib/Volumes.py fills the gaps in a padded hydrograph itself, and is
+            # shared with the reservoir routing method so the window cannot drift.
+            volumes = rolling_max_volumes(hyd_df.to_numpy(dtype=float), time_inc,
+                                          DEFAULT_VOLUME_DURATIONS)
+            if not volumes:
+                print('No analysis duration fits these hydrographs - no volumes analysed.')
+                return
+
+            # Only the durations that were integrated - see the note in the
+            # ensemble method above.
+            durations = list(volumes)
+            vol_df = pd.DataFrame(dict(zip([f'Vol{duration}h' for duration in durations],
+                                           volumes.values())),
+                                  index=hyd_df.columns)
             vol_df.index = vol_df.index.to_series().map(lambda x: int(x.split('_')[1]))
         
             vol_df = pd.concat([mc.df[['m','n', 'rain_z', 'rain_aep']], vol_df], axis=1)

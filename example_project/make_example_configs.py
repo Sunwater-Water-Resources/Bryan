@@ -66,6 +66,10 @@ def mc_config():
             'sample_method': 'normally distributed',
         },
         'aep_of_pmp': AEP_OF_PMP,
+        # Moving-window durations for the flood volume analysis, read by the
+        # reservoir routing rows that set 'Analyse volumes'. The stored
+        # hydrographs run to 95 h, so nothing longer would fit.
+        'volume_durations': [24, 48, 72],
         'tpt_quantile_analysis': {
             'inflow': {'lower': 500, 'upper': 20000, 'step': 500},
             'level': {'lower': 209, 'upper': 218, 'step': 0.25},
@@ -164,7 +168,8 @@ STORMS_COLUMNS = [
 ]
 
 ROUTING_COLUMNS = [
-    'Include', 'Method', 'Run models', 'Analyse results', 'Store hydrographs',
+    'Include', 'Method', 'Run models', 'Analyse results', 'Analyse volumes',
+    'Store hydrographs',
     'Output suffix', 'Input MCDF', 'Inflow', 'ELS file', 'SQ file', 'FSL', 'ADV',
     'ADV source', 'Lake config', 'Config file', 'Log file', 'Output file',
     'Hydrographs folder', 'Results folder', 'Comment',
@@ -206,7 +211,7 @@ def storms_sims_list():
 def routing_sims_list():
     common = {
         'Include': 'yes', 'Method': 'reservoir routing', 'Run models': 'yes',
-        'Analyse results': 'yes', 'Store hydrographs': 'no',
+        'Analyse results': 'yes', 'Analyse volumes': 'yes', 'Store hydrographs': 'no',
         'Input MCDF': 'inflows/SYNTHETIC_mc_24h__mcdf.csv',
         'Inflow': 'inflows/SYNTHETIC_mc_24h_inflows.csv',
         'ELS file': 'model/SYNTHETIC_juniper.els',

@@ -89,6 +89,7 @@ RESERVOIR_WHEN_RUNNING = (
 # Guarded by `in sim_row.index` / pd.notna - absent is fine.
 RESERVOIR_OPTIONAL = (
     "Log file",
+    "Analyse volumes",
     "ADV",
     "ADV source",
     "Output suffix",

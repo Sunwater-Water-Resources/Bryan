@@ -12,6 +12,11 @@ FastTPT vectorises the Total Probability Theorem (counts of exceedances per
 main-division) via one-time per-group sorts plus np.searchsorted. Math mirrors
 lib/MCScheme.py::TotalProbTheorem.
 
+The peak inflow, outflow and lake level are always analysed. With 'Analyse
+volumes' set in the sims list the inflow *volume* in a moving window of each
+analysis duration goes through the same analysis - the TPT for Monte Carlo
+input, the ensemble medians for ensemble input.
+
 Invoked from Main.py when an Excel sim-list row has Method == 'reservoir routing'.
 """
 import os
@@ -29,6 +34,7 @@ from scipy.special import ndtr, ndtri
 
 from lib.Lake import LakeConditions
 from lib.EnbAnalysis import analyse_ensemble
+from lib.Volumes import DEFAULT_VOLUME_DURATIONS, rolling_max_volumes
 from lib.Simulator import Logger
 
 
@@ -260,7 +266,7 @@ _PLOT_LABEL = {
 
 
 def _plot_tpt(result_type, rain_aeps, peaks, std_q, out_path,
-              lower_aep, upper_aep, aep_of_pmp=None):
+              lower_aep, upper_aep, aep_of_pmp=None, ylabel=None):
     """Scatter of Monte Carlo realisations (peak vs rainfall AEP) overlaid with
     the TPT quantile curve. Mirrors lib/MCScheme.py:plot_tpt_results_2 style."""
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -287,7 +293,7 @@ def _plot_tpt(result_type, rain_aeps, peaks, std_q, out_path,
     ax.set_xticklabels([f'{int(a):,}' if a >= 1 else f'{a:g}' for a in ticks_aeps],
                        rotation=90)
     ax.set_xlabel('AEP (1 in X)')
-    ax.set_ylabel(_PLOT_LABEL.get(result_type, result_type))
+    ax.set_ylabel(ylabel if ylabel else _PLOT_LABEL.get(result_type, result_type))
     if result_type != 'level':
         ax.set_yscale('log')
         if valid_pts.any():
@@ -347,7 +353,16 @@ class ReservoirRoutingSimulator:
 
     Optional columns:
       Store hydrographs (default 'yes'), Output suffix, Config file,
-      ADV, ADV source, Lake config, Log file, Comment.
+      ADV, ADV source, Analyse volumes, Lake config, Log file, Comment.
+
+    'Analyse volumes' ('yes' or 'inflow') adds a frequency analysis of the peak
+    inflow volume in a moving window of each analysis duration, on top of the
+    peak inflow, outflow and level. The durations come from a 'volume_durations'
+    key in the Config file - see _volume_durations. Only the inflow volumes are
+    analysed: they are a property of the hydrographs handed to the routing, so
+    the answer does not depend on the rating curve, but the routed run is
+    usually the only place the stored hydrographs are analysed at all, and it is
+    the volume rather than the peak that sizes the storage.
 
     'Input MCDF' names the input database for both schemes ('Input database' is
     accepted as an alias). 'Config file' should be the Monte Carlo config the
@@ -404,8 +419,11 @@ class ReservoirRoutingSimulator:
 
         self.run_models = str(sim_row['Run models']).strip().lower() == 'yes'
         self.do_analysis = str(sim_row['Analyse results']).strip().lower() == 'yes'
+        self.do_volumes = self._get_volume_setting()
         self.adv_source = self._get_adv_source()
         self.scheme = None  # set by _detect_scheme once the database is read
+        self._config = None  # the Config file JSON, read once by _method_config
+        self._tpt = None     # the TPT scheme, built once by _tpt_setup
 
         if self.run_models:
             self._load_curves()
@@ -418,6 +436,9 @@ class ReservoirRoutingSimulator:
         if self.do_analysis:
             self._ensure_mcdf_loaded()
             self._analyse()
+
+        if self.do_volumes:
+            self._analyse_volumes()
 
         elapsed = time.time() - self.start
         print(f'\nReservoirRoutingSimulator finished in {elapsed:.2f} s '
@@ -562,6 +583,28 @@ class ReservoirRoutingSimulator:
         # "ADV source" applies to Monte Carlo input only. _load_mcdf says what was
         # actually used once it does know.
         return source
+
+    def _get_volume_setting(self):
+        """Whether to analyse the inflow volumes - the 'Analyse volumes' column.
+
+        'yes' and 'inflow' both mean the inflow volumes. Only the inflow is
+        offered: the outflow and storage volumes of a routed run follow from the
+        peak level and the rating curve, which are analysed already.
+        """
+        if 'Analyse volumes' not in self.sim_row.index:
+            return False
+        if pd.isna(self.sim_row['Analyse volumes']):
+            return False
+        setting = ' '.join(str(self.sim_row['Analyse volumes']).split()).lower()
+        if setting in ('', 'no', 'none', 'false'):
+            return False
+        if setting in ('yes', 'inflow', 'inflows', 'true'):
+            return True
+        raise ValueError(
+            f'"Analyse volumes" of "{setting}" is not recognised for the reservoir '
+            f'routing method. Use "yes" (or "inflow") to analyse the inflow volumes, '
+            f'or "no". The outflow and storage volumes are not analysed here.'
+        )
 
     def _database_path(self):
         """The input database, under either of the two accepted column names."""
@@ -802,6 +845,85 @@ class ReservoirRoutingSimulator:
         self.mcdf = _read_mcdf(mcdf_path)
         self.scheme = self._detect_scheme()
 
+    def _ensure_inflows_loaded(self):
+        """The inflow hydrographs, loaded if the routing did not already load them.
+
+        An analysis-only row (Run models = no) has not read them, so an inflow
+        volume analysis needs the 'Inflow' column of a row that would otherwise
+        not use it.
+        """
+        if hasattr(self, 'inflows_arr'):
+            return
+        if 'Inflow' not in self.sim_row.index or pd.isna(self.sim_row['Inflow']):
+            raise ValueError(
+                'The inflow volume analysis reads the inflow hydrographs, so an '
+                '"Inflow" filepath is needed even with "Run models" set to no.'
+            )
+        self._load_inflows()
+
+    def _method_config(self):
+        """The row's Config file JSON, read once. An empty dict if there is none."""
+        if self._config is not None:
+            return self._config
+        self._config = {}
+        if 'Config file' in self.sim_row.index and pd.notna(self.sim_row['Config file']):
+            cfg_path = str(self.sim_row['Config file'])
+            if os.path.isfile(cfg_path):
+                with open(cfg_path) as f:
+                    self._config = json.load(f)
+                print(f'\nReading the config file: {cfg_path}')
+            else:
+                print(f'\nWARNING: the "Config file" in the sims list was not found: {cfg_path}')
+        else:
+            print('\nWARNING: no "Config file" given in the sims list for this simulation.')
+        return self._config
+
+    def _volume_durations(self):
+        """The analysis durations for the inflow volumes, in hours, and where
+        they came from.
+
+        A "volume_durations" key in the Config file, looked for inside
+        "scheme_config" and then at the top level - the same two places the TPT
+        parameters come from. Failing that, an ensemble config's own
+        "storm_durations" (which is what EnsembleSimulator.analyse_volumes
+        integrates over), then the durations present in an ensemble database,
+        and failing all of those the fixed list the Monte Carlo method uses.
+        """
+        cfg = self._method_config()
+        scheme = cfg.get('scheme_config', {})
+        for holder, source in ((scheme, 'scheme_config'), (cfg, 'config file')):
+            if 'volume_durations' in holder:
+                return (self._clean_durations(holder['volume_durations'], source),
+                        f'"volume_durations" of the {source}')
+        if 'storm_durations' in cfg:
+            return (self._clean_durations(cfg['storm_durations'], 'config file'),
+                    '"storm_durations" of the config file (no "volume_durations")')
+        if self.scheme == 'ensemble' and 'duration' in self.mcdf.columns:
+            return (self._clean_durations(self.mcdf['duration'].unique(), 'input database'),
+                    'durations of the input database (no "volume_durations" in the config file)')
+        return (list(DEFAULT_VOLUME_DURATIONS),
+                'DEFAULT list (no "volume_durations" in the config file)')
+
+    @staticmethod
+    def _clean_durations(value, source):
+        """Sorted, positive, unique durations in hours, or a ValueError saying why not."""
+        if isinstance(value, (str, bytes)) or not hasattr(value, '__iter__'):
+            value = [value]
+        durations = []
+        for item in value:
+            try:
+                duration = float(item)
+            except (TypeError, ValueError):
+                raise ValueError(f'"{item}" in the volume durations of the {source} '
+                                 f'is not a number of hours.')
+            if not np.isfinite(duration) or duration <= 0:
+                raise ValueError(f'"{item}" in the volume durations of the {source} '
+                                 f'is not a positive number of hours.')
+            durations.append(int(duration) if duration.is_integer() else duration)
+        if not durations:
+            raise ValueError(f'The volume durations of the {source} are empty.')
+        return sorted(set(durations))
+
     def _tpt_config(self):
         """Pull TPT params from the row's Config file JSON, with sensible defaults
         derived from the MCDF if the JSON is missing or partial.
@@ -813,18 +935,7 @@ class ReservoirRoutingSimulator:
         is why the source of each value is reported and the sample is then checked
         against them in _validate_sample.
         """
-        cfg = {}
-        if 'Config file' in self.sim_row.index and pd.notna(self.sim_row['Config file']):
-            cfg_path = str(self.sim_row['Config file'])
-            if os.path.isfile(cfg_path):
-                with open(cfg_path) as f:
-                    cfg = json.load(f)
-                print(f'\nReading the TPT parameters from: {cfg_path}')
-            else:
-                print(f'\nWARNING: the "Config file" in the sims list was not found: {cfg_path}')
-        else:
-            print('\nWARNING: no "Config file" given in the sims list for this simulation.')
-
+        cfg = self._method_config()
         scheme = cfg.get('scheme_config', {})
         self.config_sources = {}
 
@@ -1052,39 +1163,123 @@ class ReservoirRoutingSimulator:
         print(f'\nEnsemble analysis of the routed results: {out_base}')
         analyse_ensemble(self.mcdf, out_base)
 
-    def _analyse_tpt(self):
-        m_count, n_count, lower_aep, upper_aep, aep_of_pmp = self._tpt_config()
+    def _tpt_setup(self):
+        """The TPT scheme for this sample, built once.
 
-        z_low = ndtri(1.0 - 1.0 / lower_aep)
-        z_up = ndtri(1.0 - 1.0 / upper_aep)
-        main_divisions = np.linspace(z_low, z_up, m_count + 1)
-        self._validate_sample(m_count, n_count, main_divisions)
+        The peak analysis and the volume analysis weight their results with the
+        same main divisions, so the config is read - and the sample checked
+        against it - once per simulation however many columns go through it.
+        """
+        if self._tpt is None:
+            m_count, n_count, lower_aep, upper_aep, aep_of_pmp = self._tpt_config()
+            z_low = ndtri(1.0 - 1.0 / lower_aep)
+            z_up = ndtri(1.0 - 1.0 / upper_aep)
+            main_divisions = np.linspace(z_low, z_up, m_count + 1)
+            self._validate_sample(m_count, n_count, main_divisions)
+            self._tpt = (FastTPT(m_count, n_count, main_divisions),
+                         lower_aep, upper_aep, aep_of_pmp)
+        return self._tpt
 
-        tpt = FastTPT(m_count, n_count, main_divisions)
+    def _tpt_result(self, frame, result_type, ylabel=None):
+        """One column through the TPT: an exceedance AEP for every row, the
+        standard quantile table, and the frequency curve plot.
+
+        The AEP column is written back into `frame`, which is the routed mcdf for
+        the peaks and the volume table for the volumes.
+        """
+        tpt, lower_aep, upper_aep, aep_of_pmp = self._tpt_setup()
         group_ids = self.mcdf['m'].to_numpy(dtype=int)
+        rain_aeps = self.mcdf['rain_aep'].to_numpy(dtype=float)
         suffix = self._suffix()
 
-        rain_aeps = self.mcdf['rain_aep'].to_numpy(dtype=float)
+        print(f'\nVectorised TPT: {result_type}')
+        t0 = time.time()
+        peaks = frame[result_type].to_numpy(dtype=float)
+        aeps = tpt.assign_aep(peaks, group_ids)
+        frame[f'{result_type}_aep'] = aeps
+        std_q = compute_std_quantiles(peaks, aeps, lower_aep, upper_aep, aep_of_pmp)
+        std_q = std_q.rename(columns={'value': result_type})
+        out_q = os.path.join(self.results_folder,
+                             f'{self.basename}__{result_type}_quantiles{suffix}.csv')
+        std_q.to_csv(out_q, index=False)
+        print(f'  TPT + quantiles in {time.time() - t0:.2f} s -> {out_q}')
 
+        png_path = os.path.join(self.results_folder,
+                                f'{self.basename}__{result_type}_tpt{suffix}.png')
+        _plot_tpt(result_type, rain_aeps, peaks, std_q, png_path,
+                  lower_aep, upper_aep, aep_of_pmp, ylabel=ylabel)
+        print(f'  Plot -> {png_path}')
+
+    def _analyse_tpt(self):
         for result_type in ('inflow', 'outflow', 'level'):
-            print(f'\nVectorised TPT: {result_type}')
-            t0 = time.time()
-            peaks = self.mcdf[result_type].to_numpy(dtype=float)
-            aeps = tpt.assign_aep(peaks, group_ids)
-            self.mcdf[f'{result_type}_aep'] = aeps
-            std_q = compute_std_quantiles(peaks, aeps, lower_aep, upper_aep, aep_of_pmp)
-            std_q = std_q.rename(columns={'value': result_type})
-            out_q = os.path.join(self.results_folder,
-                                 f'{self.basename}__{result_type}_quantiles{suffix}.csv')
-            std_q.to_csv(out_q, index=False)
-            print(f'  TPT + quantiles in {time.time() - t0:.2f} s -> {out_q}')
-
-            png_path = os.path.join(self.results_folder,
-                                    f'{self.basename}__{result_type}_tpt{suffix}.png')
-            _plot_tpt(result_type, rain_aeps, peaks, std_q, png_path,
-                      lower_aep, upper_aep, aep_of_pmp)
-            print(f'  Plot -> {png_path}')
+            self._tpt_result(self.mcdf, result_type)
 
         out_path = f'{self._output_base()}.csv'
         print(f'\nUpdating MCDF with new *_aep columns: {out_path}')
         self.mcdf.to_csv(out_path)
+
+    # ------------------------------------------------------- inflow volumes
+
+    def _analyse_volumes(self):
+        """Frequency analysis of the peak inflow volume of each analysis duration.
+
+        Analysed the same way the peaks are - by TPT for Monte Carlo input, by
+        medians and critical durations for ensemble input - so the volume curves
+        carry the same probabilities as the inflow curve beside them.
+        """
+        self._ensure_mcdf_loaded()
+        self._ensure_inflows_loaded()
+        if len(self.mcdf) != self.inflows_arr.shape[1]:
+            raise ValueError(
+                f'Database row count ({len(self.mcdf)}) does not match the number of '
+                f'inflow columns ({self.inflows_arr.shape[1]}), so the volumes cannot '
+                f'be matched to the events.'
+            )
+
+        durations, source = self._volume_durations()
+        print('\n=== Inflow volume analysis ===')
+        print(f'Analysis durations (hours): {durations}')
+        print(f'  from the {source}')
+        volumes = rolling_max_volumes(self.inflows_arr, self.dt_hours, durations)
+        if not volumes:
+            print('No analysis duration fits these hydrographs - no volumes analysed.')
+            return
+
+        # Positional, like everything else that lines the hydrograph columns up
+        # with the database rows.
+        vol_df = pd.DataFrame({f'inflowVol{duration}h': values
+                               for duration, values in volumes.items()},
+                              index=self.mcdf.index)
+        sample_columns = [column for column in
+                          ('m', 'n', 'rain_z', 'rain_aep', 'storm_method', 'duration', 'tp')
+                          if column in self.mcdf.columns]
+        vol_df = pd.concat([self.mcdf[sample_columns], vol_df], axis=1)
+        vol_columns = [f'inflowVol{duration}h' for duration in volumes]
+
+        if self.scheme == 'ensemble':
+            self._analyse_volumes_ensemble(vol_df, vol_columns)
+        else:
+            for duration, column in zip(volumes, vol_columns):
+                self._tpt_result(vol_df, column,
+                                 ylabel=f'{duration} hour inflow volume (ML)')
+
+        out_path = os.path.join(self.results_folder,
+                                f'{self.basename}__inflow_volumes{self._suffix()}.csv')
+        print(f'\nWriting the inflow volumes: {out_path}')
+        vol_df.to_csv(out_path)
+
+    def _analyse_volumes_ensemble(self, vol_df, vol_columns):
+        """The ensemble analysis over the volume columns - the median pattern of
+        each storm duration and the critical storm duration per AEP, as
+        EnsembleSimulator.analyse_volumes produces them.
+
+        Note the two senses of duration here: the rows are events of a storm
+        duration, the columns are the volume windows the analysis integrates over.
+        """
+        out_base = f'{self._output_base()}_inflowVol'
+        print(f'\nEnsemble analysis of the inflow volumes: {out_base}')
+        analyse_ensemble(vol_df, out_base,
+                         result_types=vol_columns,
+                         result_labels={column: 'Volume (ML)' for column in vol_columns},
+                         result_titles={column: f'{column[len("inflowVol"):-1]} hour '
+                                                f'inflow volume' for column in vol_columns})
