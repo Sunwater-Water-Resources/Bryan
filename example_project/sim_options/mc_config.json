@@ -8,6 +8,11 @@
     "sample_method": "normally distributed"
   },
   "aep_of_pmp": 1600000,
+  "volume_durations": [
+    24,
+    48,
+    72
+  ],
   "tpt_quantile_analysis": {
     "inflow": {
       "lower": 500,

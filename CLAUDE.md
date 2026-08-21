@@ -106,6 +106,11 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   index as an ordinary column, so it is promoted on read — do not assume a positional
   `index_col` works for both formats. Parquet also returns `storm_method` as a `Categorical`,
   which will not concatenate with a string — `analyse_ensemble` casts it back.
+- `Analyse volumes` (`yes`/`inflow`) adds the inflow volume analysis: the peak volume in a moving
+  window of each duration from `volume_durations` in the row's `Config file`, through the same
+  analysis as the peaks (TPT or `analyse_ensemble`). Inflow only, deliberately — outflow and
+  storage volumes follow from the peak level and the rating curve. The windows themselves come
+  from `lib/Volumes.py`, shared with `Simulator.analyse_volumes`.
 - An ensemble inflow file is **ragged**: one file spans every duration, each padded with NaN
   after its own simulation period. This works without special handling — `interpolate('slinear')`
   does not fill trailing NaN, the routing propagates them, and the `np.nanmax` in `_write_mcdf`
@@ -138,6 +143,17 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 ### Climate change (`lib/ClimateChange.py`)
 - `ClimateAdjustment` — rainfall/loss uplift and temporal-pattern shift per the 2023 draft ARR
   Climate Change Considerations update (GWL- or SSP/Year-based). `D50Weighting` — front-loading shift.
+
+### Flood volumes (`lib/Volumes.py`)
+- `rolling_max_volumes(flows, dt, durations)` — the peak volume (ML) in a moving window of each
+  analysis duration, one pass per duration over the whole array. Shared by
+  `Simulator.analyse_volumes` (Monte Carlo and ensemble) and `ReservoirRoutingSimulator`, which
+  is the point: it was written twice, and the two windows differed. The window is
+  `duration/dt + 1` samples so it spans the **full** duration — the Monte Carlo copy used
+  `duration/dt`, a timestep short, and biased every volume low by about `dt/duration` (fixed
+  21 August 2026, so volumes from earlier runs are slightly lower than they should be). Durations
+  that are not a whole number of timesteps, or longer than the hydrographs, are reported and
+  skipped; both used to be silent, and the first crashed the caller on a column-count mismatch.
 
 ### Curve fitting (`lib/InterpolationCurves.py`)
 - `Curve`, `CoercedQuadratic`, `GEV` — used to extrapolate rainfall to rare/extreme AEPs.

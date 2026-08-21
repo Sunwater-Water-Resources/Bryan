@@ -31,17 +31,23 @@ RESULT_TITLES = {'inflow': 'Dam inflow',
                  'outflow': 'Dam outflow'}
 
 
-def analyse_ensemble(df, outputfile):
+def analyse_ensemble(df, outputfile, result_types=None,
+                     result_labels=None, result_titles=None):
     """Analyse an ensemble results dataframe.
 
-    df         : one row per simulation, with rain_aep, duration, tp,
-                 storm_method and the inflow/level/outflow peaks.
-    outputfile : the output basename, as used by the simulators - the plots and
-                 csv sub-folders are created beside it.
+    df           : one row per simulation, with rain_aep, duration, tp,
+                   storm_method and the columns being analysed.
+    outputfile   : the output basename, as used by the simulators - the plots
+                   and csv sub-folders are created beside it.
+    result_types : the columns to analyse, defaulting to the three peaks. The
+                   inflow volume analysis of lib/ReservoirRouting.py passes its
+                   volume columns instead, so it cannot drift from this one.
+    result_labels / result_titles : the y-axis label and box plot title of each,
+                   keyed by column name. Needed with result_types.
     """
-    result_types = RESULT_TYPES
-    result_labels = RESULT_LABELS
-    result_titles = RESULT_TITLES
+    result_types = list(result_types) if result_types is not None else RESULT_TYPES
+    result_labels = result_labels if result_labels is not None else RESULT_LABELS
+    result_titles = result_titles if result_titles is not None else RESULT_TITLES
     # A database read from parquet brings storm_method back as a Categorical
     # (dictionary-encoded), which will not concatenate with a string when the
     # composite pattern label is built. Reading the same table from csv gives
@@ -74,7 +80,10 @@ def analyse_ensemble(df, outputfile):
         aep_df = df[df['rain_aep'] == aep]
 
         # Set up the box plot
-        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(9, 4))
+        # squeeze=False so a single result type still indexes as ax[ind]
+        fig, axes = plt.subplots(nrows=1, ncols=len(result_types),
+                                 figsize=(3 * len(result_types), 4), squeeze=False)
+        ax = axes[0]
         fig.suptitle(f'1 in {aep} AEP')
 
         # Set up the median dataframe
