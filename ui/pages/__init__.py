@@ -11,12 +11,13 @@ from nicegui import ui
 
 
 def register_all() -> None:
-    from pages import edit, history, project, run, select
+    from pages import edit, history, project, results, run, select
 
     for route, handler in [
         ("/", project.project_page),
         ("/select", select.select_page),
         ("/run", run.run_page),
+        ("/results", results.results_page),
         ("/edit", edit.edit_page),
         ("/history", history.history_page),
     ]:

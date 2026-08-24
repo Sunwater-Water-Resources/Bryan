@@ -201,12 +201,44 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
 - `ui/tests/test_progress.py` greps `Main.py` and `lib/RunLog.py` for the literal strings it
   parses. If you change that wording, that test fails — update both together rather than
   letting the progress display silently go blank.
+- **The Results page reads only the quantile tables**, never the mcdf: `<Output file>_<type>.csv`
+  (monte carlo) and `<Output file>__<type>_quantiles<suffix>.csv` (reservoir routing) hold the
+  same three columns, so `core/results.py` has one reader for both. It draws with `ui.echart`
+  and takes its standard normal variate from `statistics.NormalDist`, because the allow-list
+  rule means the UI environment has neither matplotlib nor scipy — do not reach for
+  `ui.pyplot` or `scipy.special.ndtri` here.
+- **A critical-duration crossover is judged over the range the new duration holds, not at the
+  crossing point.** The margin at a crossover is near zero by definition — the curves are equal
+  there — so measuring strength there would dismiss every real crossover as noise. `Band.peak_margin`
+  is the quantity that matters; a switch whose band never clears the noise floor is an
+  `idxmax` hop and is reported rather than pinned. **The margin's unit is per result type**
+  (`margin_scale`): percent for flows and volumes, **metres for level**, because level is an
+  interval scale on an arbitrary datum — a percentage of 217 m AHD is meaningless, and on the
+  real Callide E010 results a percentage floor dismissed all six level crossovers as noise
+  when in metres they are 0.02–0.10 m and four of them are real. Nothing assumes which way the critical duration
+  moves with AEP: it lengthens with rarity for inflow but *shortens* for lake level, which goes long
+  at frequent AEPs while the storage fills and short on the rare tail as the dam becomes a conveyance.
+- `ui/tests/test_results_page.py` renders the page through `nicegui.testing.user_simulation`,
+  which is why `pytest-asyncio` is in `requirements-ui.txt`. It builds its own fixture instead of
+  enabling the nicegui pytest plugin, so the rest of the suite still runs without nicegui
+  installed — and the plugin proper needs selenium, which nothing here wants.
 
 ### Post-processing utilities (`util/`)
 Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequencyCurves.py`
 (frequency plots), `GetRepresentativeEvents.py` (representative event selection),
 `DesignFloodInterpolation.py`, `MaxQuantiles.py`, `ReportCollation.py`. See
 `Manual/SubDocs/utilities.md`.
+- `CriticalDurationAnalysis.py` is the exception: a real CLI (argparse), because the UI's
+  Results page shells out to it to export what it is showing. `CrticalDurationAnalysis.py`
+  (sic — the typo is the older file) is the same analysis with hard-coded paths; both go
+  through `UtilModule.MonteCarloSimulationGroup`, so keep the analysis there, not in either
+  entry point.
+- `UtilModule` fails whole-analysis rather than per-row, so its edge cases matter: an AEP no
+  duration reached (all-NA row → `idxmax` raises; a dam that does not spill has no frequent
+  outflow quantile), no `_perc_smooth` files at all (reservoir routing writes none →
+  `pd.concat([])`), a volume column named `Vol24h` (not in the axis-label dict), and dropping
+  an AEP the set does not have. All four are fixed and pinned by
+  `ui/tests/test_critical_export.py`, which runs the real script.
 
 ## Environment
 

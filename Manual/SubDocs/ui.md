@@ -77,6 +77,60 @@ Two different things:
 - **Stop after the current chunk** drops anything not yet started and signals nothing. Nothing is left half-written.
 - **Stop now** kills Bryan and the URBS or RORB processes underneath it. The simulation in flight never reaches the run log, so it has **no entry there at all**; its model working folder and its log file are left part-written.
 
+## Viewing results
+
+The **Results** page plots the frequency curves a group has already produced, one line per storm duration, so the critical duration can be read off them. Pick the group, pick the result type — ```inflow```, ```level```, ```outflow```, or one of the inflow volume windows where the volume analysis has run — and tick the durations to compare.
+
+The files it reads are the standard-AEP quantile tables the analysis writes: ```<Output file>_level.csv``` from the Monte Carlo method, and ```<Output file>__level_quantiles<suffix>.csv``` from reservoir routing. Both hold the same three columns, so a re-routed result plots beside an original one. Nothing is computed from the raw databases and nothing is re-run; a row that has not been analysed simply does not appear.
+
+The **maximum envelope** is the largest value at each AEP across the ticked durations. With **mark up critical durations** on, the AEP axis is shaded by which duration owns the envelope, each crossover is pinned, and the table below gives the critical duration at every standard AEP.
+
+### Whether the durations bracket the critical one
+
+This is what the page is for, so it is said in words rather than left in the picture. Whenever the shortest or the longest duration you ran is the critical one at some AEP, the page says which and at what AEPs — the critical duration may lie beyond the range that was run, and only running further out will show it.
+
+The direction to expect is **not the same for every result type**. For lake level on a dam the critical duration tends to be **longer at frequent AEPs**, because it takes rainfall volume to fill and charge the storage, and **shorter on the rare tail**, as the dam starts to act more like a conveyance system than a volume system. Peak inflow is set by the catchment's response instead and does not behave this way. The page therefore assumes no direction: each AEP is judged on its own, and the *critical duration against AEP* plot under the main chart draws the shape directly so a departure from it is visible.
+
+### Crossovers and sampling noise
+
+Where two duration curves are nearly coincident — the rare tail of a level curve especially, once everything is spilling — the winning duration changes from one AEP to the next on Monte Carlo sampling noise alone, and that is indistinguishable from a real crossover by eye.
+
+The margin column is how far the critical duration beat the runner-up, **in the units of the result type**: percent for inflow, outflow and volumes, and **metres for level**. The distinction matters. Flows and volumes are ratio scales, where a percentage is the natural measure; a lake level is an interval scale on an arbitrary datum, and a percentage of a number like 217 m AHD says nothing about it. At Callide the durations separate by 0.01 to 0.10 m across the frequency range — 0.005 to 0.05% — so judging level on a percentage floor would report every crossover it has as noise.
+
+The floor a switch has to clear is shown beside the plot and can be changed: it defaults to 1% for flows and volumes and 0.05 m for level, which is a rule of thumb rather than a physical constant.
+
+Note also that the margin *at* a crossover is near zero whatever the crossover means, since the two curves are equal there; a switch is therefore judged on how convincingly the incoming duration wins over the range it then holds. One that never gets clear of the next duration is reported as noise and is not pinned on the plot.
+
+### Exporting the analysis
+
+**Export critical durations** writes the analysis to file, one run per result type:
+
+| File | Holds |
+| ----------- | ----------- |
+| ```<name>_<type>_critical.csv``` | every duration's quantiles, the maximum at each AEP, the critical duration, and the confidence limits at that duration |
+| ```<name>_<type>_critical_durations.png``` | the duration curves |
+
+The dialog lists every file before writing any of them and marks the ones that already exist, since it overwrites without asking afterwards. The output name defaults to the group's name with the duration removed, and the folder to wherever the quantile files are.
+
+Behind the button is ```util/CriticalDurationAnalysis.py```, run with **Bryan's** interpreter rather than the launcher's — the exported table also carries the smoothed confidence percentiles, which is a fifth-order polynomial fit in log space, and a second implementation of that in the launcher would be a second thing to drift. The files that come out are the same ones the study post-processing has always produced. That script can also be run by hand:
+
+```bat
+python util\CriticalDurationAnalysis.py --result-type level ^
+    --output-folder ...\results --output-name CLD_mc_E010_level_critical ^
+    --sim 24 ...\CLD_mc_24h_E010_level.csv ^
+    --sim 36 ...\CLD_mc_36h_E010_level.csv
+```
+
+```CrticalDurationAnalysis.py``` beside it is the same analysis driven by a hard-coded block of paths, for a study you are already sitting in front of.
+
+Results routed by the reservoir routing method export without the confidence columns: that method writes the quantile files but not the ```_perc_smooth``` files the limits come from.
+
+### What is not shown
+
+The ensemble method does not appear. ```lib/EnbAnalysis.py``` already computes the median pattern per duration and the critical duration per AEP inside the run, and writes its own plots beside the results; a second implementation in the launcher would only be somewhere for the two to disagree.
+
+Only inflow volumes are offered, for the reason the volume analysis itself gives: outflow and storage volumes follow from the peak level and the rating curve.
+
 ## Things worth knowing
 
 ### Formulas without cached values

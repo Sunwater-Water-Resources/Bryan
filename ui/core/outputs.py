@@ -26,6 +26,7 @@ so the probes here accept either.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -208,3 +209,103 @@ def working_folder_key(row) -> str:
     wrapper rmtree's the folder on entry.
     """
     return Path(cell_text(row.get("Output file"))).name
+
+
+# ---------------------------------------------------------------------------
+# Quantile files - what the results viewer plots
+# ---------------------------------------------------------------------------
+
+# The volume analyses tag the FILE 'inflowVol24h' and the COLUMN inside it
+# 'Vol24h' - Simulator.analyse_volumes and ReservoirRouting._tpt_result both
+# say so, and util/MaxQuantiles.py reads both, so neither is free to change.
+VOLUME_RE = re.compile(r"^(?P<kind>inflow|outflow)Vol(?P<window>\d+(?:[._]\d+)?)h$",
+                       re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class QuantileFile:
+    """One standard-AEP quantile table on disk.
+
+    ``key`` is how the file is tagged; ``column`` is the column to read out of
+    it. They differ only for the volumes, where a file called ``inflowVol24h``
+    holds a column called ``Vol24h``.
+    """
+
+    key: str
+    column: str
+    path: Path
+
+    @property
+    def is_volume(self) -> bool:
+        return VOLUME_RE.match(self.key) is not None
+
+    @property
+    def label(self) -> str:
+        match = VOLUME_RE.match(self.key)
+        if not match:
+            return self.key
+        window = match.group("window").replace("_", ".")
+        return f"{match.group('kind').lower()} volume, {window} h window"
+
+
+def quantile_files(row, project_folder) -> dict:
+    """Every quantile table this row has actually written, by key.
+
+    Monte carlo and reservoir routing name these differently but write the same
+    three columns - ``aep (1 in x)``, ``probability``, ``<column>`` - from
+    lib/MCScheme.py:353 and lib/ReservoirRouting.py:310 respectively. Only
+    files that exist are returned: the point of this is what can be plotted.
+    """
+    method = normalise_method(row.get("Method"))
+    if method == MONTE_CARLO:
+        return _monte_carlo_quantiles(row, project_folder)
+    if method == RESERVOIR_ROUTING:
+        return _reservoir_quantiles(row, project_folder)
+    return {}          # the ensemble method writes its own critical-duration
+                       # analysis instead - see lib/EnbAnalysis.py
+
+
+def _found(found: dict, key: str, path: Path) -> None:
+    if not path.is_file():
+        return
+    match = VOLUME_RE.match(key)
+    found[key] = QuantileFile(key=key,
+                              column=f"Vol{match.group('window')}h" if match else key,
+                              path=path)
+
+
+def _monte_carlo_quantiles(row, project_folder) -> dict:
+    base = resolve_value(project_folder, cell_text(row.get("Output file")))
+    if base is None:
+        return {}
+    found: dict = {}
+    for kind in RESULT_TYPES:
+        _found(found, kind, Path(f"{base}_{kind}.csv"))
+    for path in _safe_glob(base.parent, f"{base.name}_*Vol*h.csv"):
+        _found(found, path.stem[len(base.name) + 1:], path)
+    return found
+
+
+def _reservoir_quantiles(row, project_folder) -> dict:
+    results_folder = resolve_value(project_folder, row.get("Results folder"))
+    output_file = cell_text(row.get("Output file"))
+    if results_folder is None or not output_file:
+        return {}
+    basename = Path(output_file).name
+    suffix = output_suffix(row)
+    found: dict = {}
+    for kind in RESULT_TYPES:
+        _found(found, kind,
+               results_folder / f"{basename}__{kind}_quantiles{suffix}.csv")
+    tail = f"_quantiles{suffix}.csv"
+    for path in _safe_glob(results_folder, f"{basename}__*Vol*h{tail}"):
+        _found(found, path.name[len(basename) + 2:-len(tail)], path)
+    return found
+
+
+def _safe_glob(folder: Path, pattern: str) -> list:
+    """Globbing a folder that may not exist, or may not be readable."""
+    try:
+        return sorted(folder.glob(pattern))
+    except OSError:
+        return []

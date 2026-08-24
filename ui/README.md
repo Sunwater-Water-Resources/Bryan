@@ -61,6 +61,62 @@ buttons, because they mean different things:
   in flight never reaches the run log, so it gets **no entry there at all**,
   and its working folder and log are left part-written.
 
+**Results** — the analysed frequency curves of one group, plotted on top of
+each other so the critical duration can be read off. Pick the group and the
+result type (inflow, level, outflow, or a volume window), tick the durations,
+and optionally add the maximum envelope over them. With the mark-up on, the AEP
+axis is shaded by which duration owns the envelope and each crossover is
+pinned.
+
+What it is really for is the question of whether the durations that were run
+bracket the critical one, so that is said in words rather than left to be read
+off the picture: whenever the shortest or longest duration you ran is critical
+at some AEP, the page says so and at which AEPs.
+
+Two things to know when reading it:
+
+- **The direction is not the same for every result type.** For lake level the
+  critical duration tends to be long at frequent AEPs — it takes rainfall
+  volume to fill and charge the storage — and shorter on the rare tail as the
+  dam behaves as a conveyance rather than a volume system. Peak inflow follows
+  the catchment and does no such thing. Nothing in the page assumes a
+  direction; every AEP is checked on its own.
+- **The margin column is what separates a crossover from noise**, and it is
+  measured in the units of the result type: percent for flows and volumes,
+  **metres for level**. Level is an interval scale on an arbitrary datum, so a
+  percentage of 217 m AHD says nothing — at Callide the durations separate by
+  0.01–0.10 m, which as a percentage is 0.005–0.05%, and a percentage floor
+  dismisses every real level crossover as noise. The floor itself (1%, or
+  0.05 m) is on the page and can be changed per plot.
+- **A crossover is judged over its range, not at the crossing point.** The two
+  curves are equal where they cross, so the margin there is near zero whatever
+  the crossover means. A switch is judged on how convincingly the new duration
+  wins over the range it then holds; one that never gets clear of the next
+  duration is reported as noise and left unpinned.
+
+**Export critical durations** writes the analysis out, one run per result type:
+
+```
+<name>_<type>_critical.csv           the table: every duration, the maximum,
+                                     the critical duration, and the confidence
+                                     limits at it
+<name>_<type>_critical_durations.png the duration curves
+```
+
+The dialog shows every file before it writes any, and marks the ones already
+there. It runs `util/CriticalDurationAnalysis.py` with **Bryan's** interpreter
+rather than recomputing anything here: the exported table also carries the
+smoothed confidence percentiles, which is a polyfit in log space, and a second
+copy of that would be a second thing to drift. The files are then identical in
+format to what the study post-processing already produces.
+
+Reservoir-routing results export without the confidence columns, because that
+method writes quantiles but no `_perc_smooth` files.
+
+The ensemble method does not appear here: `lib/EnbAnalysis.py` computes the
+critical duration per AEP inside the run and writes its own plots, and a second
+implementation would be somewhere for the two to disagree.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 
