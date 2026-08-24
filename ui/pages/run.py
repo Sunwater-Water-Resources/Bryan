@@ -48,12 +48,16 @@ def run_page() -> None:
         _header(record)
         body = ui.column().classes("w-full gap-4")
 
+        # The body is rebuilt on every poll, so the console expansions would
+        # come back closed each tick. Remember which ones the user opened.
+        console_open: set[int] = set()
+
         def render() -> None:
             STATE.manager.poll()
             body.clear()
             with body:
                 for chunk in record.chunks:
-                    _chunk_card(record, chunk)
+                    _chunk_card(record, chunk, console_open)
 
         render()
         ui.timer(STATE.settings.poll_seconds, render)
@@ -111,7 +115,7 @@ def _confirm_cancel(record) -> None:
     dialog.open()
 
 
-def _chunk_card(record, chunk) -> None:
+def _chunk_card(record, chunk, console_open: set[int]) -> None:
     result = progress.read_chunk_progress(
         FakeChunk(chunk),
         log_paths=[Path(p) if p else None for p in chunk.log_paths],
@@ -151,7 +155,14 @@ def _chunk_card(record, chunk) -> None:
 
         _sim_table(result)
 
-        with ui.expansion("Console output").classes("w-full"):
+        def remember(event, index: int = chunk.index) -> None:
+            if event.value:
+                console_open.add(index)
+            else:
+                console_open.discard(index)
+
+        with ui.expansion("Console output", value=chunk.index in console_open,
+                          on_value_change=remember).classes("w-full"):
             text = tail(chunk.console_log).text or "(nothing yet)"
             ui.code(text[-8000:]).classes("w-full text-xs")
 
