@@ -123,13 +123,16 @@ class MonteCarloSimulationGroup:
 
     def add_simulation(self, simulation, duration):
         self.simulations[duration] = simulation
-        if self.result_type == 'level':
-            if self.storage_curve is not None:
-                simulation.create_volume_results(self.storage_curve)
         if simulation.quantiles is not None:
             self.std_aeps = simulation.std_aeps
             self.std_z = simulation.std_z
             self.result_type = simulation.result_type
+        # The simulation's own result type, and read after it has been set:
+        # this used to test self.result_type, which is still None while the
+        # first simulation is being added, so the first duration of every group
+        # was silently left without volume results.
+        if simulation.result_type == 'level' and self.storage_curve is not None:
+            simulation.create_volume_results(self.storage_curve)
         if simulation.upper_raw is not None:
             self.upper_header = simulation.upper_smooth.name
             self.lower_header = simulation.lower_smooth.name
@@ -160,7 +163,14 @@ class MonteCarloSimulationGroup:
             df = pd.concat(all_quantiles, axis=1)
             if plot:
                 self.plot_durations(df)
-            crit_durations = df.idxmax(axis=1)
+            # An AEP that no duration reached has no critical duration: a dam
+            # that does not spill at frequent AEPs has no outflow quantile
+            # there. idxmax raises on an all-NA row rather than returning NaN,
+            # so those rows are left blank instead of losing the analysis.
+            has_value = df.notna().any(axis=1)
+            crit_durations = pd.Series(index=df.index, dtype=object)
+            if has_value.any():
+                crit_durations[has_value] = df[has_value].idxmax(axis=1)
             df['max'] = df.max(axis=1)
             df['critical_duration'] = crit_durations
         else:
@@ -170,7 +180,9 @@ class MonteCarloSimulationGroup:
     def plot_durations(self, df, dpi=200):
         plt_df = df.copy()
         if self.drop_aeps:
-            plt_df.drop(index=self.drop_aeps, inplace=True)
+            # errors='ignore': the AEP set depends on the method config and the
+            # AEP of the PMP, so an AEP to drop is not always present.
+            plt_df.drop(index=self.drop_aeps, inplace=True, errors='ignore')
         std_aeps = plt_df.index
         std_z = ndtri(1 - 1 / std_aeps)
         plt_df['z'] = std_z
@@ -187,7 +199,13 @@ class MonteCarloSimulationGroup:
                    'level': 'Lake level (m AHD)',
                    'outflow': 'Flow (m³/s)',
                    'volume': 'Volume (ML)'}
-        plt.ylabel(ylabels[self.result_type])
+        # A volume analysis reads a column called 'Vol24h', which was a KeyError
+        # here - the axis label is not worth losing the plot over.
+        label = ylabels.get(self.result_type)
+        if label is None:
+            label = ('Volume (ML)' if str(self.result_type).lower().startswith('vol')
+                     else str(self.result_type))
+        plt.ylabel(label)
         plt.xlabel('AEP (1 in X)')
         plt.xticks(std_z, std_aeps, rotation=90)
         plt.tight_layout()
@@ -205,10 +223,19 @@ class MonteCarloSimulationGroup:
                 lower = simulation.lower_smooth.copy()
                 lower.name = '{}h'.format(duration)
                 all_lower.append(lower)
+        if not all_upper or not all_lower or self.upper_header is None:
+            # The reservoir routing method writes quantiles but no _perc_smooth
+            # files, so there are no confidence limits to carry through. Return
+            # nothing to concatenate rather than failing the whole analysis.
+            print('\nNo percentile files found: the critical duration table '
+                  'will have no confidence limits.')
+            return pd.DataFrame(index=self.std_aeps)
         upper_df = pd.concat(all_upper, axis=1)
         lower_df = pd.concat(all_lower, axis=1)
         for aep in self.std_aeps:
             critical_duration = critical_durations[aep]
+            if not isinstance(critical_duration, str):
+                continue          # no duration reached this AEP - see above
             upper_df.loc[aep, self.upper_header] = upper_df.loc[aep, critical_duration]
             lower_df.loc[aep, self.lower_header] = lower_df.loc[aep, critical_duration]
         df = pd.concat([lower_df[self.lower_header], upper_df[self.upper_header]], axis=1)

@@ -12,3 +12,4 @@ psutil>=5.9
 
 # tests
 pytest>=8.0
+pytest-asyncio>=0.23      # ui/tests/test_results_page.py renders a page

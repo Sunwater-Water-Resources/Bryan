@@ -13,6 +13,7 @@ NAV = [
     ("Project", "/"),
     ("Select", "/select"),
     ("Run", "/run"),
+    ("Results", "/results"),
     ("Edit", "/edit"),
     ("History", "/history"),
 ]
