@@ -61,10 +61,12 @@ buttons, because they mean different things:
   in flight never reaches the run log, so it gets **no entry there at all**,
   and its working folder and log are left part-written.
 
-**Results** — the analysed frequency curves of one group, plotted on top of
-each other so the critical duration can be read off. Pick the group and the
-result type (inflow, level, outflow, or a volume window), tick the durations,
-and optionally add the maximum envelope over them. With the mark-up on, the AEP
+**Results** — two tabs over the same files, and neither runs anything.
+
+*Durations* plots the analysed frequency curves of one group on top of each
+other so the critical duration can be read off. Pick the group and the result
+type (inflow, level, outflow, or a volume window), tick the durations, and
+optionally add the maximum envelope over them. With the mark-up on, the AEP
 axis is shaded by which duration owns the envelope and each crossover is
 pinned.
 
@@ -93,6 +95,18 @@ Two things to know when reading it:
   the crossover means. A switch is judged on how convincingly the new duration
   wins over the range it then holds; one that never gets clear of the next
   duration is reported as noise and left unpinned.
+
+*Groups* plots one line per **group** instead — its envelope over the durations
+it ran, which is the design quantile — so climate scenarios and dam options can
+be compared with each other. There is deliberately no envelope across the
+groups and no mark-up: groups are scenarios, not alternatives to be enveloped.
+What goes underneath is the change from a chosen **baseline**, in metres for
+level and percent for flows and volumes, and the critical duration is overlaid
+per group so it is visible whether that moves between scenarios too. Because an
+overlay hides how each envelope was built, the tab reports uneven duration
+coverage, an envelope pinned to the end of its own range, a group mixing two
+methods, and groups that stop at different AEPs. Groups come from the open sims
+list; to compare against another one, use `util/PlotFrequencyCurves.py`.
 
 **Export critical durations** writes the analysis out, one run per result type:
 

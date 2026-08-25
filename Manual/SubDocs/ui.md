@@ -79,7 +79,9 @@ Two different things:
 
 ## Viewing results
 
-The **Results** page plots the frequency curves a group has already produced, one line per storm duration, so the critical duration can be read off them. Pick the group, pick the result type — ```inflow```, ```level```, ```outflow```, or one of the inflow volume windows where the volume analysis has run — and tick the durations to compare.
+The **Results** page has two tabs. **Durations** plots the frequency curves a group has already produced, one line per storm duration, so the critical duration can be read off them; **Groups** plots one line per *group* instead, so scenarios can be compared with each other. Both read the same files and neither runs anything.
+
+On the **Durations** tab, pick the group, pick the result type — ```inflow```, ```level```, ```outflow```, or one of the inflow volume windows where the volume analysis has run — and tick the durations to compare.
 
 The files it reads are the standard-AEP quantile tables the analysis writes: ```<Output file>_level.csv``` from the Monte Carlo method, and ```<Output file>__level_quantiles<suffix>.csv``` from reservoir routing. Both hold the same three columns, so a re-routed result plots beside an original one. Nothing is computed from the raw databases and nothing is re-run; a row that has not been analysed simply does not appear.
 
@@ -124,6 +126,23 @@ python util\CriticalDurationAnalysis.py --result-type level ^
 ```CrticalDurationAnalysis.py``` beside it is the same analysis driven by a hard-coded block of paths, for a study you are already sitting in front of.
 
 Results routed by the reservoir routing method export without the confidence columns: that method writes the quantile files but not the ```_perc_smooth``` files the limits come from.
+
+### Comparing groups with each other
+
+The **Groups** tab answers the other question: what a warmer climate, a raised full supply level, or a different antecedent storage assumption does to the design flood. Each group contributes **one** line — its maximum envelope over the durations it ran — because that envelope *is* the design quantile. Tick the groups to overlay, and the legend trims each group key down to the part that tells them apart, so ```sims_mc\results\TFD_mc_GWL1p3``` appears as ```GWL1p3```. The full key is on the checkbox tooltip and in *Files read*.
+
+There is deliberately **no envelope over the groups** and no mark-up: groups are scenarios, not alternatives to be enveloped, so a maximum across them would not be a quantity. What goes underneath instead is the change from a **baseline** group, in the same units the margin column uses — metres for level, percent for inflow, outflow and volumes. Where the baseline is zero, as an outflow quantile is on a dam that does not spill at the frequent end, no change is shown and the page says so.
+
+The *critical duration against AEP* plot under the chart is drawn per group, which is the one place it can be seen whether the critical duration itself moves between scenarios.
+
+Overlaying envelopes hides how each one was built, so the tab says out loud what the picture cannot:
+
+- **Envelopes over different numbers of durations.** An envelope over fewer durations is a lower bound, so the comparison is biased towards the better covered group. The duration count is shown beside every group.
+- **An envelope pinned to the end of its own duration range**, for either group, for the reason above — a difference measured against a lower bound is not the difference.
+- **A group drawing on more than one method**, which grouping normally separates but does not guarantee.
+- **Groups that do not reach the same AEP**, which is ordinary rather than wrong: the AEP of the PMP comes from the storm config.
+
+Groups come from the sims list that is open. Comparing against a run held in a *different* sims list is not offered here; use ```util/PlotFrequencyCurves.py```, whose plot list takes folders and filenames directly.
 
 ### What is not shown
 
