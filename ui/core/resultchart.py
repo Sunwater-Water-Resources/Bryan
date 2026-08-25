@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import math
 
-from .results import format_aep, normal_variate, y_axis
+from .results import ABSOLUTE, format_aep, normal_variate, y_axis
 
 # Chosen to stay distinguishable on both the light and dark themes the UI
 # follows, and to survive being printed in greyscale in a report.
@@ -72,6 +72,23 @@ def _series_data(index, values):
             for aep, value in zip(index, values)]
 
 
+def _x_axis(aeps, *, name_gap=32) -> dict:
+    """The standard normal variate axis, labelled with the AEPs it came from."""
+    zs = [_num(normal_variate(aep)) for aep in aeps]
+    known = [z for z in zs if z is not None]
+    return {
+        "type": "value",
+        "name": "AEP (1 in X)",
+        "nameLocation": "middle",
+        "nameGap": name_gap,
+        "min": min(known) if known else None,
+        "max": max(known) if known else None,
+        "axisLabel": {"customValues": known, "hideOverlap": True,
+                      ":formatter": _axis_label_formatter(aeps)},
+        "axisTick": {"customValues": known},
+    }
+
+
 def duration_chart(comparison, analysis, key, *, show_envelope=True,
                    show_markup=True, title="") -> dict:
     """The frequency curves, one per duration, with the envelope over them."""
@@ -112,8 +129,8 @@ def duration_chart(comparison, analysis, key, *, show_envelope=True,
                 envelope["markPoint"] = points
         series.append(envelope)
 
-    zs = [_num(normal_variate(aep)) for aep in aeps]
-    known = [z for z in zs if z is not None]
+    horizontal = _x_axis(aeps)
+    horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
 
     return {
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
@@ -121,18 +138,7 @@ def duration_chart(comparison, analysis, key, *, show_envelope=True,
                     ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(5)"},
         "legend": {"type": "scroll", "top": 24},
         "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
-        "xAxis": {
-            "type": "value",
-            "name": "AEP (1 in X)",
-            "nameLocation": "middle",
-            "nameGap": 32,
-            "min": min(known) if known else None,
-            "max": max(known) if known else None,
-            "axisLabel": {"customValues": known, "hideOverlap": True,
-                          ":formatter": _axis_label_formatter(aeps)},
-            "axisTick": {"customValues": known},
-            "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}},
-        },
+        "xAxis": horizontal,
         "yAxis": {
             "type": "log" if logarithmic else "value",
             "name": label,
@@ -200,22 +206,144 @@ def critical_duration_chart(comparison, analysis) -> dict:
     aeps = list(analysis.critical.index)
     data = [[_num(normal_variate(aep)), _num(durations[owner])]
             for aep, owner in analysis.critical.items()]
-    known = [point[0] for point in data if point[0] is not None]
 
     return {
         "tooltip": {"trigger": "axis"},
         "grid": {"left": 60, "right": 30, "top": 20, "bottom": 50},
-        "xAxis": {
-            "type": "value", "name": "AEP (1 in X)", "nameLocation": "middle",
-            "nameGap": 30,
-            "min": min(known) if known else None,
-            "max": max(known) if known else None,
-            "axisLabel": {"customValues": known, "hideOverlap": True,
-                          ":formatter": _axis_label_formatter(aeps)},
-            "axisTick": {"customValues": known},
-        },
+        "xAxis": _x_axis(aeps, name_gap=30),
         "yAxis": {"type": "log", "name": "Critical duration (h)",
                   "nameLocation": "middle", "nameGap": 40},
         "series": [{"type": "line", "step": "middle", "symbolSize": 6,
                     "itemStyle": {"color": PALETTE[0]}, "data": data}],
+    }
+
+
+# -- overlaying groups -------------------------------------------------------
+#
+# One line per group, and no mark-up: the maximum *across* groups is not a
+# quantity - they are scenarios, not alternatives to be enveloped - so there is
+# no envelope of envelopes, no bands and no crossover pins here. What replaces
+# them is the change from a baseline, drawn underneath on the same axis.
+
+def overlay_chart(overlay, *, title="") -> dict:
+    """One group's envelope per line."""
+    frame = overlay.frame
+    if frame.empty:
+        return {"series": []}
+
+    aeps = list(frame.index)
+    label, logarithmic = y_axis(overlay.key)
+    colours = colour_for(frame.columns)
+
+    horizontal = _x_axis(aeps)
+    horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
+
+    return {
+        "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"},
+                    ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(5)"},
+        "legend": {"type": "scroll", "top": 24},
+        "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
+        "xAxis": horizontal,
+        "yAxis": {
+            "type": "log" if logarithmic else "value",
+            "name": label,
+            "nameLocation": "middle",
+            "nameGap": 45,
+            "scale": True,
+            "splitLine": {"lineStyle": {"opacity": 0.25}},
+        },
+        "series": [{
+            "name": str(column),
+            "type": "line",
+            "smooth": False,
+            "symbolSize": 5,
+            "connectNulls": False,
+            "itemStyle": {"color": colours[column]},
+            "lineStyle": {"width": 2},
+            "emphasis": {"focus": "series"},
+            "data": _series_data(aeps, frame[column]),
+        } for column in frame.columns],
+    }
+
+
+def delta_chart(overlay, deltas, *, title="") -> dict:
+    """Every group as a change from the baseline, in the result type's units.
+
+    Always a linear axis: a change is signed, and half of these are negative.
+    Colours come from the overlay's full column order, so a group is the same
+    colour here as it is above - taking them off this frame instead would
+    recolour everything the moment the baseline changed.
+    """
+    frame = getattr(deltas, "frame", None)
+    if frame is None or frame.empty:
+        return {"series": []}
+
+    aeps = list(frame.index)
+    colours = colour_for(overlay.frame.columns)
+    unit = "m" if deltas.kind == ABSOLUTE else "%"
+
+    horizontal = _x_axis(aeps)
+    horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
+
+    series = [{
+        "name": str(column),
+        "type": "line",
+        "symbolSize": 5,
+        "connectNulls": False,
+        "itemStyle": {"color": colours.get(column, ENVELOPE_COLOUR)},
+        "lineStyle": {"width": 2},
+        "emphasis": {"focus": "series"},
+        "data": _series_data(aeps, frame[column]),
+    } for column in frame.columns]
+
+    series[0]["markLine"] = {
+        "silent": True, "symbol": "none",
+        "lineStyle": {"color": ENVELOPE_COLOUR, "type": "solid", "opacity": 0.6},
+        "label": {"show": False},
+        "data": [{"yAxis": 0}],
+    }
+
+    return {
+        "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"},
+                    ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(4)"},
+        "legend": {"type": "scroll", "top": 24},
+        "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
+        "xAxis": horizontal,
+        "yAxis": {"type": "value", "name": f"Change from {deltas.baseline} ({unit})",
+                  "nameLocation": "middle", "nameGap": 45, "scale": True,
+                  "splitLine": {"lineStyle": {"opacity": 0.25}}},
+        "series": series,
+    }
+
+
+def critical_overlay_chart(overlay, critical) -> dict:
+    """Critical duration against AEP, one line per group.
+
+    Whether a warmer climate or a raised dam moves the critical duration is a
+    question the single-group version cannot answer.
+    """
+    if critical is None or critical.empty:
+        return {}
+
+    aeps = list(critical.index)
+    colours = colour_for(overlay.frame.columns)
+
+    return {
+        "tooltip": {"trigger": "axis"},
+        "legend": {"type": "scroll", "top": 0},
+        "grid": {"left": 60, "right": 30, "top": 30, "bottom": 50},
+        "xAxis": _x_axis(aeps, name_gap=30),
+        "yAxis": {"type": "log", "name": "Critical duration (h)",
+                  "nameLocation": "middle", "nameGap": 40},
+        "series": [{
+            "name": str(column),
+            "type": "line",
+            "step": "middle",
+            "symbolSize": 6,
+            "connectNulls": False,
+            "itemStyle": {"color": colours.get(column, ENVELOPE_COLOUR)},
+            "data": _series_data(aeps, critical[column]),
+        } for column in critical.columns],
     }

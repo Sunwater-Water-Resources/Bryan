@@ -429,6 +429,17 @@ def _extreme_labels(comparison: Comparison) -> tuple:
 
 def _warnings(comparison, critical, switches, kind, floor) -> list:
     """What the plot should say out loud."""
+    return (pinned_end_warnings(comparison, critical)
+            + _noise_warnings(switches, kind, floor))
+
+
+def pinned_end_warnings(comparison, critical) -> list:
+    """Whether the range that was run brackets the critical duration.
+
+    Public because the group overlay asks the same question of every group it
+    draws: an envelope pinned to the end of its own duration range is a lower
+    bound, so a difference measured against it is biased.
+    """
     warnings = []
     shortest, longest = _extreme_labels(comparison)
     if shortest is None:
@@ -446,7 +457,12 @@ def _warnings(comparison, critical, switches, kind, floor) -> list:
         warnings.append(
             f"The {direction} duration you ran ({label}) is critical at "
             f"1 in {', '.join(format_aep(aep) for aep in pinned)}. {advice}")
+    return warnings
 
+
+def _noise_warnings(switches, kind, floor) -> list:
+    """Crossovers that the sampling noise could have produced on its own."""
+    warnings = []
     for switch in switches:
         if switch.strength == switch.strength and switch.strength < floor:
             warnings.append(
