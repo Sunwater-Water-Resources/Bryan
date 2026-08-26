@@ -92,6 +92,13 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   columns (`_detect_scheme`): `m`/`n` means Monte Carlo, `duration`/`tp` means ensemble. That
   choice drives both the ADV and the re-analysis (TPT vs `analyse_ensemble`), so there is no
   sims-list column to get out of step with the data.
+- **Every reservoir routing output ends with `Output suffix`**, the results database included:
+  `<Output file>__mcdf<suffix>.csv` (Monte Carlo input) or `<Output file><suffix>.csv`
+  (ensemble). One sims list re-routes one set of inflows under several rating curves into one
+  results folder, so a name that drops the suffix is a silent overwrite — which the mcdf was
+  until 26 August 2026. `_ensure_mcdf_loaded` falls back to the old unsuffixed name, warning
+  that every suffix over that `Output file` wrote it; do not remove that fallback without
+  re-routing the studies that depend on it.
 - Monte Carlo input takes the antecedent dam volume from the `ADV` column of the input mcdf by
   default; the optional `ADV source` sims-list column (`lake_z` / `lake_z correlated`) instead
   resamples it from the mcdf `lake_z` column via the lake config distribution, so one set of
@@ -201,6 +208,17 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
 - `ui/tests/test_progress.py` greps `Main.py` and `lib/RunLog.py` for the literal strings it
   parses. If you change that wording, that test fails — update both together rather than
   letting the progress display silently go blank.
+- **A reservoir routing row is judged by its suffixed outputs.** Everything the method writes
+  takes `Output suffix` last, the Monte Carlo database included —
+  `<Output file>__mcdf<suffix>.csv` since 26 August 2026. Before that it was `__mcdf` with no
+  suffix, so every rating-curve variant of one `Output file` overwrote one file: Tinaroo's
+  `TFD_SimsList_LongList_01.xlsx` is 6 output names x 6 suffixes over one results folder, 36
+  rows leaving 6 databases. Those files are still out there and `_ensure_mcdf_loaded` still
+  falls back to one (with a warning), so `core/outputs.py` keeps the roles apart: `primary` is
+  what proves *this* row ran, `shared` is the legacy unsuffixed mcdf, `databases` is what
+  `_ensure_mcdf_loaded` will read back, and only the last of those lifts `needs prior results`
+  for a `Run models = no` row. Truncation counts the database, never `primary`: a quantile
+  table is one row per standard AEP by design.
 - **The Results page reads only the quantile tables**, never the mcdf: `<Output file>_<type>.csv`
   (monte carlo) and `<Output file>__<type>_quantiles<suffix>.csv` (reservoir routing) hold the
   same three columns, so `core/results.py` has one reader for both. It draws with `ui.echart`

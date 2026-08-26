@@ -26,7 +26,8 @@ from core.bryan import BRYAN_ROOT
 from core.config import load_sims_config
 from core.launcher import RunManager
 from core.simslist import read_sims_list
-from make_rr_fixture import SIMS_COLUMNS, build, sims_rows
+from make_rr_fixture import (SIMS_COLUMNS, build, monte_carlo_rows,
+                             sims_rows)
 
 
 def _bryan_python():
@@ -70,6 +71,20 @@ def mini_project(tmp_path):
     folder.mkdir()
     config_path = build(folder)
     write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS, sims_rows())
+    return config_path
+
+
+@pytest.fixture
+def mini_mc_project(tmp_path):
+    """The same model, driven from a Monte Carlo database instead.
+
+    Two rows over one ``Output file``, told apart only by ``Output suffix`` -
+    the shape a re-routing sims list actually has.
+    """
+    folder = tmp_path / "mini_mc"
+    folder.mkdir()
+    config_path = build(folder)
+    write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS, monte_carlo_rows())
     return config_path
 
 
@@ -177,3 +192,86 @@ class _chunk_shim:
         self.rows = tuple(record.rows)
         self.run_log = Path(record.run_log)
         self.console_log = Path(record.console_log)
+
+
+# --- the Output suffix on the Monte Carlo database -------------------------
+
+def _run(config_path, run_id):
+    """Plan, write and run the whole sims list. Returns (config, sims, record)."""
+    config = load_sims_config(config_path)
+    sims = read_sims_list(config.sims_list_path)
+    plan = runplan.plan_run(sims, list(sims.frame.index), n_chunks=1)
+    assert not plan.blocked, [h.message for h in plan.hazards if h.blocks]
+
+    folder = runwriter.write_run(sims, config, plan, run_id=run_id)
+    record = runstate.from_run_folder(folder, config, max_parallel=1)
+    manager = RunManager(bryan_python=BRYAN_PYTHON,
+                         bryan_main=str(BRYAN_ROOT / "Main.py"))
+    manager.submit(record)
+    assert wait_until(lambda: (manager.poll(), not record.is_live)[1]), \
+        "Bryan did not finish"
+    console = Path(record.chunks[0].console_log).read_text(encoding="utf-8",
+                                                          errors="replace")
+    assert record.chunks[0].returncode == 0, console[-4000:]
+    return config, sims, console
+
+
+@needs_bryan
+def test_each_rating_curve_keeps_its_own_monte_carlo_database(mini_mc_project):
+    """Both rows share an Output file, so before the suffix went on the mcdf the
+    second one silently overwrote the first."""
+    config, _, console = _run(mini_mc_project, "20260826-mc")
+    results = config.project_folder / "results"
+
+    databases = {suffix: results / f"mini_mc__mcdf_{suffix}.csv"
+                 for suffix in ("base", "raised")}
+    for suffix, path in databases.items():
+        assert path.is_file(), f"no database for {suffix}\n{console[-4000:]}"
+    assert not (results / "mini_mc__mcdf.csv").exists(), \
+        "the unsuffixed name is the one the two rows used to fight over"
+
+    base, raised = (pd.read_csv(path, index_col=0) for path in databases.values())
+    assert len(base) == len(raised) == 20
+    assert not base["level"].equals(raised["level"]), \
+        "two rating curves must not produce the same routed levels"
+
+    # And the quantile tables that were already suffixed still line up with them.
+    for suffix in databases:
+        for kind in ("inflow", "level", "outflow"):
+            assert (results / f"mini_mc__{kind}_quantiles_{suffix}.csv").is_file()
+
+
+@needs_bryan
+def test_an_analysis_only_row_falls_back_to_the_pre_suffix_database(tmp_path):
+    """Results routed before 26 August 2026 carry no suffix on the mcdf.
+
+    _ensure_mcdf_loaded still finds one, so a re-analysis of an old study keeps
+    working - but it says out loud that the file belongs to every suffix.
+    """
+    folder = tmp_path / "legacy"
+    folder.mkdir()
+    config_path = build(folder)
+
+    # Route it once for a real database, then rename it as an old run left it
+    # and delete the quantile tables that came with it.
+    write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS,
+                   monte_carlo_rows(suffixes=("base",)))
+    _run(config_path, "20260826-seed")
+    results = folder / "results"
+    (results / "mini_mc__mcdf_base.csv").rename(results / "mini_mc__mcdf.csv")
+    for kind in ("inflow", "level", "outflow"):
+        (results / f"mini_mc__{kind}_quantiles_base.csv").unlink()
+
+    rows = monte_carlo_rows(suffixes=("base",))
+    rows[0]["Run models"] = "no"
+    write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS, rows)
+    _run(config_path, "20260826-legacy")
+
+    # The simulation's own output is teed to its log file, not the console.
+    log = (results / "mini_mc_base_log.txt").read_text(encoding="utf-8",
+                                                       errors="replace")
+    assert "WARNING" in log and "pre-suffix name" in log, log[-3000:]
+    assert "mini_mc__mcdf.csv" in log
+    for kind in ("inflow", "level", "outflow"):
+        assert (results / f"mini_mc__{kind}_quantiles_base.csv").is_file(), \
+            "the re-analysis still produced its own suffixed quantiles"

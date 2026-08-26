@@ -44,11 +44,13 @@ Every row also carries a state worked out from the files on disk:
 
 | State | Meaning |
 | ----------- | ----------- |
-| ```not run``` | No results database exists for this row. |
+| ```not run``` | None of this row's own results exist. |
 | ```up to date``` | Results exist and are newer than every input the row reads. |
 | ```stale``` | Results exist, but an input has changed since they were written. |
 | ```incomplete``` | The results database is shorter than the Monte Carlo config's main × sub divisions — a run stopped early by ```test_runs```, or one that crashed. |
 | ```needs prior results``` | ```Run models``` is ```no```, so the row only re-analyses — and there is nothing to analyse. |
+
+For ```reservoir routing``` the state is read from the outputs that carry the row's ```Output suffix``` — the routed database, the quantile tables, or the stored hydrographs where the row does not analyse. A results database written before 26 August 2026 has no suffix on it (see the change log), and every rating curve run over one ```Output file``` wrote that same file: judging by it marked all six Tinaroo curves of a duration ```up to date``` as soon as the first one finished, so it is not read as evidence. It still counts as *prior results* for a ```Run models = no``` row, because it is a file the re-analysis can still read.
 
 ```stale``` is the state worth having. Re-routing under an edited ```.sq```, or re-running after the storm or climate config changed, otherwise leaves results that look perfectly fine.
 

@@ -398,9 +398,25 @@ class ReservoirRoutingSimulator:
       database          - the ADV column of the input database, i.e. whatever the
                           source run started from. For reproducing that run.
     'ADV source' is a Monte Carlo concept and is ignored for ensemble input.
+
+    Everything written takes 'Output suffix' last, so one sims list can re-route
+    the same inflows under several rating curves into one results folder without
+    the runs standing on each other:
+
+      <Results folder>/<Output file>__mcdf<suffix>.csv        routed database (MC)
+      <Results folder>/<Output file><suffix>.csv              routed database (ensemble)
+      <Results folder>/<Output file>__<type>_quantiles<suffix>.csv
+      <Results folder>/<Output file>__inflow_volumes<suffix>.csv
+      <Hydrographs folder>/<Output file>_<series><suffix>.csv
+      <Results folder>/<Output file><suffix>_log.txt          when 'Log file' is blank
     """
 
     ADV_SOURCES = ('mcdf', 'lake_z', 'lake_z correlated')
+
+    # The tag the rest of Bryan knows a Monte Carlo database by. On its own,
+    # with no 'Output suffix' after it, it is also the pre-26-August-2026 name
+    # of the routed one - see _output_base and _ensure_mcdf_loaded.
+    MCDF_TAG = '__mcdf'
 
     def __init__(self, sim_row, filepaths, test_runs=0):
         self.start = time.time()
@@ -798,10 +814,19 @@ class ReservoirRoutingSimulator:
         '__mcdf' tag the rest of Bryan expects, while the ensemble database is
         '<base>.csv' beside the plots/ and csv/ folders that lib/EnbAnalysis.py
         writes into - the same layout EnsembleSimulator produces.
+
+        Both take the 'Output suffix' last, as everything else here does. The
+        Monte Carlo one did not until 26 August 2026, and that was a silent
+        overwrite: a sims list re-routes one set of inflows under several rating
+        curves, so at Tinaroo thirty-six rows differing only by suffix wrote six
+        databases between them, and a later analysis-only row re-analysed
+        whichever curve happened to run last. The quantile tables beside them
+        always carried the suffix, so nothing looked wrong.
         """
         if self.scheme == 'ensemble':
             return os.path.join(self.results_folder, f'{self.basename}{self._suffix()}')
-        return os.path.join(self.results_folder, f'{self.basename}__mcdf')
+        return os.path.join(self.results_folder,
+                            f'{self.basename}{self.MCDF_TAG}{self._suffix()}')
 
     def _write_mcdf(self):
         # nanmax is critical: inflow series interpolated via 'slinear' can have
@@ -824,9 +849,22 @@ class ReservoirRoutingSimulator:
         # analysis-only row (Run models = no) has not read one yet, so fall back
         # to the input and detect from that.
         mcdf_path, column = self._database_path()
-        for scheme, tag in (('monte carlo', '__mcdf'), ('ensemble', self._suffix())):
+        suffix = self._suffix()
+        # Suffixed names first, then - only for a suffixed row - the unsuffixed
+        # Monte Carlo name written before 26 August 2026. That one is shared
+        # with every other suffix over this Output file, so it is the last
+        # resort and says so, rather than being re-analysed as if it were ours.
+        candidates = [('monte carlo', f'{self.MCDF_TAG}{suffix}', False),
+                      ('ensemble', suffix, False)]
+        if suffix:
+            candidates.append(('monte carlo', self.MCDF_TAG, True))
+        for scheme, tag, legacy in candidates:
             out_path = os.path.join(self.results_folder, f'{self.basename}{tag}.csv')
             if os.path.isfile(out_path):
+                if legacy:
+                    print(f'WARNING: no database for this run\'s "{suffix[1:]}" outputs. '
+                          f'Falling back to the pre-suffix name, which every other '
+                          f'"Output suffix" over {self.basename} also wrote:')
                 print(f'Loading routed {scheme} database for analysis: {out_path}')
                 self.mcdf = pd.read_csv(out_path, index_col=0)
                 self.scheme = self._detect_scheme()
