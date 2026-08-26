@@ -166,6 +166,17 @@ class AppState:
         return preflight.check(self.project.sims, self.project.config, rows,
                                completions=self.completions or None)
 
+    def triage(self, rows=None):
+        """Which of these rows could run if the rest were skipped.
+
+        Costs a plan per pass, and ``plan`` reads the run logs for its
+        timings - so this is for a button press, not for every re-render.
+        """
+        rows = self.selected_in_order() if rows is None else list(rows)
+        return preflight.triage(self.project.sims, self.project.config, rows,
+                                completions=self.completions or None,
+                                plan_for=self.plan)
+
     def launch(self, plan, *, test_runs=None):
         project = self.project
         folder = runwriter.write_run(project.sims, project.config, plan,

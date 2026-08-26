@@ -11,7 +11,7 @@ All of it is stat calls and column lookups, so it costs milliseconds.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import completion as completion_module
 from .columns import (REPLICATE_FILE_ALIASES, RESERVOIR_ROUTING,
@@ -289,3 +289,105 @@ def blocked_rows(issues) -> set:
         if issue.blocks:
             out.update(issue.rows)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Running what can be run
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Triage:
+    """The selection split into what can run and what cannot.
+
+    A ninety-two row list with four bad input paths is the usual case, and
+    hunting those four down by hand to deselect them is the whole friction this
+    removes. It is not a safety feature: Bryan already catches a bad row and
+    carries on (Main.py:97-108). It just means the run does not have to be
+    started twice.
+    """
+
+    runnable: tuple = ()      # rows that pass every check, in sheet order
+    skipped: dict = field(default_factory=dict)   # {row: the Issue that dropped it}
+    remaining: tuple = ()     # blocking issues no row can be dropped to clear
+    issues: tuple = ()        # every issue for `runnable`, warnings included
+
+    @property
+    def can_run(self) -> bool:
+        return bool(self.runnable) and not self.remaining
+
+    @property
+    def is_whole_selection(self) -> bool:
+        return not self.skipped
+
+    def reasons(self) -> list:
+        """[(row, code, message)] in row order - what to show the user."""
+        return [(index, self.skipped[index].code, self.skipped[index].message)
+                for index in sorted(self.skipped)]
+
+    def codes(self) -> list:
+        """The distinct reasons rows were dropped, most common first."""
+        counts: dict = {}
+        for issue in self.skipped.values():
+            counts[issue.code] = counts.get(issue.code, 0) + 1
+        return [code for code, _ in sorted(counts.items(),
+                                           key=lambda item: (-item[1], item[0]))]
+
+
+def triage(sims, config, selected_rows, *, completions=None, plan_for=None,
+           max_passes=5) -> Triage:
+    """Drop the rows that block, keep the rest.
+
+    ``plan_for(rows) -> RunPlan`` folds the planner's own blocking hazards in,
+    so a subset offered as runnable really is - a collision that only shows up
+    once the rows are split into chunks would otherwise stop the run after the
+    user had already been told it was fine. Left out, only the pre-flight
+    checks are considered.
+
+    Dropping is iterative because an issue can name several rows and clearing
+    one can clear another: a collision goes away when its members go. It is
+    also deliberately blunt - a collision drops *every* row that shares the
+    output name, not the arbitrary all-but-one that would keep the most rows.
+    Which of six identically-named rows the user wants is not the UI's to
+    guess.
+    """
+    frame = sims.frame if hasattr(sims, "frame") else sims
+    keep = [index for index in selected_rows if index in frame.index]
+    skipped: dict = {}
+
+    for _ in range(max_passes):
+        issues = list(check(sims, config, keep, completions=completions))
+        if keep and plan_for is not None:
+            issues += list(plan_for(keep).hazards)
+
+        blockers = [issue for issue in issues if issue.blocks]
+        if not blockers:
+            return Triage(runnable=tuple(keep), skipped=skipped,
+                          issues=tuple(issues))
+
+        drop: dict = {}
+        for issue in blockers:
+            for index in issue.rows:
+                if index in keep:
+                    drop.setdefault(index, issue)
+
+        # A blocker naming no row of the selection - a missing column, the
+        # 'Replicate file' spelling - cannot be skipped past by dropping rows.
+        unclearable = tuple(issue for issue in blockers
+                            if not any(index in drop for index in issue.rows))
+        if unclearable or not drop:
+            return Triage(skipped=skipped, remaining=unclearable or tuple(blockers),
+                          issues=tuple(issues))
+
+        skipped.update(drop)
+        keep = [index for index in keep if index not in drop]
+        if not keep:
+            return Triage(skipped=skipped, issues=tuple(issues),
+                          remaining=(Issue(BLOCK, "nothing-left",
+                                           "Every selected row has a problem, "
+                                           "so there is nothing to run."),))
+
+    return Triage(skipped=skipped,
+                  remaining=(Issue(BLOCK, "triage-unstable",
+                                   f"Still blocked after dropping "
+                                   f"{len(skipped)} row(s). Fix the problems "
+                                   f"listed rather than skipping them."),))

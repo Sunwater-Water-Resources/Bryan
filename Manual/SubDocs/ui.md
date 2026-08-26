@@ -64,6 +64,13 @@ Selecting a row whose results are ```up to date``` needs an explicit confirmatio
 - A ```Method``` whose spelling Bryan will not accept. The comparison is exact and lower case, so ```Ensemble``` fails.
 - Formulas whose results were never cached — see below.
 
+Anything that would stop the run is counted in the line above the **Check and run** button. Two ways past it, for the common case where most of the selection is fine and a handful of rows point at a file that is not there:
+
+- **Deselect problem rows** unticks every row a check would stop the run over, and says which and why.
+- **Check and run** offers *Skip N and run the rest* in its dialog when the rows that are left could run on their own. Those rows are then deselected as well, so what is ticked and what is running stay the same thing, and the skipped rows are still there to fix and run afterwards.
+
+Both drop **every** row named by a problem rather than the fewest that would clear it: where two rows write to the same output name, which of them you meant is not the launcher's to guess. Neither can help with a problem that names no particular row — a column the list does not have, or the ```Replicate file``` spelling — because deselecting rows does not fix the workbook. It says so rather than offering the button.
+
 ## Running several at once
 
 The launcher can split a selection across several Bryan processes. It defaults to **one**, and that is usually right: reservoir routing takes seconds, and a Monte Carlo simulation already drives thousands of model runs one after another, so more processes mostly multiply peak memory and the number of storm files on disk. The per-chunk time estimate shown before launching — taken from the measured durations in your own run logs where they exist — is the thing to judge it by.

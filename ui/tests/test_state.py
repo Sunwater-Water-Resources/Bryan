@@ -145,3 +145,47 @@ def test_runs_are_rediscovered_for_the_history_page(app, project):
     fresh.settings.bryan_main = app.settings.bryan_main
     fresh.open_project(app.project.config.config_path)
     assert [r.run_id for r in fresh.runs()] == [record.run_id]
+
+
+# --- skipping the rows that would stop the run -----------------------------
+
+def test_a_row_with_a_missing_input_can_be_skipped_and_the_rest_run(app, project):
+    """Otherwise the only way past a bad path is to find that row among the
+    ninety-two and untick it by hand."""
+    rows = rows_for((18, 24, 36))
+    rows[1]["SQ file"] = r"reservoir\gone.sq"
+    app.open_project(project(TINAROO_COLUMNS, rows))
+    (app.project.config.project_folder / "reservoir/gone.sq").unlink()
+    app.set_selected([0, 1, 2])
+
+    assert app.preflight(), "the selection does not run as it stands"
+
+    triage = app.triage()
+    assert triage.can_run and triage.runnable == (0, 2)
+    assert triage.skipped[1].code == "missing-input"
+
+    app.set_selected(triage.runnable)
+    assert app.preflight() == []
+
+    record, _ = app.launch(app.plan())
+    assert wait_until(lambda: (app.manager.poll(), not record.is_live)[1], 90)
+    assert record.status == runstate.COMPLETED
+
+    app.refresh_completion()
+    assert app.completion_of(0).state == completion.UP_TO_DATE
+    assert app.completion_of(2).state == completion.UP_TO_DATE
+    assert app.completion_of(1).state == completion.NOT_RUN, \
+        "the skipped row is untouched, so it is still there to fix"
+
+
+def test_triage_says_nothing_can_be_skipped_when_every_row_is_bad(app, project):
+    rows = rows_for((18,))
+    rows[0]["ELS file"] = r"reservoir\gone.els"
+    app.open_project(project(TINAROO_COLUMNS, rows))
+    (app.project.config.project_folder / "reservoir/gone.els").unlink()
+    app.set_selected([0])
+
+    triage = app.triage()
+    assert not triage.can_run
+    assert triage.remaining[0].code == "nothing-left"
+
