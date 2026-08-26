@@ -219,6 +219,14 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   `_ensure_mcdf_loaded` will read back, and only the last of those lifts `needs prior results`
   for a `Run models = no` row. Truncation counts the database, never `primary`: a quantile
   table is one row per standard AEP by design.
+- **`preflight.triage` decides what can run without the rest**, for the Select page's
+  "Deselect problem rows" and the run dialog's "Skip N and run the rest". It re-checks after
+  each drop because clearing one issue can clear another, folds in the planner's blocking
+  hazards through a `plan_for` callback (a collision that only appears once the rows are
+  chunked would otherwise stop a run the user was just told was fine), and refuses when a
+  blocker names no row — a missing column is not fixable by deselecting. It drops every row an
+  issue names, not the fewest that would clear it. Keep it off the render path: `plan` reads
+  the run logs for its timings, so `refresh()` uses the cheap `blocked_rows` instead.
 - **The Results page reads only the quantile tables**, never the mcdf: `<Output file>_<type>.csv`
   (monte carlo) and `<Output file>__<type>_quantiles<suffix>.csv` (reservoir routing) hold the
   same three columns, so `core/results.py` has one reader for both. It draws with `ui.echart`

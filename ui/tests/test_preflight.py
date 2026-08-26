@@ -207,3 +207,124 @@ def test_a_mis_capitalised_volume_header_is_still_recognised(project):
     reported = " ".join(issue.message for issue in preflight.check(sims, config, [0])
                         if issue.code == "missing-input")
     assert "Inflow" in reported
+
+
+# --- triage: running what can be run ---------------------------------------
+
+def good_rows(durations=(18, 24, 36)):
+    return [reservoir_row(Duration=d, **{"Output file": f"out_{d}h",
+                                         "Output suffix": f"o{d}"})
+            for d in durations]
+
+
+def test_triage_keeps_a_clean_selection_whole(project):
+    config, sims = setup(project, good_rows())
+    result = preflight.triage(sims, config, [0, 1, 2])
+    assert result.can_run and result.is_whole_selection
+    assert result.runnable == (0, 1, 2)
+
+
+def test_triage_drops_the_row_with_a_missing_input(project):
+    """The case this exists for: four bad paths in ninety-two rows."""
+    rows = good_rows()
+    rows[1]["SQ file"] = r"reservoir\gone.sq"
+    config, sims = setup(project, rows)
+    (config.project_folder / "reservoir/gone.sq").unlink()
+
+    result = preflight.triage(sims, config, [0, 1, 2])
+    assert result.runnable == (0, 2)
+    assert list(result.skipped) == [1]
+    assert result.skipped[1].code == "missing-input"
+    assert result.can_run and not result.is_whole_selection
+    assert result.codes() == ["missing-input"]
+    assert result.reasons()[0][:2] == (1, "missing-input")
+
+
+def test_triage_leaves_the_kept_rows_actually_runnable(project):
+    """Whatever it hands back has to pass the same checks, or the run stops
+    after the user has already been told it would not."""
+    rows = good_rows()
+    rows[0]["SQ file"] = r"reservoir\gone.sq"
+    config, sims = setup(project, rows)
+    (config.project_folder / "reservoir/gone.sq").unlink()
+
+    result = preflight.triage(sims, config, [0, 1, 2])
+    assert preflight.blocking(preflight.check(sims, config, result.runnable)) == []
+    assert preflight.blocking(result.issues) == []
+
+
+def test_triage_drops_every_member_of_a_collision(project):
+    """Two rows writing the same output are both dropped - which of them the
+    user wants is not the UI's to guess."""
+    rows = good_rows((18, 24))
+    rows.append(reservoir_row(Duration=36, **{"Output file": "out_18h",
+                                              "Output suffix": "o18"}))
+    config, sims = setup(project, rows)
+
+    result = preflight.triage(sims, config, [0, 1, 2])
+    assert result.runnable == (1,)
+    assert set(result.skipped) == {0, 2}
+    assert result.skipped[0].code == "output-collision"
+
+
+def test_triage_reports_when_nothing_is_left(project):
+    rows = good_rows((18,))
+    rows[0]["SQ file"] = r"reservoir\gone.sq"
+    config, sims = setup(project, rows)
+    (config.project_folder / "reservoir/gone.sq").unlink()
+
+    result = preflight.triage(sims, config, [0])
+    assert not result.can_run and result.runnable == ()
+    assert result.remaining[0].code == "nothing-left"
+    assert list(result.skipped) == [0]
+
+
+def test_triage_cannot_skip_past_a_problem_that_names_no_row(project):
+    """A missing column or the wrong 'Replicate file' spelling is a property of
+    the workbook, so no amount of deselecting fixes it."""
+    columns = [("Replication file" if c == "Replicate file" else c)
+               for c in MONTE_CARLO_COLUMNS]
+    row = monte_carlo_row(**{"Output file": "mc"})
+    row["Replication file"] = row.pop("Replicate file")
+    config, sims = setup(project, [row], columns=columns)
+
+    result = preflight.triage(sims, config, [0])
+    assert not result.can_run and not result.skipped
+    assert {issue.code for issue in result.remaining} == {"replicate-file-alias"}
+
+
+def test_triage_folds_in_the_planners_own_hazards(project):
+    """A hazard that only appears once the rows are split into chunks would
+    otherwise stop a run the user had just been told was fine."""
+    from core import runplan
+
+    rows = good_rows((18, 24))
+    config, sims = setup(project, rows)
+
+    def plan_for(selection):
+        return runplan.plan_run(sims, selection, n_chunks=1)
+
+    clean = preflight.triage(sims, config, [0, 1], plan_for=plan_for)
+    assert clean.can_run and clean.is_whole_selection
+
+    invented = runplan.Hazard(runplan.BLOCK, "made-up", "row 1 is doomed",
+                              rows=(1,))
+
+    def plan_with_hazard(selection):
+        plan = runplan.plan_run(sims, selection, n_chunks=1)
+        if 1 in selection:
+            return runplan.RunPlan(chunks=plan.chunks,
+                                   hazards=plan.hazards + (invented,))
+        return plan
+
+    result = preflight.triage(sims, config, [0, 1], plan_for=plan_with_hazard)
+    assert result.runnable == (0,)
+    assert result.skipped[1].code == "made-up"
+
+
+def test_triage_of_an_empty_selection_says_so(project):
+    config, sims = setup(project, good_rows((18,)))
+    result = preflight.triage(sims, config, [])
+    assert not result.can_run
+    assert {issue.code for issue in result.remaining} == {"empty-selection"}
+

@@ -85,6 +85,8 @@ class _SelectView:
                           on_click=lambda: self._bulk("rerun")).props("flat dense")
                 ui.button("Deselect completed",
                           on_click=lambda: self._bulk("drop-done")).props("flat dense")
+                ui.button("Deselect problem rows", icon="report_problem",
+                          on_click=self._drop_problems).props("flat dense")
                 ui.button("Clear", on_click=lambda: self._bulk("none")).props("flat dense")
                 report = self.project.group_report()
                 ui.label(
@@ -180,6 +182,83 @@ class _SelectView:
             STATE.set_selected(set())
         self.refresh()
 
+    def _blocked_dialog(self, dialog, selected, blocking) -> None:
+        """What to offer when the selection cannot run as it stands.
+
+        Bryan fails a bad row and carries on, so 'run the rest' is what would
+        have happened anyway - minus the hour spent finding out.
+        """
+        ui.label(f"{len(blocking)} problem(s) must be fixed first:"
+                 ).classes("text-negative font-bold")
+        for issue in blocking[:6]:
+            severity_banner("block", issue.message,
+                            getattr(issue, "fix_hint", ""))
+
+        triage = STATE.triage(selected)
+        with ui.row().classes("justify-end gap-2 w-full items-center"):
+            if triage.can_run:
+                ui.label(f"{len(triage.runnable)} of {len(selected)} rows are "
+                         f"fine.").classes("text-sm mr-auto")
+                ui.button(f"Skip {len(triage.skipped)} and run the rest",
+                          icon="skip_next",
+                          on_click=lambda: self._skip_and_run(dialog, triage)
+                          ).props("color=primary flat")
+            elif triage.remaining:
+                ui.label(triage.remaining[0].message).classes(
+                    "text-sm mr-auto text-negative")
+            ui.button("Close", on_click=dialog.close).props("flat")
+
+    def _skip_and_run(self, dialog, triage) -> None:
+        """Drop the blocked rows from the selection, then confirm the rest.
+
+        The selection really is changed, rather than the run quietly covering
+        fewer rows than the page shows: what runs and what is ticked have to
+        agree, or the Select page lies about the next run too.
+        """
+        dialog.close()
+        STATE.set_selected(set(triage.runnable))
+        self.refresh()
+        self._confirm(triage.runnable, skipped=triage)
+
+    def _skipped_note(self, triage) -> None:
+        names = ", ".join(self.project.label(index)
+                          for index in sorted(triage.skipped)[:6])
+        more = f" and {len(triage.skipped) - 6} more" if len(triage.skipped) > 6 else ""
+        severity_banner(
+            "warn",
+            f"{len(triage.skipped)} row(s) are being skipped: {names}{more}.",
+            ", ".join(triage.codes())
+            + " - they have been deselected, so fix them and run them after.",
+        )
+
+    def _drop_problems(self) -> None:
+        """Deselect every row pre-flight would stop the run over.
+
+        The alternative is reading a banner that says '4 rows have a missing
+        input' and then finding those four in ninety-two by hand.
+        """
+        selected = STATE.selected_in_order()
+        if not selected:
+            ui.notify("Nothing selected", type="warning")
+            return
+
+        triage = STATE.triage(selected)
+        if triage.is_whole_selection:
+            message = ("No selected row is blocked" if not triage.remaining
+                       else "Nothing can be skipped - "
+                            + triage.remaining[0].message)
+            ui.notify(message, type="info" if not triage.remaining else "warning")
+            return
+
+        STATE.set_selected(set(triage.runnable))
+        names = ", ".join(self.project.label(index)
+                          for index in sorted(triage.skipped)[:6])
+        more = f" and {len(triage.skipped) - 6} more" if len(triage.skipped) > 6 else ""
+        ui.notify(f"Deselected {len(triage.skipped)} row(s) - {names}{more} "
+                  f"({', '.join(triage.codes())})",
+                  type="warning", timeout=0, close_button=True)
+        self.refresh()
+
     # -- rendering --------------------------------------------------------
 
     def _visible_rows(self) -> list:
@@ -226,18 +305,28 @@ class _SelectView:
                 f"{len(rows)} shown")
         if done:
             text += f"  -  {len(done)} would overwrite existing results"
-        self.summary.text = text
 
         self.issues_box.clear()
+        issues = STATE.preflight(selected) if selected else []
+        # blocked_rows, not triage: this runs on every keystroke, and triage
+        # plans the run - which reads the run logs for its timings.
+        problems = preflight.blocked_rows(issues) & set(selected)
+        if problems:
+            text += (f"  -  {len(problems)} would stop the run "
+                     f"('Deselect problem rows' drops them)")
+        self.summary.text = text
+
         if selected:
             with self.issues_box:
-                for issue in STATE.preflight(selected)[:8]:
+                for issue in issues[:8]:
                     severity_banner(issue.severity, issue.message, issue.fix_hint)
 
     # -- launching --------------------------------------------------------
 
-    def _confirm(self) -> None:
-        selected = STATE.selected_in_order()
+    def _confirm(self, rows=None, skipped=None) -> None:
+        """The launch dialog. ``skipped`` is the triage that got us here, when
+        the user chose to run a subset - it is reported, not re-derived."""
+        selected = STATE.selected_in_order() if rows is None else list(rows)
         if not selected:
             ui.notify("Nothing selected", type="warning")
             return
@@ -251,14 +340,12 @@ class _SelectView:
             ui.label("Run these simulations?").classes("text-lg font-bold")
 
             if blocking:
-                ui.label(f"{len(blocking)} problem(s) must be fixed first:"
-                         ).classes("text-negative font-bold")
-                for issue in blocking[:6]:
-                    severity_banner("block", issue.message,
-                                    getattr(issue, "fix_hint", ""))
-                ui.button("Close", on_click=dialog.close).props("flat")
+                self._blocked_dialog(dialog, selected, blocking)
                 dialog.open()
                 return
+
+            if skipped:
+                self._skipped_note(skipped)
 
             ui.label(describe(plan, self.project.frame)).classes(
                 "text-sm whitespace-pre-wrap font-mono")
