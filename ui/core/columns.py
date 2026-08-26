@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .paths import cell_text, is_blank
+from .paths import cell_text, is_absent, is_blank
 
 MONTE_CARLO = "monte carlo"
 ENSEMBLE = "ensemble"
@@ -179,6 +179,35 @@ def runs_models(row) -> bool:
     prior RESULTS to exist - see core/completion.py.
     """
     return cell_text(row.get("Run models")).lower() in RUN_MODES_THAT_RUN
+
+
+def analyses_results(row) -> bool:
+    """Whether the row runs its analysis - the step that writes the quantiles.
+
+    ``ReservoirRoutingSimulator.__init__`` and ``Simulator.__init__`` both take
+    'Analyse results' as an exact 'yes' after stripping and lowering, so
+    anything else - blank included - skips the analysis.
+    """
+    return cell_text(row.get("Analyse results")).lower() == "yes"
+
+
+def stores_hydrographs(row) -> bool:
+    """Whether a reservoir routing row writes its outflow/level/volume series.
+
+    ``ReservoirRouting._write_hydrographs`` defaults to yes and skips on
+    anything that is not 'yes' - and its guard is ``pd.notna``, so a cell
+    holding an empty string is *present* and switches the hydrographs off,
+    while an absent or NaN cell leaves the default alone. ``is_absent`` keeps
+    that distinction; ``cell_text`` would collapse it.
+    """
+    keys = getattr(row, "index", None)
+    keys = keys if keys is not None else row.keys()
+    if "Store hydrographs" not in keys:
+        return True
+    value = row.get("Store hydrographs")
+    if is_absent(value):
+        return True
+    return str(value).strip().lower() == "yes"
 
 
 def volume_column(row) -> str | None:

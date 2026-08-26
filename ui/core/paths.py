@@ -40,6 +40,21 @@ def is_blank(value) -> bool:
     return isinstance(value, str) and not value.strip()
 
 
+def is_absent(value) -> bool:
+    """True only when a cell is *missing* - None or NaN.
+
+    The narrower half of ``is_blank``, for mirroring Bryan's ``pd.notna``
+    guards: they read an empty string as a value the user typed, not as a
+    default left alone. ``Store hydrographs`` is the one that bites.
+    """
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
 def cell_text(value) -> str:
     """A sims-list cell as the string Bryan would see, or '' when blank."""
     return "" if is_blank(value) else str(value).strip()

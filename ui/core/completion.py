@@ -5,7 +5,7 @@ and ``shutil.rmtree``s the URBS working sub-folder on entry
 (UrbsModel.__init__'s rmtree). There is no resume. So the UI works out, from the
 filesystem, what state every row is in before anything is launched.
 
-    NOT_RUN     no results database exists
+    NOT_RUN     none of this row's own results exist
     UP_TO_DATE  results exist and are newer than every input the row reads
     STALE       results exist but an input is newer  <- the one that matters
     INCOMPLETE  results exist but are truncated (a test_runs run, or a crash)
@@ -13,6 +13,14 @@ filesystem, what state every row is in before anything is launched.
 
 STALE is invisible today. Re-routing under an edited .sq, or re-running after
 the storm config changed, leaves results that look perfectly fine.
+
+**A reservoir routing row is judged by its suffixed outputs**, not by the mcdf
+- see ``core/outputs.py``. Every ``Output suffix`` over one ``Output file``
+writes the same ``__mcdf.csv``, so reading that as 'this row ran' marked all
+six Tinaroo rating-curve variants of a duration up to date as soon as one of
+them finished, and dated the staleness check from a sibling's run. The mcdf is
+still what an analysis-only row *reads*, which is the one place it still counts
+(``find_database``).
 
 **The Run models = no inversion.** A row with ``Run models`` = no and
 ``Analyse results`` = yes is a legitimate re-analysis of existing results - the
@@ -34,7 +42,7 @@ from pathlib import Path
 
 from .columns import normalise_method, path_columns_for, runs_models
 from .paths import resolve_value, stat_or_none
-from .outputs import find_primary, outputs_for
+from .outputs import find_database, find_primary, outputs_for
 
 NOT_RUN = "not run"
 UP_TO_DATE = "up to date"
@@ -100,18 +108,23 @@ def assess(row, config, *, check_truncation: bool = False,
     all ninety-two on every render.
     """
     primary = find_primary(row, config.project_folder)
+    database = find_database(row, config.project_folder)
     analysis_only = not runs_models(row)
 
     if primary is None:
         outputs = outputs_for(row, config.project_folder)
-        if analysis_only:
+        # An analysis-only row needs a database to read, not its own results:
+        # the two differ for a suffixed reservoir routing row, whose mcdf a
+        # sibling suffix may have written. With one there, the row can run and
+        # simply has not - that is NOT_RUN, not an error.
+        if analysis_only and database is None:
             return RowCompletion(
                 NEEDS_PRIOR,
                 detail=(
                     "'Run models' is no, so this row only re-analyses results "
                     "that already exist - and none were found. Expected one of: "
-                    + ", ".join(str(p) for p in outputs.primary)
-                ) if outputs.primary else outputs.note,
+                    + ", ".join(str(path) for path in outputs.databases)
+                ) if outputs.databases else outputs.note,
             )
         return RowCompletion(NOT_RUN, detail=outputs.note)
 
@@ -124,8 +137,10 @@ def assess(row, config, *, check_truncation: bool = False,
         if stat and stat.st_mtime > newest_mtime:
             newest_path, newest_mtime = candidate, stat.st_mtime
 
-    if check_truncation:
-        counted, expected = _truncation(primary, mc_expected_rows)
+    if check_truncation and database is not None:
+        # The database, never `primary`: a quantile table holds one row per
+        # standard AEP by design, so counting that would call every row short.
+        counted, expected = _truncation(database, mc_expected_rows)
         if counted is not None and expected and counted < expected:
             return RowCompletion(
                 INCOMPLETE, primary, newest_path, newest_mtime, result_mtime,
@@ -146,14 +161,14 @@ def assess(row, config, *, check_truncation: bool = False,
                          result_mtime)
 
 
-def _truncation(primary: Path, expected: int | None):
+def _truncation(database: Path, expected: int | None):
     """(rows in the database, rows expected). Either may be None."""
     if expected is None:
         return None, None
     try:
-        if primary.suffix == ".parquet":
+        if database.suffix == ".parquet":
             return None, expected      # counting needs pyarrow; not worth it
-        with primary.open("r", encoding="utf-8", errors="replace", newline="") as stream:
+        with database.open("r", encoding="utf-8", errors="replace", newline="") as stream:
             count = sum(1 for _ in stream) - 1   # header
         return max(count, 0), expected
     except OSError:

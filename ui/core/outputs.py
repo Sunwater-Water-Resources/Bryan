@@ -8,15 +8,30 @@ what lets the UI say whether a row has already run without launching anything.
                         <Output file>_volume.csv               Simulator (volumes)
     ensemble            <Output file>.csv                      EnsembleSimulator
                         plots/ and csv/ beside it              lib/EnbAnalysis.py
-    reservoir routing   <Results folder>/<Output file>__mcdf.csv          (MC input)
+    reservoir routing   <Results folder>/<Output file>__mcdf<suffix>.csv   (MC input)
                         <Results folder>/<Output file><suffix>.csv        (ensemble)
                         <Results folder>/<Output file>__<type>_quantiles<suffix>.csv
                         <Results folder>/<Output file>__inflow_volumes<suffix>.csv
+                        <Hydrographs folder>/<Output file>_<series><suffix>.csv
                                                         lib/ReservoirRouting.py
 
-``lib/ReservoirRouting.py:787-803`` (``_ensure_mcdf_loaded``) already probes the
-two reservoir-routing paths to find a previously-routed database, so this module
-mirrors an existing convention rather than inventing one.
+``lib/ReservoirRouting.py:838-856`` (``_ensure_mcdf_loaded``) already probes the
+reservoir-routing paths to find a previously-routed database, so this module
+mirrors an existing convention rather than inventing one - the legacy candidate
+below included.
+
+**The pre-26-August-2026 Monte Carlo database carried no suffix.**
+``_output_base`` tagged it ``__mcdf`` whatever ``Output suffix`` said, so every
+suffix variant of one ``Output file`` overwrote the *same* file while
+everything that identified the variant - the quantile tables, the volume table,
+the hydrographs, the log - took the suffix. In
+``TFD_SimsList_LongList_01.xlsx`` that is six ``Output file`` values times six
+suffixes (FR-4B..FR-4J) over one results folder: thirty-six rows, six mcdf
+files, and two hundred-odd suffixed quantile tables. Bryan now suffixes it too,
+but those six files are still on disk and ``_ensure_mcdf_loaded`` will still
+fall back to one. So the unsuffixed name stays a ``databases`` candidate - it
+is readable - and is listed as ``shared``, never ``primary``: it proves that
+*something* ran over this ``Output file``, not that this row did.
 
 Bryan always *writes* csv - ``MCScheme.store_simulations`` is hard-coded to
 ``__mcdf.csv``. Parquet mcdfs in the wild are hand-converted, and
@@ -31,7 +46,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .columns import (ENSEMBLE, MONTE_CARLO, RESERVOIR_ROUTING,
-                      analyses_volumes, normalise_method)
+                      analyses_results, analyses_volumes, normalise_method,
+                      runs_models, stores_hydrographs)
 from .paths import cell_text, resolve_value
 
 RESULT_TYPES = ("inflow", "level", "outflow")
@@ -42,14 +58,19 @@ TABLE_SUFFIXES = (".csv", ".parquet")
 class OutputSet:
     """The files a row would write, split by how much they prove."""
 
-    primary: tuple = ()      # the results database - its absence means 'not run'
-    secondary: tuple = ()    # quantiles, plots, volumes - nice to have
+    primary: tuple = ()      # this row's own results - absence means 'not run'
+    secondary: tuple = ()    # volumes, plots - nice to have
     folders: tuple = ()      # directories that must exist for the row to run
+    databases: tuple = ()    # the results database, in the order Bryan probes
+                             # for it - what an analysis-only row reads back
+    shared: tuple = ()       # written by this row but not owned by it: the
+                             # unsuffixed mcdf, which every suffix variant of
+                             # one Output file overwrites
     note: str = ""
 
     @property
     def all_paths(self) -> tuple:
-        return tuple(self.primary) + tuple(self.secondary)
+        return tuple(self.primary) + tuple(self.secondary) + tuple(self.shared)
 
 
 def _first_existing(base: Path, suffixes=TABLE_SUFFIXES) -> Path | None:
@@ -102,6 +123,7 @@ def _monte_carlo_outputs(row, project_folder, output_file) -> OutputSet:
         primary=(Path(f"{base}__mcdf.csv"),),
         secondary=tuple(secondary),
         folders=(base.parent,),
+        databases=(Path(f"{base}__mcdf.csv"),),
     )
 
 
@@ -113,6 +135,7 @@ def _ensemble_outputs(row, project_folder, output_file) -> OutputSet:
         primary=(Path(f"{base}.csv"),),
         secondary=(base.parent / "plots", base.parent / "csv"),
         folders=(base.parent,),
+        databases=(Path(f"{base}.csv"),),
     )
 
 
@@ -127,42 +150,88 @@ def _reservoir_outputs(row, project_folder, output_file) -> OutputSet:
     # Which of the two the row writes depends on the scheme of its INPUT
     # database, which ReservoirRouting sniffs from that file's columns
     # (_detect_scheme). The UI does not open the input, so it accepts either -
-    # the same two candidates _ensure_mcdf_loaded probes at :794.
-    mc_base = results_folder / f"{basename}__mcdf"
-    enb_base = results_folder / f"{basename}{suffix}"
+    # the same candidates _ensure_mcdf_loaded probes, in its order.
+    mc_database = results_folder / f"{basename}__mcdf{suffix}.csv"
+    enb_database = results_folder / f"{basename}{suffix}.csv"
+    legacy_database = results_folder / f"{basename}__mcdf.csv"
+    databases = (mc_database, enb_database)
+    if suffix:
+        databases += (legacy_database,)
 
-    secondary = tuple(
+    # What the row leaves behind under its OWN name. The quantile tables are
+    # the usual evidence; a row that routes without analysing leaves only the
+    # hydrographs, and a row that does neither leaves nothing to find.
+    quantiles = tuple(
         results_folder / f"{basename}__{kind}_quantiles{suffix}.csv"
         for kind in RESULT_TYPES
-    )
+    ) if analyses_results(row) else ()
+
+    hydrographs_folder = resolve_value(project_folder, row.get("Hydrographs folder"))
+    hydrographs = ()
+    if hydrographs_folder and runs_models(row) and stores_hydrographs(row):
+        hydrographs = tuple(
+            hydrographs_folder / f"{basename}_{series}{suffix}.csv"
+            for series in ("outflows", "levels", "volumes")
+        )
+
+    secondary = ()
     if analyses_volumes(row):
         # One table of every event's volumes. The per-duration quantile files
         # beside it are named for the durations in the row's Config file, which
         # the UI does not open, so they are left out rather than guessed at.
-        secondary += (results_folder / f"{basename}__inflow_volumes{suffix}.csv",)
-    hydrographs = resolve_value(project_folder, row.get("Hydrographs folder"))
-    folders = (results_folder,) + ((hydrographs,) if hydrographs else ())
+        secondary = (results_folder / f"{basename}__inflow_volumes{suffix}.csv",)
+
+    folders = (results_folder,) + ((hydrographs_folder,) if hydrographs_folder else ())
+
+    # The legacy mcdf is a sibling's as much as it is this row's, so it never
+    # counts as evidence - only as something an analysis could still read.
+    primary = (mc_database, enb_database) + quantiles + hydrographs
+    shared = (legacy_database,) if suffix else ()
+    note = ("monte carlo input writes <name>__mcdf<suffix>.csv; ensemble input "
+            "writes <name><suffix>.csv - either counts as having run")
 
     return OutputSet(
-        primary=(Path(f"{mc_base}.csv"), Path(f"{enb_base}.csv")),
+        primary=primary,
         secondary=secondary,
         folders=folders,
-        note="monte carlo input writes __mcdf.csv; ensemble input writes "
-             "<name><suffix>.csv - either counts as having run",
+        databases=databases,
+        shared=shared,
+        note=note,
     )
 
 
-def find_primary(row, project_folder) -> Path | None:
-    """The results database this row has already written, if any."""
-    outputs = outputs_for(row, project_folder)
-    for candidate in outputs.primary:
+def _first_on_disk(candidates, *, parquet_too: bool = False) -> Path | None:
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
         # accept a hand-converted parquet, as ReservoirRouting._read_indexed does
-        alternative = candidate.with_suffix(".parquet")
-        if alternative.is_file():
-            return alternative
+        if parquet_too:
+            alternative = candidate.with_suffix(".parquet")
+            if alternative.is_file():
+                return alternative
     return None
+
+
+def find_primary(row, project_folder) -> Path | None:
+    """The output that proves THIS row has run, if any.
+
+    Not simply the results database: a reservoir routing row with an
+    ``Output suffix`` shares its mcdf with every other suffix over the same
+    ``Output file``, so that file proves only that *something* ran.
+    """
+    outputs = outputs_for(row, project_folder)
+    return _first_on_disk(outputs.primary, parquet_too=True)
+
+
+def find_database(row, project_folder) -> Path | None:
+    """The results database on disk, shared or not.
+
+    What ``_ensure_mcdf_loaded`` will find for an analysis-only row, and the
+    file worth counting rows in - a quantile table is ten rows by design.
+    """
+    outputs = outputs_for(row, project_folder)
+    candidates = outputs.databases or outputs.primary
+    return _first_on_disk(candidates, parquet_too=True)
 
 
 def log_path_for(row, project_folder) -> Path | None:

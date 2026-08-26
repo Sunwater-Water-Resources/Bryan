@@ -116,18 +116,34 @@ def _simulate(sim, project_folder) -> None:
         subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
         time.sleep(600)
 
-    # Write something that looks like a results database, so completion
-    # detection has a file to find.
+    # Write something that looks like a set of results, so completion
+    # detection has files to find. The suffixed quantile tables matter as much
+    # as the mcdf: the mcdf carries no suffix, so it is shared by every suffix
+    # variant of one Output file and proves nothing about this row.
     output_file = str(sim.get("Output file") or "")
     results_folder = sim.get("Results folder")
     if output_file:
         if isinstance(results_folder, str) and results_folder.strip():
-            base = (Path(project_folder) / results_folder.replace("\\", "/")
-                    / f"{Path(output_file).name}__mcdf.csv")
+            folder = Path(project_folder) / results_folder.replace("\\", "/")
+            name = Path(output_file).name
         else:
-            base = Path(project_folder) / f"{output_file}__mcdf.csv".replace("\\", "/")
-        base.parent.mkdir(parents=True, exist_ok=True)
-        base.write_text("index,inflow,level,outflow\n0,1,2,3\n", encoding="utf-8")
+            base = Path(project_folder) / output_file.replace("\\", "/")
+            folder, name = base.parent, base.name
+        folder.mkdir(parents=True, exist_ok=True)
+
+        # pd.notna, not `or ""` - a blank cell is NaN, which is truthy, and
+        # str(nan) would name every file '_nan'.
+        raw = sim.get("Output suffix")
+        suffix = str(raw).strip() if raw is not None and pd.notna(raw) else ""
+        suffix = f"_{suffix}" if suffix else ""
+
+        (folder / f"{name}__mcdf{suffix}.csv").write_text(
+            "index,inflow,level,outflow\n0,1,2,3\n", encoding="utf-8")
+        if str(sim.get("Analyse results") or "").strip().lower() == "yes":
+            for kind in ("inflow", "level", "outflow"):
+                (folder / f"{name}__{kind}_quantiles{suffix}.csv").write_text(
+                    f"aep (1 in x),probability,{kind}\n100,0.01,1.0\n",
+                    encoding="utf-8")
 
 
 if __name__ == "__main__":

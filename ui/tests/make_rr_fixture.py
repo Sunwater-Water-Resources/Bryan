@@ -36,8 +36,14 @@ def write_els(path: Path, fsl: float = FSL) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_sq(path: Path) -> None:
-    """Storage above FSV against outflow. Five header lines, then pairs."""
+def write_sq(path: Path, coefficient: float = 12.0) -> None:
+    """Storage above FSV against outflow. Five header lines, then pairs.
+
+    ``coefficient`` sizes the spillway, so two curves can differ the way the
+    'base' and 'raised' options of a real study do: a smaller one passes less
+    flow and holds the lake higher for the same inflow. They were identical
+    until 26 August 2026, which let a routed result match under both.
+    """
     header = [
         "Miniature test rating curve",
         "written by ui/tests/make_rr_fixture.py",
@@ -48,7 +54,7 @@ def write_sq(path: Path) -> None:
     rows = []
     for step in range(11):
         storage = 500.0 * step                # 0 to 5000 ML above FSV
-        flow = 12.0 * step ** 1.5             # a plausible spillway shape
+        flow = coefficient * step ** 1.5      # a plausible spillway shape
         rows.append(f"{storage:.1f}  {flow:.3f}")
     path.write_text("\n".join(header + rows) + "\n", encoding="utf-8")
 
@@ -115,6 +121,98 @@ def write_ensemble_inputs(folder: Path, durations=(18, 24), patterns=(0, 1)) -> 
                                                  encoding="utf-8")
 
 
+def write_monte_carlo_inputs(folder: Path, m_count=4, n_count=5,
+                             lower_aep=2.0, upper_aep=1000.0) -> dict:
+    """A Monte Carlo results database and the inflows behind it.
+
+    The sample has to survive _validate_sample, which is the point of building
+    it properly: every realisation's rain_z sits inside its own main division,
+    rain_aep agrees with rain_z, and every (m, n) position appears once. The
+    scheme_config returned here is what the sims list's Config file must hold.
+    """
+    from math import erf, exp, sqrt
+
+    def ndtri(p):
+        """The standard normal variate of p, by bisection - no scipy here."""
+        def ndtr(z):
+            return 0.5 * (1.0 + erf(z / sqrt(2.0)))
+        low, high = -10.0, 10.0
+        for _ in range(200):
+            middle = (low + high) / 2.0
+            if ndtr(middle) < p:
+                low = middle
+            else:
+                high = middle
+        return (low + high) / 2.0
+
+    def ndtr(z):
+        return 0.5 * (1.0 + erf(z / sqrt(2.0)))
+
+    folder.mkdir(parents=True, exist_ok=True)
+
+    z_low, z_up = ndtri(1.0 - 1.0 / lower_aep), ndtri(1.0 - 1.0 / upper_aep)
+    edges = [z_low + (z_up - z_low) * i / m_count for i in range(m_count + 1)]
+
+    columns, records = [], []
+    for m in range(m_count):
+        for n in range(n_count):
+            # Spread inside the division, never on an edge - a z on a boundary
+            # is legal but makes a failure ambiguous to read.
+            span = edges[m + 1] - edges[m]
+            z = edges[m] + span * (n + 1) / (n_count + 1)
+            name = f"m{m}_n{n}"
+            columns.append(name)
+            records.append({
+                "": name,
+                "m": m,
+                "n": n,
+                "rain_z": z,
+                "rain_aep": 1.0 / (1.0 - ndtr(z)),
+                "storm_method": "ARR point",
+                "initial_loss": 30.0,
+                "continuing_loss": 2.5,
+                # Full supply exactly - see write_els. Starting above the top
+                # of the .sq instead pegs every realisation at the last point
+                # of the rating curve, and both curves then agree.
+                "ADV": 5500.0,
+                "lake_z": 0.0,
+                "inflow": 0.0,
+                "level": 0.0,
+                "outflow": 0.0,
+            })
+
+    header = list(records[0])
+    lines = [",".join(header)]
+    for record in records:
+        lines.append(",".join(str(record[key]) for key in header))
+    (folder / "mc_results.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # One hydrograph per realisation, growing with the sampled rainfall so the
+    # routed peaks come out in a sensible order.
+    span = 30.0
+    inflow_lines = ["time," + ",".join(columns)]
+    for step in range(N_STEPS):
+        hour = step * DT_HOURS
+        cells = []
+        for record in records:
+            # Sized so the flood volume lands between about 400 and 4000 ML,
+            # which is inside the 0 to 5000 ML the .sq covers.
+            peak = 5.0 + 25.0 * record["rain_z"]
+            shape = exp(-((hour - span / 2.0) ** 2) / (2 * (span / 6.0) ** 2))
+            cells.append(f"{max(peak, 2.0) * shape:.4f}")
+        inflow_lines.append(f"{hour:.2f}," + ",".join(cells))
+    (folder / "mc_inflows.csv").write_text("\n".join(inflow_lines) + "\n",
+                                           encoding="utf-8")
+
+    return {
+        "number_of_main_divisions": m_count,
+        "number_of_sub_divisions": n_count,
+        "lower_aep": lower_aep,
+        "upper_aep": upper_aep,
+        "aep_of_pmp": None,
+    }
+
+
 SIMS_COLUMNS = [
     "Include", "Method", "Output suffix", "Duration", "Run models",
     "Analyse results", "Store hydrographs", "Input database", "Inflow",
@@ -153,6 +251,39 @@ def sims_rows(suffixes=("base", "raised")):
     ]
 
 
+def monte_carlo_rows(suffixes=("base", "raised"), output_file="mini_mc"):
+    """The case the suffix exists for: one Output file, several rating curves.
+
+    Both rows write a Monte Carlo database into one results folder, so they are
+    told apart only by 'Output suffix' - which is why lib/ReservoirRouting.py
+    puts it on the mcdf name too.
+    """
+    return [
+        {
+            "Include": "yes",
+            "Method": "reservoir routing",
+            "Output suffix": suffix,
+            "Duration": "",
+            "Run models": "yes",
+            "Analyse results": "yes",
+            "Store hydrographs": "no",
+            "Input database": "inputs/mc_results.csv",
+            "Inflow": "inputs/mc_inflows.csv",
+            "ELS file": "reservoir/dam.els",
+            "SQ file": f"reservoir/dam_{suffix}.sq",
+            "FSL": FSL,
+            "ADV": "",
+            "Hydrographs folder": "results/hydrographs",
+            "Results folder": "results",
+            "Config file": "mc_config.json",
+            "Log file": "",
+            "Output file": output_file,
+            "Comment": f"miniature monte carlo fixture, {suffix} rating",
+        }
+        for suffix in suffixes
+    ]
+
+
 def build(folder: Path) -> Path:
     """Write the whole project. Returns the sims_config.json path."""
     folder = Path(folder)
@@ -161,8 +292,11 @@ def build(folder: Path) -> Path:
 
     write_els(folder / "reservoir" / "dam.els")
     write_sq(folder / "reservoir" / "dam_base.sq")
-    write_sq(folder / "reservoir" / "dam_raised.sq")
+    write_sq(folder / "reservoir" / "dam_raised.sq", coefficient=6.0)
     write_ensemble_inputs(folder / "inputs")
+    scheme = write_monte_carlo_inputs(folder / "inputs")
+    (folder / "mc_config.json").write_text(
+        json.dumps({"scheme_config": scheme}, indent=2), encoding="utf-8")
 
     for name in ("model_config.json", "storm_config.json", "climate_config.json"):
         (folder / name).write_text("{}", encoding="utf-8")
