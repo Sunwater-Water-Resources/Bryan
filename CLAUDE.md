@@ -102,7 +102,14 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Monte Carlo input takes the antecedent dam volume from the `ADV` column of the input mcdf by
   default; the optional `ADV source` sims-list column (`lake_z` / `lake_z correlated`) instead
   resamples it from the mcdf `lake_z` column via the lake config distribution, so one set of
-  inflows can be re-routed under different antecedent storage distributions.
+  inflows can be re-routed under different antecedent storage distributions. `ADV source =
+  sims list` holds every realisation at one volume from the sims-list `ADV` column instead
+  (`_sims_list_adv`, shared with the ensemble path), for testing dam operation against a
+  nominated antecedent storage — the quantiles are then conditional on it, not design flood
+  quantiles, so the run says so in the log. **The sims-list `ADV` is not read at all under the
+  default `mcdf` source**, which is what made an `ADV` of `fsv` there look like it was being
+  ignored; it now prints a note saying the key was never used and naming the source that would
+  use it.
 - Ensemble input holds one starting volume for the whole run, so the ADV comes from the sims-list
   `ADV` column via `LakeConditions` — a number, `fsv`, `mav`, or `database`. **Use `fsv` or `mav`
   when re-routing under a different dam**: both resolve against the curve being routed, whereas
