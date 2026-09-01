@@ -275,3 +275,68 @@ def test_an_analysis_only_row_falls_back_to_the_pre_suffix_database(tmp_path):
     for kind in ("inflow", "level", "outflow"):
         assert (results / f"mini_mc__{kind}_quantiles_base.csv").is_file(), \
             "the re-analysis still produced its own suffixed quantiles"
+
+
+# --- a fixed antecedent storage over Monte Carlo input ---------------------
+
+@needs_bryan
+def test_a_fixed_adv_holds_every_realisation_at_one_storage(tmp_path):
+    """The method exists to test dam operation against a fixed set of inflows,
+    and the starting storage is part of the operation being tested.
+
+    'ADV source' of 'sims list' is the only way to it: the ADV column alone is
+    not read for Monte Carlo input, because the storages there come one per
+    realisation from the input database.
+    """
+    projects = {}
+    for name, rows in (
+        ("default", monte_carlo_rows(suffixes=("base",))),
+        ("fixed", monte_carlo_rows(suffixes=("base",), adv=2500.0,
+                                   adv_source="sims list")),
+    ):
+        folder = tmp_path / name
+        folder.mkdir()
+        projects[name] = build(folder)
+        write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS, rows)
+        _run(projects[name], f"20260901-{name}")
+
+    fixed = pd.read_csv(tmp_path / "fixed/results/mini_mc__mcdf_base.csv", index_col=0)
+    default = pd.read_csv(tmp_path / "default/results/mini_mc__mcdf_base.csv", index_col=0)
+
+    # Every realisation started where the sims list said, and the storage the
+    # source run used is kept beside it.
+    assert (fixed["ADV"] == 2500.0).all()
+    assert (fixed["ADV_input"] == 5500.0).all()
+    assert (default["ADV"] == 5500.0).all(), "the default still comes from the database"
+
+    # Starting 3000 ML lower is a real difference, not a relabelled column.
+    assert (fixed["level"] < default["level"]).all()
+
+    log = (tmp_path / "fixed/results/mini_mc_base_log.txt").read_text(
+        encoding="utf-8", errors="replace")
+    assert "ADV source: the ADV column of the sims list" in log
+    assert "conditional on that starting storage" in log, \
+        "holding the lake still stops these being design flood quantiles"
+
+
+@needs_bryan
+def test_an_adv_the_monte_carlo_source_ignores_says_so(tmp_path):
+    """An 'ADV' with no 'ADV source' does nothing at all for Monte Carlo input.
+
+    It used to do it silently, which reads as the run having ignored the
+    setting rather than never having looked at it.
+    """
+    folder = tmp_path / "unused"
+    folder.mkdir()
+    config_path = build(folder)
+    write_workbook(folder / "MiniSimsList.xlsx", SIMS_COLUMNS,
+                   monte_carlo_rows(suffixes=("base",), adv="fsv"))
+    _run(config_path, "20260901-unused")
+
+    mcdf = pd.read_csv(folder / "results/mini_mc__mcdf_base.csv", index_col=0)
+    assert (mcdf["ADV"] == 5500.0).all(), "the database's storages, untouched"
+
+    log = (folder / "results/mini_mc_base_log.txt").read_text(
+        encoding="utf-8", errors="replace")
+    assert 'which is NOT used' in log
+    assert 'Set "ADV source" to "sims list"' in log

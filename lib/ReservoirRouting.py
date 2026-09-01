@@ -373,7 +373,17 @@ class ReservoirRoutingSimulator:
 
     -- Monte Carlo input: 'ADV source' selects where the initial storage comes from:
       mcdf              - the ADV column of the input mcdf (default, and what
-                          happens if the column is absent)
+                          happens if the column is absent). The 'ADV' column of
+                          the sims list is not read at all, which is why a fixed
+                          one there needs the source below.
+      sims list         - one fixed starting volume for every realisation, taken
+                          from the 'ADV' column of the sims list and read exactly
+                          as the ensemble input reads it (a number, "fsv" or
+                          "mav"). For testing dam operation against a nominated
+                          antecedent storage: the routed quantiles are then
+                          conditional on that storage rather than design flood
+                          quantiles, because the lake level is one of the things
+                          the Monte Carlo sample varies.
       lake_z            - the ADV is recomputed from the lake_z column of the
                           input mcdf using the distribution in the 'Lake config'
                           file, so the same sample can be re-routed under a
@@ -411,7 +421,17 @@ class ReservoirRoutingSimulator:
       <Results folder>/<Output file><suffix>_log.txt          when 'Log file' is blank
     """
 
-    ADV_SOURCES = ('mcdf', 'lake_z', 'lake_z correlated')
+    ADV_SOURCES = ('mcdf', 'sims list', 'lake_z', 'lake_z correlated')
+
+    # Spellings that mean one of the above. 'database' is the ensemble's word
+    # for the input database, so it means 'mcdf' here rather than failing over
+    # a difference in vocabulary between the two schemes.
+    ADV_SOURCE_ALIASES = {
+        '': 'mcdf', 'adv': 'mcdf', 'database': 'mcdf', 'input database': 'mcdf',
+        'sims_list': 'sims list', 'simslist': 'sims list',
+        'sims list adv': 'sims list', 'adv column': 'sims list',
+        'fixed': 'sims list',
+    }
 
     # The tag the rest of Bryan knows a Monte Carlo database by. On its own,
     # with no 'Output suffix' after it, it is also the pre-26-August-2026 name
@@ -589,8 +609,7 @@ class ReservoirRoutingSimulator:
             if column in self.sim_row.index and pd.notna(self.sim_row[column]):
                 source = ' '.join(str(self.sim_row[column]).split()).lower()
                 break
-        if source in ('', 'adv'):
-            source = 'mcdf'
+        source = self.ADV_SOURCE_ALIASES.get(source, source)
         if source not in self.ADV_SOURCES:
             raise ValueError(
                 f'"ADV source" of "{source}" is not recognised. '
@@ -658,8 +677,12 @@ class ReservoirRoutingSimulator:
         self.scheme = self._detect_scheme()
         if self.scheme == 'ensemble':
             self.adv = self._ensemble_adv()
+        elif self.adv_source == 'sims list':
+            print('ADV source: the ADV column of the sims list')
+            self.adv = self._sims_list_adv()
         elif self.adv_source == 'mcdf':
             print('ADV source: the ADV column of the input MCDF')
+            self._report_unused_sims_list_adv()
             self.adv = self.mcdf['ADV'].to_numpy(dtype=float)
         else:
             print(f'ADV source: {self.adv_source} - the ADV will be resampled '
@@ -670,25 +693,51 @@ class ReservoirRoutingSimulator:
         """The antecedent dam volume for an ensemble re-route.
 
         An ensemble run holds the lake at one starting volume for every event, so
-        the ADV comes from the sims list rather than per row. The sims-list values
-        are read by LakeConditions exactly as the ensemble method itself reads
-        them, so a number and the "fsv" and "mav" keywords behave identically here
-        - except that both keywords resolve against the rating curve being routed,
-        not the one the input database was generated with. That is the point:
-        taking the input database's own ADV under a new curve would start every
-        event at the old dam's full supply volume.
+        the ADV always comes from the sims list rather than per row - there is no
+        choice to make, and so no 'ADV source' to read.
         """
         if 'ADV source' in self.sim_row.index and pd.notna(self.sim_row['ADV source']):
             print('NOTE: "ADV source" applies to Monte Carlo input only and is ignored '
                   'for an ensemble - the ADV comes from the "ADV" column of the sims list.')
+        return self._sims_list_adv()
+
+    @staticmethod
+    def _adv_keyword(adv_value):
+        """The sims-list 'ADV' cell as a keyword, or '' if it is a number."""
+        return ' '.join(str(adv_value).split()).lower() if isinstance(adv_value, str) else ''
+
+    def _sims_list_adv(self):
+        """One starting volume for every event, from the sims-list 'ADV' column.
+
+        The values are read by LakeConditions exactly as the ensemble method
+        itself reads them, so a number and the "fsv" and "mav" keywords behave
+        identically here - except that both keywords resolve against the rating
+        curve being routed, not the one the input database was generated with.
+        That is the point of the method: re-routing under a different dam and
+        taking the ADV from the input database instead would silently start every
+        event at the *old* dam's full supply volume.
+
+        Ensemble input has nowhere else to get an ADV, so this is its only path.
+        Monte Carlo input comes here when 'ADV source' says 'sims list', which is
+        what tests a dam operating rule against one nominated antecedent storage
+        instead of the storage distribution the source run sampled.
+        """
+        ensemble = self.scheme == 'ensemble'
+        context = 'an ensemble re-route' if ensemble else 'an ADV source of "sims list"'
+        options = ('a volume in ML, "fsv", "mav", or "database"' if ensemble
+                   else 'a volume in ML, "fsv" or "mav"')
         if 'ADV' not in self.sim_row.index or pd.isna(self.sim_row['ADV']):
-            raise ValueError('The sims list needs an "ADV" for an ensemble re-route: '
-                             'a volume in ML, "fsv", "mav", or "database".')
+            raise ValueError(f'The sims list needs an "ADV" for {context}: {options}.')
 
         adv_value = self.sim_row['ADV']
+        keyword = self._adv_keyword(adv_value)
         n_sims = self.inflows_arr.shape[1]
 
-        if isinstance(adv_value, str) and adv_value.strip().lower() == 'database':
+        if keyword == 'database':
+            # Ensemble input's way of saying "whatever the source run started
+            # from". Monte Carlo input has the same thing under its own name -
+            # the default 'mcdf' source - so this is accepted there too rather
+            # than failing over a difference in vocabulary between the schemes.
             if 'ADV' not in self.mcdf.columns:
                 raise ValueError('The input database has no "ADV" column to take the '
                                  'antecedent dam volume from.')
@@ -696,24 +745,57 @@ class ReservoirRoutingSimulator:
             print(f'ADV taken from the input database: {np.unique(adv)} ML')
             return adv
 
-        if isinstance(adv_value, str) and adv_value.strip().lower() == 'varying':
+        if keyword == 'varying':
             # LakeConditions only blocks this for Method == 'ensemble', and this row
             # says 'reservoir routing', so it would otherwise fall through to the
-            # lake config and sample 130 different starting volumes.
-            raise ValueError('An "ADV" of "varying" cannot be used with ensemble input - '
-                             'an ensemble holds one starting volume for the whole run. '
-                             'Use a volume in ML, "fsv", "mav", or "database".')
+            # lake config and sample a fresh set of starting volumes - unrelated to
+            # the sample the inflows came from, and different again on every run.
+            if ensemble:
+                raise ValueError('An "ADV" of "varying" cannot be used with ensemble input - '
+                                 'an ensemble holds one starting volume for the whole run. '
+                                 'Use a volume in ML, "fsv", "mav", or "database".')
+            raise ValueError('An "ADV" of "varying" cannot be resolved to one volume. To '
+                             'vary the antecedent storage over a Monte Carlo sample, leave '
+                             'the ADV source as "mcdf" to keep the storages the inflows '
+                             'were generated with, or use "lake_z" to resample them from a '
+                             'lake config.')
 
         lake = LakeConditions(self.sim_row)
         lake.set_full_supply_volume(self.fsv)
         if lake.antecedent_volume is None:
             raise ValueError(f'The "ADV" of "{adv_value}" did not resolve to a volume.')
         volume = float(lake.antecedent_volume)
-        print(f'ADV for all {n_sims} events: {volume:.1f} ML '
-              f'(FSV of the routed curve = {self.fsv:.1f} ML)')
+        print(f'ADV for all {n_sims} {"events" if ensemble else "realisations"}: '
+              f'{volume:.1f} ML (FSV of the routed curve = {self.fsv:.1f} ML)')
+        if not ensemble:
+            print('NOTE: every realisation now starts at that volume, so the antecedent\n'
+                  '      storage is no longer sampled. The quantiles this produces are\n'
+                  '      conditional on that starting storage - a test of dam operation,\n'
+                  '      not a design flood estimate.')
+        # Record what was actually routed - the ADV column of the source run no
+        # longer applies. The original is kept alongside it for checking.
         self.mcdf['ADV_input'] = self.mcdf['ADV'] if 'ADV' in self.mcdf.columns else np.nan
         self.mcdf['ADV'] = volume
         return np.full(n_sims, volume)
+
+    def _report_unused_sims_list_adv(self):
+        """Say so when the sims list asks for an ADV that the mcdf source ignores.
+
+        Monte Carlo input takes its storages from the input database, so a "fsv"
+        or a volume in the sims-list 'ADV' column does nothing at all - and did
+        it silently until 1 September 2026, which reads as the run having ignored
+        the setting rather than never having looked at it.
+        """
+        if 'ADV' not in self.sim_row.index or pd.isna(self.sim_row['ADV']):
+            return
+        adv_value = self.sim_row['ADV']
+        keyword = self._adv_keyword(adv_value)
+        if keyword in ('varying', 'database'):
+            return  # both say "whatever the source run did", which is what happens
+        print(f'NOTE: the sims list has an "ADV" of "{adv_value}", which is NOT used - '
+              'the\n      antecedent storage of a Monte Carlo re-route comes from the '
+              'input\n      database. Set "ADV source" to "sims list" to hold every '
+              'realisation\n      at that volume instead.')
 
     def _sample_adv_from_lake_z(self):
         """Recompute the ADV for every realisation from the sampled lake z values

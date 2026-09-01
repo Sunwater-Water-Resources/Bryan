@@ -216,7 +216,7 @@ def write_monte_carlo_inputs(folder: Path, m_count=4, n_count=5,
 SIMS_COLUMNS = [
     "Include", "Method", "Output suffix", "Duration", "Run models",
     "Analyse results", "Store hydrographs", "Input database", "Inflow",
-    "ELS file", "SQ file", "FSL", "ADV", "Hydrographs folder",
+    "ELS file", "SQ file", "FSL", "ADV", "ADV source", "Hydrographs folder",
     "Results folder", "Config file", "Log file", "Output file", "Comment",
 ]
 
@@ -240,6 +240,7 @@ def sims_rows(suffixes=("base", "raised")):
             # 'fsv' resolves against the curve BEING routed, which is the whole
             # point when the dam differs from the source run's.
             "ADV": "fsv",
+            "ADV source": "",
             "Hydrographs folder": "results/hydrographs",
             "Results folder": "results",
             "Config file": "",
@@ -251,12 +252,17 @@ def sims_rows(suffixes=("base", "raised")):
     ]
 
 
-def monte_carlo_rows(suffixes=("base", "raised"), output_file="mini_mc"):
+def monte_carlo_rows(suffixes=("base", "raised"), output_file="mini_mc",
+                     adv="", adv_source=""):
     """The case the suffix exists for: one Output file, several rating curves.
 
     Both rows write a Monte Carlo database into one results folder, so they are
     told apart only by 'Output suffix' - which is why lib/ReservoirRouting.py
     puts it on the mcdf name too.
+
+    ``adv`` and ``adv_source`` are left blank by default, which is the ordinary
+    re-route: the antecedent storage of every realisation comes from the input
+    database. Setting both is how one fixed storage is tested instead.
     """
     return [
         {
@@ -272,7 +278,8 @@ def monte_carlo_rows(suffixes=("base", "raised"), output_file="mini_mc"):
             "ELS file": "reservoir/dam.els",
             "SQ file": f"reservoir/dam_{suffix}.sq",
             "FSL": FSL,
-            "ADV": "",
+            "ADV": adv,
+            "ADV source": adv_source,
             "Hydrographs folder": "results/hydrographs",
             "Results folder": "results",
             "Config file": "mc_config.json",
