@@ -1,0 +1,331 @@
+"""The representative event analysis, against a synthetic Monte Carlo database.
+
+The fixture carries the column names ``lib/MCScheme.py:26-31`` and
+``lib/Simulator.py`` actually write, including the mixed units - ``rain_aep`` in
+'1 in X' and the TPT columns as probabilities - because confusing those two is
+the failure this module is most exposed to and it would not look wrong on a
+plot.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pandas as pd
+import pytest
+
+from lib import RepresentativeEvents as events
+
+TARGET = 1000.0
+
+
+def realisation(sim_id, rain_aep, level_aep, **overrides):
+    """One mcdf row, with every column a real database has."""
+    row = {
+        "m": sim_id // 10, "n": sim_id % 10,
+        "rain_z": events.normal_variate(rain_aep),
+        "rain_aep": rain_aep,
+        "mean_rain_mm": 250.0,
+        "tp": 3, "storm_method": "ARR point", "tp_frequency": "rare",
+        "il_p": 0.5, "il_scaling": 1.0,
+        "preburst_p": 0.5, "preburst_proportion": 0.15, "preburst_mm": 37.5,
+        "initial_loss": 30.0,
+        "cl_p": 0.5, "cl_scaling": 1.0, "continuing_loss": 2.5,
+        "residual_depth": 7.5,
+        "lake_z": 0.0,
+        "embedded_bursts": events.NO_EMBEDDED_BURSTS,
+        "ADV": 210_000.0,
+        "subburst_2h": 60.0, "ifd_2h": 100.0,
+        "subburst_6h": 120.0, "ifd_6h": 160.0,
+        "inflow": 3000.0, "level": 220.0, "outflow": 2500.0,
+        "level_aep": 1.0 / level_aep,          # probability, as the TPT writes it
+        "inflow_aep": 1.0 / level_aep,
+        "outflow_aep": 1.0 / level_aep,
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.fixture
+def mcdf():
+    """Seven realisations against a 1 in 1,000 lake level loading.
+
+    0 is the answer: rainfall and flood both 1 in 1,000, nothing flagged.
+    """
+    rows = {
+        0: realisation(0, 1000, 1000),
+        1: realisation(1, 100, 1000, level=220.5),              # coincidence
+        2: realisation(2, 1000, 100, level=214.0),              # rain right, flood not
+        3: realisation(3, 900, 1100, level=220.1,               # embedded burst
+                       embedded_bursts="Unfiltered embedded bursts: 2h burst exceeds by 20.0%",
+                       subburst_2h=120.0),
+        4: realisation(4, 900, 1100, level=220.1, preburst_p=0.88,
+                       preburst_proportion=0.6, preburst_mm=150.0),
+        5: realisation(5, 900, 1100, level=220.1, lake_z=2.0, ADV=260_000.0),
+        6: realisation(6, 5_000_000, 1000, level=221.0),        # beyond the PMP
+    }
+    frame = pd.DataFrame.from_dict(rows, orient="index")
+    return frame
+
+
+@pytest.fixture
+def scored(mcdf):
+    return events.score(events.prepare(mcdf, "level"), TARGET)
+
+
+LEVEL_CURVE = {10: 214.0, 100: 216.0, 1000: 220.0, 10_000: 223.0}
+
+
+# -- units -------------------------------------------------------------------
+
+def test_the_tpt_column_is_a_probability_and_rain_aep_is_not(mcdf):
+    """1/p for the result, as read for the rainfall. Mixing them is invisible."""
+    prepared = events.prepare(mcdf, "level")
+    assert prepared.loc[0, "result_aep"] == pytest.approx(1000.0)
+    assert prepared.loc[0, "rain_aep"] == pytest.approx(1000.0)
+    # Both describe the same rarity, so their variates agree.
+    assert prepared.loc[0, "z_result"] == pytest.approx(prepared.loc[0, "z_rain"])
+
+
+def test_a_database_without_the_analysis_says_so(mcdf):
+    raw = mcdf.drop(columns=["level_aep"])
+    with pytest.raises(ValueError, match="Analyse results"):
+        events.prepare(raw, "level")
+
+
+# -- ranking -----------------------------------------------------------------
+
+def test_the_aep_neutral_event_wins(scored):
+    ranking = events.rank(scored, count=3)
+    assert ranking.candidates.index[0] == 0
+
+
+def test_a_coincidence_ranks_below_a_neutral_event(scored):
+    """Row 1 reaches the right level off 1 in 100 rainfall."""
+    order = list(events.rank(scored, count=7).candidates.index)
+    assert order.index(0) < order.index(1)
+
+
+def test_distance_is_measured_in_z(scored):
+    """Not in '1 in X', where the rare end swamps everything.
+
+    Row 1 and row 2 are each one decade of AEP away from the target, one in
+    rainfall and one in flood. In z they are comparable; in '1 in X' row 2 (out
+    by 900) would look ten times worse than row 1 (out by 900 the other way).
+    """
+    assert scored.loc[1, "delta_z"] == pytest.approx(scored.loc[2, "delta_z"], rel=0.35)
+
+
+def test_the_pmp_cap_drops_rainfall_beyond_it(scored):
+    ranking = events.rank(scored, events.Filters(aep_of_pmp=1e6), count=7)
+    assert 6 not in ranking.candidates.index
+    assert sum(ranking.excluded.values()) == 1
+
+
+def test_without_the_cap_nothing_is_dropped_for_rarity(scored):
+    ranking = events.rank(scored, count=7)
+    assert 6 in ranking.candidates.index
+    assert not ranking.excluded
+
+
+def test_a_distance_limit_reports_what_it_removed(scored):
+    ranking = events.rank(scored, events.Filters(max_delta_z=0.5), count=7)
+    assert 1 not in ranking.candidates.index
+    assert any("in z" in reason for reason in ranking.excluded)
+
+
+# -- the flags ---------------------------------------------------------------
+
+def test_an_embedded_burst_is_flagged_by_comment_and_by_ratio(scored):
+    flags = events.flags_for(scored.loc[3])
+    assert any("Unfiltered embedded bursts" in flag for flag in flags)
+    assert any("sub-burst 1.20x" in flag for flag in flags)
+
+
+def test_a_high_preburst_is_flagged(scored):
+    assert any("pre-burst percentile 0.88" in flag
+               for flag in events.flags_for(scored.loc[4]))
+
+
+def test_an_unusual_antecedent_storage_is_flagged(scored):
+    flags = events.flags_for(scored.loc[5])
+    assert any("high antecedent storage" in flag for flag in flags)
+
+
+def test_a_clean_event_carries_no_flags(scored):
+    assert events.flags_for(scored.loc[0]) == ()
+
+
+def test_flags_are_reported_by_default_not_excluded(scored):
+    """The whole point: a flagged event is still offered, with its reason."""
+    ranking = events.rank(scored, count=7)
+    assert {3, 4, 5} <= set(ranking.candidates.index)
+    assert ranking.candidates.loc[4, "flags"]
+
+
+def test_excluding_embedded_bursts_removes_only_those(scored):
+    ranking = events.rank(scored, events.Filters(exclude_embedded=True), count=7)
+    assert 3 not in ranking.candidates.index
+    assert {4, 5} <= set(ranking.candidates.index)
+
+
+def test_a_high_preburst_is_not_an_embedded_burst(scored):
+    """'pre-burst' contains 'burst'. Ask the data, never the flag text."""
+    assert events.has_embedded_burst(scored.loc[3])
+    assert not events.has_embedded_burst(scored.loc[4])
+    assert not events.has_embedded_burst(scored.loc[0])
+
+
+def test_excluding_everything_flagged_leaves_the_clean_events(scored):
+    ranking = events.rank(scored, events.Filters(exclude_flagged=True), count=7)
+    assert not ({3, 4, 5} & set(ranking.candidates.index))
+    assert 0 in ranking.candidates.index
+
+
+def test_an_older_database_without_subburst_columns_still_works(mcdf):
+    """The ratio is unknown; the comment still says whether there was one."""
+    older = mcdf.drop(columns=["subburst_2h", "ifd_2h", "subburst_6h", "ifd_6h"])
+    scored = events.score(events.prepare(older, "level"), TARGET)
+    assert scored["subburst_ratio"].isna().all()
+    flags = events.flags_for(scored.loc[3])
+    assert any("Unfiltered embedded bursts" in flag for flag in flags)
+    assert not any("sub-burst" in flag for flag in flags)
+
+
+def test_the_vectorised_masks_agree_with_the_row_by_row_rules(scored):
+    """rank() filters a whole database at once; flags_for writes the words.
+
+    Two implementations of one rule, for speed - so they are held together
+    here rather than left to drift.
+    """
+    assert list(events.embedded_mask(scored)) == [
+        events.has_embedded_burst(row) for _, row in scored.iterrows()]
+    assert list(events.flag_mask(scored)) == [
+        bool(events.flags_for(row)) for _, row in scored.iterrows()]
+
+
+def test_the_masks_still_agree_with_the_bands_moved(scored):
+    filters = events.Filters(preburst_band=0.1, lake_band=0.5, loss_band=0.05,
+                             subburst_limit=0.5)
+    assert list(events.flag_mask(scored, filters)) == [
+        bool(events.flags_for(row, filters)) for _, row in scored.iterrows()]
+
+
+def test_ranking_a_full_size_database_is_quick(mcdf):
+    """The page re-ranks on every control change, and an mcdf is m x n rows."""
+    import time
+
+    big = pd.concat([mcdf] * 1500, ignore_index=True)      # 10,500 realisations
+    prepared = events.prepare(big, "level")
+
+    start = time.perf_counter()
+    for _ in range(5):
+        ranking = events.rank(events.score(prepared, TARGET), count=10)
+    elapsed = (time.perf_counter() - start) / 5
+
+    assert len(ranking.candidates) == 10
+    assert elapsed < 0.25, f"{elapsed:.3f}s per re-rank of {len(big):,} rows"
+
+
+# -- a lake level as the target ----------------------------------------------
+
+def test_a_level_on_the_curve_becomes_an_aep():
+    lookup = events.aep_for_level(LEVEL_CURVE, 220.0)
+    assert lookup.found
+    assert lookup.aep == pytest.approx(1000.0, rel=0.01)
+
+
+def test_a_level_between_points_interpolates():
+    lookup = events.aep_for_level(LEVEL_CURVE, 221.0)
+    assert 1000 < lookup.aep < 10_000
+
+
+def test_a_level_above_the_curve_is_reported_not_invented():
+    lookup = events.aep_for_level(LEVEL_CURVE, 230.0)
+    assert not lookup.found
+    assert lookup.above_curve
+    assert "above the top of the curve" in lookup.note
+
+
+def test_a_level_above_the_curve_ranks_by_the_highest_events(scored):
+    ranking = events.rank(scored, count=3, above_curve=True)
+    assert ranking.candidates.index[0] == 6          # level 221.0, the highest
+    assert ranking.candidates["level"].is_monotonic_decreasing
+
+
+def test_an_aep_beyond_the_reach_of_a_variate_does_not_raise():
+    """aep_of_variate goes infinite once the upper tail underflows.
+
+    A level curve that flattens off puts the interpolation there, and an
+    exception out of the middle of a page redraw is not the answer.
+    """
+    assert events.normal_variate(float("inf")) != events.normal_variate(float("inf"))
+    flat = {10: 214.0, 100: 216.0, 1000: 220.0, 10_000: 220.000000001}
+    lookup = events.aep_for_level(flat, 220.0000000005)
+    assert lookup.above_curve or (lookup.aep and lookup.aep < float("inf"))
+
+
+def test_a_level_below_the_curve_says_so():
+    lookup = events.aep_for_level(LEVEL_CURVE, 100.0)
+    assert not lookup.found
+    assert not lookup.above_curve
+
+
+# -- targets on disk ---------------------------------------------------------
+
+def test_a_target_round_trips_through_the_selection_file(tmp_path):
+    targets = [events.Target(kind="level", value=220.5, result_type="level",
+                             source="TFD_mc_48h", count=5, picked=17),
+               events.Target(kind="aep", value=2000, rain_aep=1000)]
+    path = tmp_path / events.SELECTION_FILE
+    path.write_text(json.dumps(events.selection_payload(targets, {"group": "GWL1.3"})))
+
+    loaded, settings = events.read_selection(path)
+    assert [t.value for t in loaded] == [220.5, 2000]
+    assert loaded[0].picked == 17
+    assert loaded[1].rain_aep == 1000
+    assert settings["group"] == "GWL1.3"
+
+
+def test_a_missing_selection_file_is_empty_not_an_error(tmp_path):
+    assert events.read_selection(tmp_path / "nothing.json") == ([], {})
+
+
+def test_target_labels_read_as_loadings():
+    assert events.Target(kind="aep", value=2000).label == "1 in 2,000"
+    assert events.Target(kind="level", value=220.5).label == "220.5 m AHD"
+
+
+# -- the AEP of the PMP ------------------------------------------------------
+
+def test_the_pmp_aep_is_read_from_the_ifd_files_config(tmp_path):
+    """Where a Monte Carlo run gets it - not from the method config file."""
+    (tmp_path / "ifd_files.json").write_text(json.dumps({"AEP_of_PMP": 2_000_000}))
+    storm = tmp_path / "storm_config.json"
+    storm.write_text(json.dumps({"file_paths": {"rare_ifds": "ifd_files.json"}}))
+    assert events.pmp_aep_from_storm_config(storm) == 2_000_000
+
+
+def test_a_windows_separator_in_the_chain_still_resolves(tmp_path):
+    folder = tmp_path / "ifds"
+    folder.mkdir()
+    (folder / "ifd_files.json").write_text(json.dumps({"AEP_of_PMP": 1e7}))
+    storm = tmp_path / "storm_config.json"
+    storm.write_text(json.dumps({"file_paths": {"rare_ifds": r"ifds\ifd_files.json"}}))
+    assert events.pmp_aep_from_storm_config(storm) == 1e7
+
+
+def test_a_broken_chain_returns_none_rather_than_failing(tmp_path):
+    storm = tmp_path / "storm_config.json"
+    storm.write_text(json.dumps({"file_paths": {"rare_ifds": "missing.json"}}))
+    assert events.pmp_aep_from_storm_config(storm) is None
+    assert events.pmp_aep_from_storm_config(None) is None
+
+
+# -- the tie back to the hydrographs -----------------------------------------
+
+def test_the_sim_label_matches_the_stored_hydrograph_columns():
+    """URBSmodel.py:653 zero-pads to five."""
+    assert events.sim_label(0) == "sim_00000"
+    assert events.sim_label(42) == "sim_00042"
+    assert events.sim_label(12345) == "sim_12345"

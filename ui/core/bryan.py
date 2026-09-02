@@ -1,14 +1,19 @@
 """The narrow seam onto Bryan itself.
 
-The UI imports exactly two Bryan modules, and only through here:
+The UI imports exactly three Bryan modules, and only through here:
 
 - ``lib.RunLog``   - the run log format, so the UI reads what Bryan writes
 - ``lib.LogFiles`` - ``resolve_duplicates``, so predicted log paths are the
   ones Bryan will actually use
+- ``lib.RepresentativeEvents`` - the representative event analysis, shared with
+  the util script that plots the chosen events so the two cannot rank
+  differently
 
-Both import only os/platform/datetime and pandas, so the UI environment needs
-no scipy and no matplotlib. Nothing else in ``lib/`` is importable that cheaply,
-and nothing else should be imported at all - the allow-list is pinned by
+All three import only pandas and the standard library, so the UI environment
+needs no scipy and no matplotlib. That is the whole test for membership here,
+and it is a property of the module rather than of this list: nothing else in
+``lib/`` is importable that cheaply, and a simulator never will be. The
+allow-list and the dependency rule are both pinned by
 ``ui/tests/test_dependency_direction.py``.
 
 Bryan has no packaging, so the repo root has to go on ``sys.path`` first.
@@ -21,7 +26,7 @@ from pathlib import Path
 
 BRYAN_ROOT = Path(__file__).resolve().parents[2]
 
-ALLOWED_MODULES = ("lib.RunLog", "lib.LogFiles")
+ALLOWED_MODULES = ("lib.RunLog", "lib.LogFiles", "lib.RepresentativeEvents")
 
 
 def ensure_importable() -> Path:
@@ -42,6 +47,12 @@ def log_files():
     ensure_importable()
     from lib import LogFiles
     return LogFiles
+
+
+def representative_events():
+    ensure_importable()
+    from lib import RepresentativeEvents
+    return RepresentativeEvents
 
 
 def run_log_columns() -> list:

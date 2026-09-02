@@ -68,22 +68,30 @@ def test_ui_imports_bryan_only_through_the_allow_list():
 
 
 def test_the_allow_list_is_actually_importable():
-    from core.bryan import log_files, run_log
+    from core.bryan import log_files, representative_events, run_log
 
     assert hasattr(run_log(), "COLUMNS")
     assert hasattr(log_files(), "resolve_duplicates")
+    assert hasattr(representative_events(), "rank")
 
 
 def test_the_allow_list_stays_cheap():
-    """RunLog and LogFiles must not drag scipy or matplotlib into the UI env."""
+    """The membership rule, not a list of names.
+
+    A module belongs on the allow-list only if importing it costs the UI
+    environment nothing - no scipy, no matplotlib. Driven off ALLOWED_MODULES
+    so anything added later is held to the same standard without anyone having
+    to remember this test exists.
+    """
     import subprocess
     import sys
 
+    names = ", ".join(module.split(".", 1)[1] for module in ALLOWED_MODULES)
     code = (
         "import sys; sys.path.insert(0, %r);"
-        "from lib import RunLog, LogFiles;"
+        "from lib import %s;"
         "bad = [m for m in ('scipy', 'matplotlib') if m in sys.modules];"
-        "print(','.join(bad))" % str(BRYAN_ROOT)
+        "print(','.join(bad))" % (str(BRYAN_ROOT), names)
     )
     result = subprocess.run([sys.executable, "-c", code],
                             capture_output=True, text=True, check=True)

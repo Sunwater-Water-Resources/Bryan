@@ -45,7 +45,7 @@ return a >= 1000 ? Math.round(a).toLocaleString()
 """
 
 
-def _num(value):
+def numeric(value):
     """A JSON-safe number: NaN and infinities become None."""
     try:
         number = float(value)
@@ -61,20 +61,20 @@ def colour_for(labels) -> dict:
 
 def _axis_label_formatter(aeps) -> str:
     exact = {f"{normal_variate(aep):.4f}": format_aep(aep)
-             for aep in aeps if _num(normal_variate(aep)) is not None}
+             for aep in aeps if numeric(normal_variate(aep)) is not None}
     return ("(v) => { const m = " + json.dumps(exact) + ";"
             " const k = v.toFixed(4); if (m[k] !== undefined) { return m[k]; }"
             + _TAIL_JS + "}")
 
 
 def _series_data(index, values):
-    return [[_num(normal_variate(aep)), _num(value)]
+    return [[numeric(normal_variate(aep)), numeric(value)]
             for aep, value in zip(index, values)]
 
 
-def _x_axis(aeps, *, name_gap=32) -> dict:
+def aep_axis(aeps, *, name_gap=32) -> dict:
     """The standard normal variate axis, labelled with the AEPs it came from."""
-    zs = [_num(normal_variate(aep)) for aep in aeps]
+    zs = [numeric(normal_variate(aep)) for aep in aeps]
     known = [z for z in zs if z is not None]
     return {
         "type": "value",
@@ -129,7 +129,7 @@ def duration_chart(comparison, analysis, key, *, show_envelope=True,
                 envelope["markPoint"] = points
         series.append(envelope)
 
-    horizontal = _x_axis(aeps)
+    horizontal = aep_axis(aeps)
     horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
 
     return {
@@ -159,9 +159,9 @@ def _bands(bands, colours) -> dict:
         "label": {"show": True, "position": "insideTop", "fontSize": 10,
                   "formatter": "{b}"},
         "data": [[{"name": band.label,
-                   "xAxis": _num(band.z_from),
+                   "xAxis": numeric(band.z_from),
                    "itemStyle": {"color": colours.get(band.label, ENVELOPE_COLOUR)}},
-                  {"xAxis": _num(band.z_to)}] for band in bands],
+                  {"xAxis": numeric(band.z_to)}] for band in bands],
     }
 
 
@@ -173,11 +173,11 @@ def _switch_points(analysis, frame) -> dict | None:
     """
     data = []
     for switch in analysis.switches:
-        strength = _num(switch.strength)
+        strength = numeric(switch.strength)
         if strength is not None and strength < analysis.noise_floor:
             continue
-        z = _num(normal_variate(switch.aep))
-        value = _num(analysis.envelope.get(switch.aep))
+        z = numeric(normal_variate(switch.aep))
+        value = numeric(analysis.envelope.get(switch.aep))
         if z is None or value is None:
             continue
         data.append({"coord": [z, value],
@@ -204,13 +204,13 @@ def critical_duration_chart(comparison, analysis) -> dict:
         return {}
 
     aeps = list(analysis.critical.index)
-    data = [[_num(normal_variate(aep)), _num(durations[owner])]
+    data = [[numeric(normal_variate(aep)), numeric(durations[owner])]
             for aep, owner in analysis.critical.items()]
 
     return {
         "tooltip": {"trigger": "axis"},
         "grid": {"left": 60, "right": 30, "top": 20, "bottom": 50},
-        "xAxis": _x_axis(aeps, name_gap=30),
+        "xAxis": aep_axis(aeps, name_gap=30),
         "yAxis": {"type": "log", "name": "Critical duration (h)",
                   "nameLocation": "middle", "nameGap": 40},
         "series": [{"type": "line", "step": "middle", "symbolSize": 6,
@@ -235,7 +235,7 @@ def overlay_chart(overlay, *, title="") -> dict:
     label, logarithmic = y_axis(overlay.key)
     colours = colour_for(frame.columns)
 
-    horizontal = _x_axis(aeps)
+    horizontal = aep_axis(aeps)
     horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
 
     return {
@@ -283,7 +283,7 @@ def delta_chart(overlay, deltas, *, title="") -> dict:
     colours = colour_for(overlay.frame.columns)
     unit = "m" if deltas.kind == ABSOLUTE else "%"
 
-    horizontal = _x_axis(aeps)
+    horizontal = aep_axis(aeps)
     horizontal["splitLine"] = {"show": True, "lineStyle": {"opacity": 0.25}}
 
     series = [{
@@ -334,7 +334,7 @@ def critical_overlay_chart(overlay, critical) -> dict:
         "tooltip": {"trigger": "axis"},
         "legend": {"type": "scroll", "top": 0},
         "grid": {"left": 60, "right": 30, "top": 30, "bottom": 50},
-        "xAxis": _x_axis(aeps, name_gap=30),
+        "xAxis": aep_axis(aeps, name_gap=30),
         "yAxis": {"type": "log", "name": "Critical duration (h)",
                   "nameLocation": "middle", "nameGap": 40},
         "series": [{

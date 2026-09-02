@@ -1,0 +1,386 @@
+"""Choosing a representative event for each design flood loading.
+
+You give it loadings - a design AEP, or a lake level off the frequency curve -
+and it ranks the realisations of the Monte Carlo database against each one. The
+ranking is closeness to the loading in standard normal variate space, on both
+axes at once: the flood should be as rare as the loading asks, and the rainfall
+that produced it should be about as rare as the flood. What the table adds is
+everything that would make an event indefensible even so - an embedded burst,
+a pre-burst or an antecedent lake level far off the median.
+
+Nothing is excluded quietly. Flags are shown against every candidate and the
+filters that actually drop events are opt-in, because the choice between the
+closest match and the cleanest storm is the user's, and a tool that made it
+silently would not be trusted twice.
+
+The page holds the chosen list, saves it beside the results, and exports it.
+Extracting the hydrographs for the chosen events is the util script's job.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+from nicegui import ui
+
+from core import events, eventchart, results
+from layout import page_frame, require_project, severity_banner
+from state import STATE
+
+TYPE_LABELS = {"level": "Lake level", "inflow": "Peak inflow",
+               "outflow": "Peak outflow"}
+
+KIND_LABELS = {"aep": "AEP", "level": "Lake level"}
+
+# Enough to see the shape of the cloud around the target without turning the
+# table into a second database.
+DEFAULT_COUNT = 10
+
+
+def events_page() -> None:
+    with page_frame("Events"):
+        project = require_project()
+        if project is None:
+            return
+        available = events.sources_by_group(project)
+        if not available:
+            _empty_state()
+            return
+        _EventsView(project, available).build()
+
+
+def _empty_state() -> None:
+    with ui.card().classes("w-full items-center p-8 gap-2"):
+        ui.icon("scatter_plot", size="3rem").classes("text-gray-400")
+        ui.label("No Monte Carlo database found for this sims list."
+                 ).classes("text-gray-500")
+        ui.label(
+            "A representative event is one realisation, so this page needs the "
+            "mcdf a monte carlo or reservoir routing row writes - not just the "
+            "quantile tables. An ensemble run has no realisations to choose "
+            "between: it ran every combination by design."
+        ).classes("text-xs text-gray-500 max-w-lg text-center")
+        ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
+
+
+class _EventsView:
+    def __init__(self, project, available) -> None:
+        self.project = project
+        self.available = available            # group -> [EventSource]
+        self.group = next(iter(available), None)
+        self.result_type = "level"
+        self.targets: list = []
+        self.filters = events.Filters()
+        self.outcomes: list = []
+        self.folder = None
+        self._curve = None                    # the level envelope, per group
+
+        self.target_box = None
+        self.detail_box = None
+        self.summary_box = None
+        self.status = None
+
+    # -- build ------------------------------------------------------------
+
+    def build(self) -> None:
+        self._controls()
+        self._targets_card()
+        self._details_card()
+        self._summary_card()
+        self._load_group(self.group)
+
+    def _controls(self) -> None:
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center gap-4 flex-wrap"):
+                ui.select(list(self.available), value=self.group, label="Group",
+                          on_change=lambda event: self._load_group(event.value)
+                          ).classes("min-w-96")
+                ui.toggle(TYPE_LABELS, value=self.result_type,
+                          on_change=self._on_type).props("no-caps dense")
+                ui.button("Reload", icon="refresh", on_click=self._reload
+                          ).props("flat dense")
+            ui.separator()
+            with ui.row().classes("items-center gap-4 flex-wrap"):
+                ui.number("AEP of the PMP (1 in X)",
+                          value=self.filters.aep_of_pmp, format="%.0f",
+                          on_change=lambda e: self._on_filter("aep_of_pmp", e.value)
+                          ).classes("w-56").props("clearable") \
+                    .tooltip("Rainfall rarer than this cannot be sampled, so "
+                             "events near it are the edge of the scheme. Read "
+                             "from the IFD files config the storm config points at.")
+                ui.number("Furthest Δz to offer", value=self.filters.max_delta_z,
+                          format="%.2f", step=0.1,
+                          on_change=lambda e: self._on_filter("max_delta_z", e.value)
+                          ).classes("w-48").props("clearable")
+                ui.checkbox("Drop events with an embedded burst",
+                            value=self.filters.exclude_embedded,
+                            on_change=lambda e: self._on_filter("exclude_embedded",
+                                                                e.value))
+                ui.checkbox("Drop anything flagged",
+                            value=self.filters.exclude_flagged,
+                            on_change=lambda e: self._on_filter("exclude_flagged",
+                                                                e.value))
+            self.status = ui.label().classes("text-xs text-gray-500")
+
+    def _targets_card(self) -> None:
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Loadings").classes("font-bold")
+                ui.space()
+                ui.button("Add loading", icon="add", on_click=self._add
+                          ).props("flat dense")
+                ui.button("Save", icon="save", on_click=self._save).props("flat dense")
+                ui.button("Export csv", icon="download", on_click=self._export
+                          ).props("flat dense")
+            self.target_box = ui.column().classes("w-full gap-1")
+
+    def _details_card(self) -> None:
+        self.detail_box = ui.column().classes("w-full gap-2")
+
+    def _summary_card(self) -> None:
+        with ui.card().classes("w-full"):
+            ui.label("Representative events").classes("font-bold")
+            ui.label("'hydrograph' is the column to pull out of the stored "
+                     "inflow, level and outflow files."
+                     ).classes("text-xs text-gray-500")
+            self.summary_box = ui.column().classes("w-full")
+
+    # -- state ------------------------------------------------------------
+
+    def _sources(self) -> list:
+        return self.available.get(self.group, [])
+
+    def _load_group(self, group) -> None:
+        self.group = group
+        self._curve = None
+        sources = self._sources()
+        self.folder = events.default_folder(sources)
+
+        saved, settings = ([], {})
+        if self.folder is not None:
+            saved, settings = events.load_targets(
+                events.selection_path(self.folder, group))
+        # Before the defaults are built, so they are made for the right type.
+        if settings.get("result_type") in TYPE_LABELS:
+            self.result_type = settings["result_type"]
+        self.targets = saved or [
+            events.Target(kind="aep", value=aep, result_type=self.result_type,
+                          count=DEFAULT_COUNT)
+            for aep in (100, 1000, 10_000)
+        ]
+        self.filters = events.Filters(
+            aep_of_pmp=settings.get("aep_of_pmp") or self._pmp_aep(),
+            max_delta_z=settings.get("max_delta_z"),
+            exclude_embedded=bool(settings.get("exclude_embedded")),
+            exclude_flagged=bool(settings.get("exclude_flagged")),
+        )
+        self.refresh()
+
+    def _pmp_aep(self):
+        """From the storm config chain, as a Monte Carlo run gets it."""
+        storm = self.project.config.filepaths.get("storm_config")
+        return events.EVENTS.pmp_aep_from_storm_config(storm) if storm else None
+
+    def _curve_for_levels(self):
+        if self._curve is None:
+            self._curve = events.level_curve(self.project, self._sources())
+        return self._curve
+
+    def refresh(self) -> None:
+        sources = self._sources()
+        self.outcomes = [
+            events.evaluate(self.project, sources, target, self.filters,
+                            curve=self._curve_for_levels())
+            for target in self.targets
+        ]
+        self._draw_targets()
+        self._draw_details()
+        self._draw_summary()
+        if self.status is not None:
+            files = ", ".join(sorted({source.path.name for source in sources}))
+            self.status.set_text(f"{len(sources)} database(s): {files}")
+
+    # -- drawing ----------------------------------------------------------
+
+    def _draw_targets(self) -> None:
+        self.target_box.clear()
+        labels = [source.label for source in self._sources()]
+        with self.target_box:
+            if not self.targets:
+                ui.label("No loadings yet - add one.").classes("text-gray-500 text-sm")
+            for position, target in enumerate(self.targets):
+                with ui.row().classes("items-center gap-2 flex-wrap"):
+                    ui.toggle(KIND_LABELS, value=target.kind,
+                              on_change=lambda e, i=position: self._edit(i, "kind", e.value)
+                              ).props("no-caps dense")
+                    ui.number("Value", value=target.value, format="%g",
+                              on_change=lambda e, i=position: self._edit(i, "value", e.value)
+                              ).classes("w-32")
+                    ui.select([""] + labels, value=target.source, label="From",
+                              on_change=lambda e, i=position: self._edit(i, "source", e.value)
+                              ).classes("w-40") \
+                        .tooltip("Blank uses the duration that is critical at "
+                                 "this loading's AEP.")
+                    ui.number("Rain AEP", value=target.rain_aep, format="%g",
+                              on_change=lambda e, i=position: self._edit(i, "rain_aep", e.value)
+                              ).classes("w-32").props("clearable") \
+                        .tooltip("Blank judges the rainfall against the loading "
+                                 "itself, which is the AEP-neutral case.")
+                    ui.number("Show", value=target.count, format="%d",
+                              on_change=lambda e, i=position: self._edit(i, "count", e.value)
+                              ).classes("w-24")
+                    ui.button(icon="delete", on_click=lambda _, i=position: self._remove(i)
+                              ).props("flat dense round")
+
+    def _draw_details(self) -> None:
+        self.detail_box.clear()
+        with self.detail_box:
+            for position, outcome in enumerate(self.outcomes):
+                self._draw_outcome(position, outcome)
+
+    def _draw_outcome(self, position, outcome) -> None:
+        target = outcome.target
+        picked = outcome.picked
+        headline = f"{target.label}"
+        if outcome.aep:
+            headline += f"  -  1 in {results.format_aep(outcome.aep)}"
+        if outcome.source is not None:
+            headline += f"  -  from {outcome.source.label}"
+        if picked is not None:
+            headline += f"  -  sim {int(picked.name)}"
+
+        with ui.expansion(headline, value=position == 0).classes("w-full") \
+                .mark(f"target-{position}"):
+            for note in outcome.notes:
+                ui.label(note).classes("text-xs text-gray-500")
+            if outcome.problem:
+                severity_banner("warn", outcome.problem)
+                return
+            if outcome.ranking is not None and outcome.ranking.excluded:
+                ui.label("Left out: " + ", ".join(
+                    f"{count} {reason}"
+                    for reason, count in outcome.ranking.excluded.items())
+                ).classes("text-xs text-gray-500")
+
+            rows = events.candidate_rows(outcome)
+            if not rows:
+                severity_banner("warn", "No candidate events survive the filters.")
+                return
+            self._candidate_table(position, rows)
+            chart = ui.echart(eventchart.neutrality_chart(
+                outcome, self.result_type)).classes("w-full h-96")
+            chart.mark(f"neutrality-{position}")
+
+    def _candidate_table(self, position, rows) -> None:
+        columns = [{"name": "pick", "label": "", "field": "pick", "align": "center"}] + [
+            {"name": name, "label": label, "field": name, "sortable": True}
+            for name, label in events.CANDIDATE_COLUMNS
+        ]
+        table = ui.table(columns=columns, rows=rows, row_key="sim") \
+            .classes("w-full").props("dense flat bordered") \
+            .mark(f"candidates-{position}")
+        table.add_slot("body-cell-pick", r"""
+            <q-td :props="props">
+              <q-radio :model-value="props.row.picked" :val="true"
+                       @update:model-value="() => $parent.$emit('pick', props.row)" />
+            </q-td>
+        """)
+        table.on("pick", lambda event, i=position: self._pick(i, event.args))
+
+    def _draw_summary(self) -> None:
+        self.summary_box.clear()
+        rows = events.summary_rows(self.outcomes)
+        with self.summary_box:
+            if not rows:
+                ui.label("Nothing chosen yet.").classes("text-gray-500 text-sm")
+                return
+            columns = [{"name": name, "label": name, "field": name}
+                       for name in rows[0]]
+            ui.table(columns=columns, rows=rows, row_key="loading") \
+                .classes("w-full").props("dense flat bordered") \
+                .mark("summary-table")
+
+    # -- events -----------------------------------------------------------
+
+    def _on_type(self, event) -> None:
+        self.result_type = event.value
+        for target in self.targets:
+            target.result_type = self.result_type
+        self.refresh()
+
+    def _on_filter(self, name, value) -> None:
+        if name in ("aep_of_pmp", "max_delta_z"):
+            value = float(value) if value not in (None, "") else None
+        self.filters = events.Filters(**{
+            **{field: getattr(self.filters, field)
+               for field in self.filters.__dataclass_fields__},
+            name: value,
+        })
+        self.refresh()
+
+    def _edit(self, position, name, value) -> None:
+        if position >= len(self.targets):
+            return
+        target = self.targets[position]
+        if name in ("value", "rain_aep"):
+            value = float(value) if value not in (None, "") else (
+                None if name == "rain_aep" else 0.0)
+        if name == "count":
+            value = max(int(value or 1), 1)
+        if getattr(target, name) == value:
+            return
+        setattr(target, name, value)
+        if name in ("kind", "value", "source"):
+            # A different loading is a different event - do not carry the pick.
+            target.picked = None
+        self.refresh()
+
+    def _add(self) -> None:
+        self.targets.append(events.Target(kind="aep", value=100,
+                                          result_type=self.result_type,
+                                          count=DEFAULT_COUNT))
+        self.refresh()
+
+    def _remove(self, position) -> None:
+        if position < len(self.targets):
+            self.targets.pop(position)
+        self.refresh()
+
+    def _pick(self, position, row) -> None:
+        if position < len(self.targets) and isinstance(row, dict):
+            self.targets[position].picked = int(row.get("sim"))
+        self.refresh()
+
+    def _reload(self) -> None:
+        events.forget_cached()
+        STATE.reload_project()
+        ui.navigate.to("/events")
+
+    def _settings(self) -> dict:
+        return {"result_type": self.result_type,
+                "aep_of_pmp": self.filters.aep_of_pmp,
+                "max_delta_z": self.filters.max_delta_z,
+                "exclude_embedded": self.filters.exclude_embedded,
+                "exclude_flagged": self.filters.exclude_flagged}
+
+    def _save(self) -> None:
+        if self.folder is None:
+            ui.notify("Nowhere to save - no database folder", type="warning")
+            return
+        # Save what is on screen, pick included, so reopening shows the same list.
+        for target, outcome in zip(self.targets, self.outcomes):
+            if target.picked is None and outcome.picked_id is not None:
+                target.picked = int(outcome.picked_id)
+        path = events.selection_path(self.folder, self.group)
+        events.save_targets(path, self.targets, self._settings())
+        ui.notify(f"Saved {path}")
+
+    def _export(self) -> None:
+        rows = events.summary_rows(self.outcomes)
+        if not rows or self.folder is None:
+            ui.notify("Nothing to export", type="warning")
+            return
+        path = Path(events.selection_path(self.folder, self.group)).with_suffix(".csv")
+        pd.DataFrame(rows).to_csv(path, index=False)
+        ui.notify(f"Wrote {path}")
