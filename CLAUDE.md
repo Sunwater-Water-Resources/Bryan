@@ -83,6 +83,15 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - `SampleScheme` — Monte Carlo sampling of rainfall (truncated normal in standard-normal-variate
   space), temporal patterns (int 0–9), storm method, losses, preburst percentile, lake level.
 - `TotalProbTheorem` — TPT result analysis.
+- **Temporal pattern weights are applied in the sampling *or* in the analysis, never both**, and
+  the column name is what says which. The sims-list `TP weights` column composes the weights into
+  `get_temporal_pattern_sample`, so the realisations are *drawn* in proportion to them and the TPT
+  then counts them plainly — a weighted sample already is the weighted probability. That run
+  records what it used as **`tp_weight`**: provenance, never an input. `util/CalibrateTpWeights.py`
+  works the other way, attaching **`tp_w`** to a *uniformly* sampled mcdf so a weight set can be
+  tried without re-running. Renaming `tp_weight` to `tp_w` (it looks like an obvious typo, and it
+  is not) would weight the patterns twice and every curve would still look plausible.
+  `compute_std_quantiles` and `attach_weights` now refuse an mcdf carrying both.
 - `lib/EnbScheme.py` — `Ensemble` scheme.
 
 ### Hydrologic models (external executables wrapped by Bryan)
@@ -322,6 +331,11 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
 - `pyarrow` is needed only to read `.parquet` inflow hydrographs in `ReservoirRouting.py`
   (`_read_inflows`). Everything else works without it.
 - `requirements.txt` — pip pins (note: newer/looser than the conda env).
+- **Tests live in two places, in two environments.** `ui/tests` runs in the UI environment
+  (`ui/requirements-ui.txt`, no scipy or matplotlib) — `cd ui && python -m pytest tests -q`.
+  `tests/` runs in **Bryan's** environment, for the parts of `lib/` the UI is forbidden to
+  import — `python -m pytest tests -q`. Put a test where the code it tests can be imported;
+  a lib test in `ui/tests` fails `test_dependency_direction` unless the module is allow-listed.
 - `_env_bryan.yml` — conda environment `bryan29` (the as-used Windows environment;
   numpy 1.26, pandas 2.2, scipy 1.13). Prefer this for reproducing study results.
   **It has no `pyarrow`** — it is a `conda env export` with exact build strings, so add the

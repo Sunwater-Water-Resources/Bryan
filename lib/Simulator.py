@@ -1055,6 +1055,10 @@ class MonteCarloSimulator(Simulator):
                     tp_sample = mc.get_temporal_pattern_sample(delta_d50_weighting, delta_d50_patterns,
                                                                base_weights=base_weights)
                     if base_weights is not None:
+                        # Provenance only: the weights are already in the sampling above, so
+                        # the TPT must NOT weight these realisations again. That is why this
+                        # column is 'tp_weight' and not the 'tp_w' the TPT reads - see the
+                        # note in MCScheme.compute_std_quantiles.
                         mc.df.loc[sim_id, 'tp_weight'] = base_weights[tp_sample]
                 mc.df.loc[sim_id, 'tp'] = tp_sample
                 temporal_pattern = storm.get_temporal_pattern(storm_method=storm_method,
