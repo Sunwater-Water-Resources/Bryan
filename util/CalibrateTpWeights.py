@@ -82,6 +82,16 @@ def prepare_mcdf(mcdf):
 
 
 def attach_weights(mcdf, weights):
+    # Analysis-time weighting, which assumes the patterns were sampled UNIFORMLY. An MCDF from a
+    # run that used the sims-list 'TP weights' column was sampled from the weighted distribution
+    # already and carries 'tp_weight' to say so; weighting it again here would count the
+    # weighting twice and every curve would still look plausible.
+    if 'tp_weight' in mcdf.columns:
+        raise Exception(
+            'This MCDF has a "tp_weight" column, so its temporal patterns were already sampled '
+            'from a weighted distribution ("TP weights" in the simulation list). Calibrating '
+            'weights on it would apply them twice - run the simulation without "TP weights" and '
+            'calibrate on that.')
     mcdf['tp_w'] = [weights[group][tp] for group, tp in zip(mcdf['group'], mcdf['tp'])]
 
 

@@ -316,6 +316,25 @@ class SampleScheme:
         print(f'\nRunning TPT analysis for {result_type}...')
         tpt_cols = ['m', result_type]
         if 'tp_w' in mcdf.columns:
+            # 'tp_w' means the patterns were sampled UNIFORMLY and are to be weighted here
+            # instead - which is what util/CalibrateTpWeights.py does, so that a weight set can
+            # be tried without re-running the simulation.
+            #
+            # A run driven by the sims-list 'TP weights' column is the other way round: the
+            # weights go into the sampling itself (get_temporal_pattern_sample composes them
+            # with the D50 shift and passes them to np.random.choice), so the realisations
+            # already occur in proportion to them and the plain count below is the weighted
+            # probability. That run records what it used as 'tp_weight' - provenance, never an
+            # input to the TPT. Do not "fix" that column name to 'tp_w': it would apply the
+            # weighting a second time and no output would look wrong.
+            if 'tp_weight' in mcdf.columns:
+                raise Exception(
+                    'This MCDF has both a "tp_weight" and a "tp_w" column. "tp_weight" says the '
+                    'temporal patterns were already sampled from the weighted distribution, and '
+                    '"tp_w" would weight them again in the TPT - the quantiles would be wrong '
+                    'with nothing to show for it.\nApply weights either in the sampling (the '
+                    '"TP weights" column of the simulation list) or in the analysis '
+                    '(util/CalibrateTpWeights.py, on a uniformly sampled MCDF), not both.')
             print('Found a tp_w column: applying temporal pattern probability weights in the TPT')
             tpt_cols.append('tp_w')
         tpt = TotalProbTheorem(self.m, self.n, self.main_divisions, mcdf[tpt_cols])
