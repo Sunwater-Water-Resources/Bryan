@@ -172,6 +172,30 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   that are not a whole number of timesteps, or longer than the hydrographs, are reported and
   skipped; both used to be silent, and the first crashed the caller on a column-count mismatch.
 
+### Representative events (`lib/RepresentativeEvents.py`)
+- The analysis behind the launcher's Events page: rank the realisations of an mcdf against a
+  design loading (an AEP, or a lake level read off the level frequency curve), and report what
+  would make each candidate indefensible — an embedded burst, a pre-burst or an antecedent
+  storage far off the median.
+- **Ranking is a distance in standard normal variate space**, on both the result AEP and the
+  rainfall AEP at once, so an event is judged on AEP neutrality as well as on reaching the
+  loading. `1 in X` is not a linear scale — at a 1 in 2,000 target being 200 out is nothing and
+  at 1 in 100 it is everything — which is why `util/GetRepresentativeEvents.py`'s
+  `sqrt(d_rain² + d_result²)` on the raw AEPs is kept only as `delta_aep`, for comparison.
+- **The units in an mcdf are mixed and nothing warns you**: `rain_aep` is **1 in X**
+  (`Simulator.py:1012`) while `level_aep`/`inflow_aep`/`outflow_aep` are **probabilities**
+  (`TotalProbTheorem.assign_aep`). `prepare` converts once, into `result_aep`; a test pins it.
+- **pandas and the standard library only — no scipy, no matplotlib.** The UI imports this
+  module directly, and `statistics.NormalDist` covers `ndtri`/`ndtr`. Anything needing scipy
+  belongs in the util script that plots the chosen events.
+- `prepare` (per database and result type) is split from `score` (per loading) because the
+  first costs a z per row and the second is arithmetic; the UI caches the first.
+- Embedded bursts are asked of the **data**, never of the flag text: `has_embedded_burst`
+  reads the `embedded_bursts` comment and the `subburst_<d>h`/`ifd_<d>h` ratio. A substring
+  match on the flags dropped every high *pre-burst* event, since "pre-burst" contains "burst".
+- Everything except the PMP cap and the distance limit **flags** rather than excludes. A tool
+  that silently drops the event someone was looking for does not get trusted twice.
+
 ### Curve fitting (`lib/InterpolationCurves.py`)
 - `Curve`, `CoercedQuadratic`, `GEV` — used to extrapolate rainfall to rare/extreme AEPs.
 
@@ -185,9 +209,11 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   it — Bryan's entry point is untouched.
 - **Three binding rules, pinned by `ui/tests/test_dependency_direction.py`:** nothing in
   `lib/` may reference `ui`; nothing in `ui/core/` may import `nicegui`; and `ui/` imports
-  Bryan only through `ui/core/bryan.py`, whose allow-list is `lib.RunLog` and `lib.LogFiles`.
-  Those two import only pandas, which is what keeps the UI environment free of scipy and
-  matplotlib. Do not widen the allow-list to pull in a simulator.
+  Bryan only through `ui/core/bryan.py`, whose allow-list is `lib.RunLog`, `lib.LogFiles` and
+  `lib.RepresentativeEvents`. All three import only pandas, which is what keeps the UI
+  environment free of scipy and matplotlib — and that, not the list itself, is the test for
+  membership: `test_the_allow_list_stays_cheap` imports every entry and fails if scipy or
+  matplotlib arrives with it. Do not widen the allow-list to pull in a simulator.
 - **The UI never writes a master sims list.** openpyxl cannot store a formula's cached
   value, so saving a formula-driven workbook from Python turns every formula into an
   uncached one and Bryan then reads blanks. `TFD_SimsList_LongList_02.xlsx` in the Tinaroo
@@ -240,6 +266,17 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   and takes its standard normal variate from `statistics.NormalDist`, because the allow-list
   rule means the UI environment has neither matplotlib nor scipy — do not reach for
   `ui.pyplot` or `scipy.special.ndtri` here.
+- **The Events page is the one that reads the mcdf**, which is unavoidable: a representative
+  event is a realisation, not a quantile. `core/events.py` finds the database with
+  `outputs.find_database` (so a routed row gets its suffixed mcdf), and caches the prepared
+  frame per file mtime and result type — an mcdf is m x n rows and the page re-ranks on every
+  control change. Leave a blank source on a loading and it takes the event from the duration
+  that is **critical at that loading's AEP**, reusing `results.compare`/`analyse`; for level
+  that genuinely differs across the frequency range, so one list of loadings draws from several
+  runs. A level loading is read off the **envelope**, not one duration's curve, because the
+  envelope is the design quantile the level was quoted from. The chosen list is saved per group
+  as `<group>_representative_events.json` beside the databases — per group because a GWL series
+  usually shares one results folder.
 - **A critical-duration crossover is judged over the range the new duration holds, not at the
   crossing point.** The margin at a crossover is near zero by definition — the curves are equal
   there — so measuring strength there would dismiss every real crossover as noise. `Band.peak_margin`
@@ -261,6 +298,12 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
 (frequency plots), `GetRepresentativeEvents.py` (representative event selection),
 `DesignFloodInterpolation.py`, `MaxQuantiles.py`, `ReportCollation.py`. See
 `Manual/SubDocs/utilities.md`.
+- `GetRepresentativeEvents.py` picks representative events and then extracts and plots their
+  hydrographs, driven by an `_analyseRepresentativeEvents.xlsx` control sheet with hard-coded
+  paths. The **selection** half of it now also exists as `lib/RepresentativeEvents.py`, which
+  the launcher's Events page uses; the hydrograph extraction has no equivalent there and is
+  still the reason to run this script. If it is ever reworked into a CLI, take the selection
+  from the shared module rather than keeping this copy of it.
 - `CriticalDurationAnalysis.py` is the exception: a real CLI (argparse), because the UI's
   Results page shells out to it to export what it is showing. `CrticalDurationAnalysis.py`
   (sic — the typo is the older file) is the same analysis with hard-coded paths; both go

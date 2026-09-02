@@ -202,7 +202,7 @@ def y_axis(key: str) -> tuple:
 
 # -- finding the files -------------------------------------------------------
 
-def _duration_of(row, output_name: str):
+def duration_of(row, output_name: str):
     value = row.get("Duration")
     try:
         number = float(value)
@@ -239,7 +239,7 @@ def sources_for_rows(frame, project_folder, rows=None) -> dict:
         # whole string on POSIX - normalise before taking the basename, or the
         # labels and the exported filename carry the folders with them.
         display_name = Path(normalise_sep(output_name)).name if output_name else ""
-        duration = _duration_of(row, output_name)
+        duration = duration_of(row, output_name)
         for key, quantile in quantile_files(row, project_folder).items():
             found.setdefault(key, []).append(CurveSource(
                 label=f"{duration:g}h" if duration is not None else (

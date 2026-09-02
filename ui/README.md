@@ -131,6 +131,49 @@ The ensemble method does not appear here: `lib/EnbAnalysis.py` computes the
 critical duration per AEP inside the run and writes its own plots, and a second
 implementation would be somewhere for the two to disagree.
 
+**Events** — picking a representative event for each design flood loading.
+
+Give it a list of loadings, as an AEP or as a lake level, and it ranks the
+realisations of the Monte Carlo database against each one. The rank is distance
+from the loading on two axes at once: the flood as rare as asked, and the
+rainfall about as rare as the flood. That is AEP neutrality — an event reaching
+the 1 in 2,000 level off 1 in 200 rainfall got there by coincidence and will
+not behave like a 1 in 2,000 event when the dam is changed.
+
+Distance is in **standard normal variate space**, not `1 in X`: at 1 in 2,000
+being 200 out is nothing, at 1 in 100 it is everything, so a `1 in X` distance
+ranks the rare end nearly at random. (`delta_aep`, the measure
+`util/GetRepresentativeEvents.py` sorts on, is still computed for comparison.)
+
+Closeness alone is not enough, so each candidate carries what would make it
+indefensible anyway: the worst `subburst_<d>h / ifd_<d>h` ratio in the storm
+(above 1.0 is an embedded burst, measured rather than described), the
+`embedded_bursts` comment, the pre-burst percentile, and the antecedent storage
+as a z. **Nothing is dropped quietly** — those all flag and the event is still
+offered, because the trade-off between the closest match and the cleanest storm
+belongs to whoever defends the event. Dropping them is opt-in. The one
+automatic filter is the rainfall cap at 1.1x the AEP of the PMP, which is the
+edge of the sampling scheme rather than a real event; the number comes from the
+IFD files config the storm config points at, as a Monte Carlo run gets it.
+
+Leave the source blank and the event comes from the duration that is **critical
+at that loading's AEP**, off the same envelope the Results page draws — so a
+list of level loadings spanning the frequency range legitimately draws its
+events from different runs. A lake level is converted to an AEP off the level
+envelope, and a level above the top of the curve is reported rather than
+extrapolated, the page then offering the highest events instead.
+
+Save writes `<group>_representative_events.json` beside the databases and reads
+it back next time; Export csv writes the list with the chosen event's metrics.
+The `hydrograph` column names the column to pull out of the stored flows —
+simulation 42 is `sim_00042`. Extracting and plotting those hydrographs stays
+with `util/GetRepresentativeEvents.py`.
+
+This is the only page that reads an mcdf rather than the quantile tables, which
+is unavoidable: a representative event is a realisation. Ensemble rows do not
+appear — an ensemble run ran every combination, so it has no realisations to
+choose between.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 
@@ -200,6 +243,12 @@ restart, and the `EOFError` path.
 strings the progress display is parsed from, so a change to Bryan's wording
 fails loudly instead of quietly showing 0 of N forever.
 
+`tests/test_representative_events.py` covers the representative event analysis
+in `lib/RepresentativeEvents.py` against a synthetic mcdf carrying exactly the
+columns `lib/MCScheme.py` writes — including the mixed units, `rain_aep` in
+"1 in X" and the TPT columns as probabilities, which is the failure that module
+is most exposed to and would not look wrong on a plot.
+
 `tests/test_real_bryan.py` runs **real Bryan** on a miniature reservoir-routing
 model built by `tests/make_rr_fixture.py` — an `.els`, two `.sq` curves, a small
 ensemble database and its inflows. It is the only test that proves the run
@@ -224,6 +273,10 @@ The tests cover the machinery; this is what shows the UI runs Bryan correctly.
 5. Repeat with three chunks and diff again.
 6. Stop a run mid-way with *Stop now*; confirm no `urbs32.exe` survives in Task
    Manager.
+7. Open **Events** on a real Monte Carlo group. Check the chosen event for a
+   loading against what `util/GetRepresentativeEvents.py` picks for the same
+   one: the two rank on different measures, so they need not agree, but a large
+   disagreement is worth understanding before trusting either.
 
 Reservoir routing makes steps 2–5 cheap — seconds per simulation, and no model
 executable in the loop for step 4's comparison to be muddied by.

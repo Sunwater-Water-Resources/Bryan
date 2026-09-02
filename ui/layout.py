@@ -14,6 +14,7 @@ NAV = [
     ("Select", "/select"),
     ("Run", "/run"),
     ("Results", "/results"),
+    ("Events", "/events"),
     ("Edit", "/edit"),
     ("History", "/history"),
 ]

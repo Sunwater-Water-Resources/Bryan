@@ -159,6 +159,49 @@ The ensemble method does not appear. ```lib/EnbAnalysis.py``` already computes t
 
 Only inflow volumes are offered, for the reason the volume analysis itself gives: outflow and storage volumes follow from the peak level and the rating curve.
 
+## Choosing representative events
+
+A design flood quantile is a statistic over thousands of realisations, but the work downstream of it — a gate operation, a dambreak run, an emergency action plan trigger — needs a single **event**: one hydrograph, one storm, one starting lake level. The **Events** page picks that event.
+
+Give it a list of loadings, either as a design AEP or as a lake level, and it ranks the realisations of the Monte Carlo database against each one. The list of chosen events is what comes out.
+
+### What it ranks on
+
+The rank is the distance from the loading, measured on two axes at once: the flood should be as rare as the loading asks, and the **rainfall that produced it should be about as rare as the flood**. An event that reaches the 1 in 2,000 lake level off 1 in 200 rainfall got there through a coincidence — a full lake, a large pre-burst, a spike in the pattern — and will not behave like a 1 in 2,000 event when anything about the dam is changed. That is *AEP neutrality*, and it is the diagonal on the plot.
+
+Distance is measured in **standard normal variate space**, not in ```1 in X```. At a 1 in 2,000 loading, being 200 out is nothing; at 1 in 100 it is everything, and a distance in ```1 in X``` would rank the rare end almost at random. The ```1 in X``` distance the older ```util/GetRepresentativeEvents.py``` sorts on is still computed, as ```delta_aep```, so a selection made with that script can be checked.
+
+### What it warns about
+
+Closeness is not enough on its own, so every candidate carries the things that would make it indefensible:
+
+| Metric | What to look for |
+| ----------- | ----------- |
+| **Sub-burst** | the worst ```subburst_<d>h / ifd_<d>h``` ratio in the storm. Above 1.0 the pattern contains a window rarer than the storm around it — an embedded burst, measured rather than described. Blank on a database written before those columns existed |
+| **Flags** | the ```embedded_bursts``` comment the run wrote, and any pre-burst comment reporting an error |
+| **Pre-burst p** | the sampled pre-burst percentile. Far from 0.5 means the flood was helped along by antecedent rainfall |
+| **Lake z** | the antecedent storage as a standard normal variate. A large positive value means the event started with the dam already full |
+
+Nothing is dropped quietly. Everything above **flags** by default and is still offered, because the choice between the closest match and the cleanest storm belongs to whoever has to defend the event. Two filters do drop candidates, and both are opt-in: *drop events with an embedded burst* and *drop anything flagged*. The rainfall cap is the exception — rainfall rarer than about the **AEP of the PMP** is the edge of the sampling scheme rather than a real event, so it is capped at 1.1 times that AEP, exactly as the old script does. The number is read from the IFD files config the storm config points at, which is where a Monte Carlo run gets it, and can be overridden on the page.
+
+### Which run the event comes from
+
+Leave **From** blank and the page takes the event from the duration that is **critical at that loading's AEP**, using the same envelope the Results page draws, and says so. This matters for lake level, where the critical duration is long at frequent AEPs and short on the rare tail: a list of loadings spanning the frequency range will legitimately draw its events from different runs. Naming a duration explicitly overrides it.
+
+A **lake level** loading is converted to an AEP by reading it off the level frequency curve — the **envelope** over the durations, since that is the design curve the level was quoted from. A level above the top of the curve is reported rather than extrapolated, and the page then offers the events that got highest instead of the closest ones.
+
+### What comes out
+
+**Save** writes ```<group>_representative_events.json``` beside the databases: the loadings, the settings and the chosen simulation for each. It is reloaded when the page is next opened on that group, so the selection survives and can go into version control. There is a file per group because several groups commonly share one results folder — a GWL series usually does.
+
+**Export csv** writes the same list as a table, one row per loading, with the metrics of the chosen event. The ```hydrograph``` column is the name of the column to pull out of the stored ```_inflows```, ```_levels``` and ```_outflows``` files: simulation 42 is ```sim_00042```.
+
+Extracting those hydrographs and plotting each event is not done here — that is ```util/GetRepresentativeEvents.py```'s half of the job.
+
+### What it needs
+
+A **monte carlo** or **reservoir routing** row that has been analysed, because the page reads the mcdf and the ```<type>_aep``` columns the analysis adds to it. This is the only page that reads a database rather than the quantile tables; there is no way around it, since a representative event *is* a realisation. Ensemble rows do not appear: an ensemble run has no realisations to choose between, having run every combination by design.
+
 ## Things worth knowing
 
 ### Formulas without cached values
