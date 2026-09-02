@@ -166,8 +166,21 @@ extrapolated, the page then offering the highest events instead.
 Save writes `<group>_representative_events.json` beside the databases and reads
 it back next time; Export csv writes the list with the chosen event's metrics.
 The `hydrograph` column names the column to pull out of the stored flows —
-simulation 42 is `sim_00042`. Extracting and plotting those hydrographs stays
-with `util/GetRepresentativeEvents.py`.
+simulation 42 is `sim_00042`.
+
+Extracting those hydrographs is one command, shown on the page:
+
+```
+python util/RepresentativeEvents.py --config sims_config.json \
+    --selection .../GWL1p3_representative_events.json
+```
+
+Run with **Bryan's** interpreter. Per event it writes a three-panel plot — the
+hyetograph drawn downwards from zero, the inflow and outflow, the lake level,
+all on one axis measured from the start of the main burst — and a workbook of
+the series. The hyetograph is *rebuilt* (an mcdf holds what was sampled, not
+the rainfall series) and then checked against the depths the run recorded, so a
+rebuild that does not match says so instead of being plotted as fact.
 
 This is the only page that reads an mcdf rather than the quantile tables, which
 is unavoidable: a representative event is a realisation. Ensemble rows do not

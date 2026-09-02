@@ -443,6 +443,26 @@ def default_folder(sources) -> Path | None:
     return sources[0].path.parent if sources else None
 
 
+def project_relative(project, path) -> str:
+    """A path as the sims list would carry it - relative to the project folder.
+
+    The CLI resolves what it finds in the selection file against that folder,
+    the way Bryan resolves a sims-list value, so a saved selection survives the
+    project being moved or opened from another machine.
+    """
+    try:
+        return str(Path(path).resolve().relative_to(
+            Path(project.config.project_folder).resolve()))
+    except (ValueError, OSError):
+        return str(path)
+
+
+def extract_command(project, selection_path) -> str:
+    """The util command that turns a saved selection into hydrographs and plots."""
+    return ("python util/RepresentativeEvents.py --config "
+            f"{project.config.config_path} --selection {selection_path}")
+
+
 def load_targets(path) -> tuple:
     return EVENTS.read_selection(path)
 

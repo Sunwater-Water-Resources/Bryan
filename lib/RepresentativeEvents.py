@@ -141,6 +141,45 @@ def sim_label(sim_id) -> str:
     return 'sim_{}'.format(str(int(sim_id)).zfill(5))
 
 
+# Where a run leaves the series behind, by the code that writes them:
+#   URBS  UrbsModel.store_hydrographs       <run folder>/../urbs_results/<name>_<kind>.csv
+#   RORB  RorbModel.store_hydrographs       <run folder>/../rorb_results/<name>_<kind>.csv
+#   routing ReservoirRouting._write_hydrographs
+#                                <Hydrographs folder>/<name>_<kind><suffix>.csv
+# Reservoir routing writes no inflows - they are its input, so the sims-list
+# 'Inflow' column is where those come from. RORB writes no levels.
+HYDROGRAPH_KINDS = ('inflows', 'levels', 'outflows')
+
+MODEL_FOLDERS = {'urbs': 'urbs_results', 'rorb': 'rorb_results'}
+
+
+def hydrograph_paths(output_file, model='urbs', hydrographs_folder=None,
+                     suffix='', inflow=None) -> dict:
+    """Where this run's stored hydrographs are, by kind.
+
+    Layout only - nothing is opened, and a run with ``Store hydrographs`` off
+    has none of them. ``output_file`` is the sims-list value, so the folders
+    resolve the way Bryan's own writers resolve them.
+    """
+    output_file = str(output_file).replace('\\', os.sep).replace('/', os.sep)
+    name = os.path.basename(output_file)
+
+    if hydrographs_folder:
+        # Reservoir routing: everything but the inflows, which it did not write.
+        tag = f'_{suffix}' if suffix and not str(suffix).startswith('_') else (suffix or '')
+        found = {kind: os.path.join(str(hydrographs_folder), f'{name}_{kind}{tag}.csv')
+                 for kind in ('levels', 'outflows')}
+        if inflow:
+            found['inflows'] = str(inflow)
+        return found
+
+    folder = os.path.join(os.path.dirname(output_file),
+                          '..', MODEL_FOLDERS.get(str(model).lower(), 'urbs_results'))
+    folder = os.path.normpath(folder)
+    kinds = HYDROGRAPH_KINDS if str(model).lower() != 'rorb' else ('inflows', 'outflows')
+    return {kind: os.path.join(folder, f'{name}_{kind}.csv') for kind in kinds}
+
+
 def subburst_durations(frame) -> list:
     """The sub-durations this mcdf recorded, shortest first.
 
@@ -542,6 +581,8 @@ class Target:
     result_type: str = 'level'
     rain_aep: float | None = None
     source: str = ''
+    output_file: str = ''      # the sims-list value, so the CLI can find the row
+    database: str = ''         # the mcdf the event was chosen from
     count: int = 10
     picked: int | None = None
     comment: str = ''
@@ -556,7 +597,8 @@ class Target:
         return {
             'kind': self.kind, 'value': self.value,
             'result_type': self.result_type, 'rain_aep': self.rain_aep,
-            'source': self.source, 'count': self.count,
+            'source': self.source, 'output_file': self.output_file,
+            'database': self.database, 'count': self.count,
             'picked': self.picked, 'comment': self.comment,
         }
 

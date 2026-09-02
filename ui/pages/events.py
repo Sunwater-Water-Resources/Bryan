@@ -79,6 +79,7 @@ class _EventsView:
         self.target_box = None
         self.detail_box = None
         self.summary_box = None
+        self.command_box = None
         self.status = None
 
     # -- build ------------------------------------------------------------
@@ -145,6 +146,14 @@ class _EventsView:
                      "inflow, level and outflow files."
                      ).classes("text-xs text-gray-500")
             self.summary_box = ui.column().classes("w-full")
+            with ui.expansion("Extract the hydrographs and plot them").classes("w-full"):
+                ui.label(
+                    "Save first, then run this with Bryan's interpreter. It "
+                    "writes a three-panel plot per event - the rebuilt "
+                    "hyetograph, the inflow and outflow, and the lake level - "
+                    "and a workbook of the series."
+                ).classes("text-xs text-gray-500")
+                self.command_box = ui.column().classes("w-full")
 
     # -- state ------------------------------------------------------------
 
@@ -197,6 +206,7 @@ class _EventsView:
         self._draw_targets()
         self._draw_details()
         self._draw_summary()
+        self._draw_command()
         if self.status is not None:
             files = ", ".join(sorted({source.path.name for source in sources}))
             self.status.set_text(f"{len(sources)} database(s): {files}")
@@ -288,6 +298,16 @@ class _EventsView:
         """)
         table.on("pick", lambda event, i=position: self._pick(i, event.args))
 
+    def _draw_command(self) -> None:
+        if self.command_box is None:
+            return
+        self.command_box.clear()
+        if self.folder is None:
+            return
+        path = events.selection_path(self.folder, self.group)
+        with self.command_box:
+            ui.code(events.extract_command(self.project, path)).classes("w-full text-xs")
+
     def _draw_summary(self) -> None:
         self.summary_box.clear()
         rows = events.summary_rows(self.outcomes)
@@ -368,8 +388,15 @@ class _EventsView:
         if self.folder is None:
             ui.notify("Nowhere to save - no database folder", type="warning")
             return
-        # Save what is on screen, pick included, so reopening shows the same list.
+        # Save what is on screen, pick included, so reopening shows the same
+        # list - and where each event came from, which is what lets the util
+        # script find the database and the stored hydrographs without being
+        # told a second time.
         for target, outcome in zip(self.targets, self.outcomes):
+            if outcome.source is not None:
+                target.output_file = outcome.source.output_name
+                target.database = events.project_relative(self.project,
+                                                          outcome.source.path)
             if target.picked is None and outcome.picked_id is not None:
                 target.picked = int(outcome.picked_id)
         path = events.selection_path(self.folder, self.group)
