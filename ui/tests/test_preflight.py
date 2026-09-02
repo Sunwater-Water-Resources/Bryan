@@ -161,6 +161,47 @@ def test_the_documented_replicate_column_name_blocks(project):
     assert issues and "The manual is wrong" in issues[0].fix_hint
 
 
+def test_a_monte_carlo_row_that_replicates_nothing_is_clean(project):
+    """Replication is opt-in: blank means sample everything afresh.
+
+    set_replicates and set_exclusions both take the blank line as 'none found',
+    and the replication file is only opened once a key is recognised, so all
+    three columns are legitimately empty on an ordinary row.
+    """
+    row = monte_carlo_row(**{"Output file": "mc"})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    blanks = [i for i in preflight.check(sims, config, [0])
+              if i.code == "blank-required"]
+    assert not blanks
+
+
+def test_a_replicate_key_without_the_file_blocks(project):
+    """pd.read_csv(nan) - the file is opened as soon as a key is recognised."""
+    row = monte_carlo_row(**{"Output file": "mc", "Replicates": "rz, tp"})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    issues = [i for i in preflight.check(sims, config, [0])
+              if i.code == "replicates-without-file"]
+    assert issues and issues[0].rows == (0,)
+
+
+def test_a_replicate_key_with_a_file_is_clean(project):
+    row = monte_carlo_row(**{"Output file": "mc", "Replicates": "rz,tp",
+                             "Replicate file": r"sims_mc\mcdf.csv"})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    assert "replicates-without-file" not in codes(sims, config, [0])
+
+
+def test_an_unrecognised_key_warns(project):
+    """set_replicates skips it in silence, so the run just does not replicate."""
+    row = monte_carlo_row(**{"Output file": "mc", "Exclusions": "ebf,dd50"})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    issues = [i for i in preflight.check(sims, config, [0])
+              if i.code == "unknown-key"]
+    assert len(issues) == 1
+    assert "'dd50'" in issues[0].message
+    assert issues[0].severity == preflight.WARN
+
+
 def test_blocked_rows_are_collected(project):
     rows = [reservoir_row(Duration=d, **{"Output file": "shared"})
             for d in (18, 24)]

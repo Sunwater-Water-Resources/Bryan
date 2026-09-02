@@ -110,6 +110,21 @@ RESERVOIR_OPTIONAL = (
 # ReservoirRouting accepts either spelling for the input database.
 INPUT_DATABASE_ALIASES = ("Input MCDF", "Input database")
 
+# Columns Bryan reads but is happy to find empty: the value switches on an
+# optional feature, and blank means "off". ``set_replicates`` and
+# ``set_exclusions`` both take the blank line as "none found" and carry on, and
+# the replication file is only opened once a replicate key has been recognised,
+# so a monte carlo row that replicates nothing leaves all three blank - which is
+# the normal case, not a fault. Their *columns* are still required: they are
+# read as ``parameters['Replicates']``, a KeyError when absent.
+BLANK_IS_NO_SETTING = ("Replicates", "Replicate file", "Exclusions")
+
+# The keys those two columns accept, from set_replicates and set_exclusions.
+# Anything else is skipped in silence - the run proceeds without the
+# replication or the exclusion that was asked for - so pre-flight says so.
+REPLICATE_KEYS = ("rz", "tp", "stm", "ilp", "clp", "pbp", "pb_tp", "lz")
+EXCLUSION_KEYS = ("pb", "ebf", "d50", "ru", "lu", "clp")
+
 # Simulator.__init__ reads 'Replicate file'; Manual/SubDocs/sim_list.md
 # documents 'Replication file'. A list built from the manual raises KeyError on
 # every monte carlo row. Accept both, warn on the documented-but-wrong one.
@@ -142,6 +157,7 @@ class ColumnRequirement:
     when: str            # 'always' | 'when_running'
     is_path: bool = False
     aliases: tuple[str, ...] = field(default_factory=tuple)
+    blank_ok: bool = False   # the column must exist; an empty cell is fine
 
     def present_in(self, columns) -> str | None:
         """The name this requirement is satisfied by, or None."""
@@ -245,6 +261,19 @@ def included(row) -> bool:
     return row.get("Include") == "yes"
 
 
+def listed_keys(value) -> tuple[str, ...]:
+    """The comma-separated keys in a Replicates or Exclusions cell.
+
+    Mirrors the splitting in ``set_replicates``/``set_exclusions``, except that
+    a blank cell yields nothing: those read ``str(parameters[...])``, so an
+    empty cell arrives as the string 'nan' and matches no key, which is the
+    same as listing none.
+    """
+    text = cell_text(value)
+    return tuple(key for key in (part.strip() for part in text.split(","))
+                 if key)
+
+
 def requirements_for(method: str, running: bool,
                      volumes: bool = False) -> list[ColumnRequirement]:
     """Every column Bryan will read for a row of this method and run mode.
@@ -267,7 +296,12 @@ def requirements_for(method: str, running: bool,
         existing = out.get(name)
         if existing and existing.when == "always":
             return
-        out[name] = ColumnRequirement(name, when, is_path, tuple(aliases))
+        # A blank Config file is legitimate for reservoir routing with ensemble
+        # input - sim_list.md says to leave it blank.
+        blank_ok = (name in BLANK_IS_NO_SETTING
+                    or (name == "Config file" and method == RESERVOIR_ROUTING))
+        out[name] = ColumnRequirement(name, when, is_path, tuple(aliases),
+                                      blank_ok)
 
     for name in UNIVERSAL_ALWAYS:
         add(name, "always", name in PATH_COLUMNS_COMMON)
@@ -327,6 +361,7 @@ __all__ = [
     "ColumnRequirement", "normalise_method", "runs_models", "included",
     "analyses_volumes", "volume_column",
     "requirements_for", "path_columns_for", "climate_requirement",
-    "unused_columns", "is_blank", "cell_text",
+    "unused_columns", "is_blank", "cell_text", "listed_keys",
+    "BLANK_IS_NO_SETTING", "REPLICATE_KEYS", "EXCLUSION_KEYS",
     "INPUT_DATABASE_ALIASES", "REPLICATE_FILE_ALIASES", "KNOWN_UNUSED",
 ]
