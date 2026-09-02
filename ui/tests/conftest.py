@@ -168,7 +168,8 @@ def project(tmp_path):
         if make_inputs:
             for row in rows:
                 for key in ("Input MCDF", "Inflow", "ELS file", "SQ file",
-                            "Config file", "Focal subcatchments"):
+                            "Config file", "Focal subcatchments",
+                            "Replicate file"):
                     value = row.get(key)
                     if not value:
                         continue

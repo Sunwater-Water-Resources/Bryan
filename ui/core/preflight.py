@@ -14,9 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import completion as completion_module
-from .columns import (REPLICATE_FILE_ALIASES, RESERVOIR_ROUTING,
-                      analyses_volumes, climate_requirement, method_is_exact,
-                      normalise_method, requirements_for, runs_models)
+from .columns import (EXCLUSION_KEYS, REPLICATE_FILE_ALIASES, REPLICATE_KEYS,
+                      RESERVOIR_ROUTING, analyses_volumes, climate_requirement,
+                      listed_keys, method_is_exact, normalise_method,
+                      requirements_for, runs_models)
 from .outputs import collision_key
 from .paths import cell_text, is_blank, resolve_value
 
@@ -55,6 +56,7 @@ def check(sims, config, selected_rows, *, completions=None) -> list[Issue]:
     issues.extend(_collisions(frame, selected))
     issues.extend(_include_case(frame))
     issues.extend(_replicate_alias(frame))
+    issues.extend(_replication(frame, selected))
     issues.extend(_needs_prior_results(frame, config, selected, completions))
     return issues
 
@@ -149,9 +151,9 @@ def _blank_required(frame, selected) -> list[Issue]:
         for requirement in requirements_for(method, runs_models(row),
                                             analyses_volumes(row)):
             name = requirement.present_in(columns)
-            # A blank Config file is legitimate for reservoir routing with
-            # ensemble input - sim_list.md says to leave it blank.
-            if name is None or (name == "Config file" and method == RESERVOIR_ROUTING):
+            # Replicates, Replicate file, Exclusions and a reservoir routing
+            # Config file are all legitimately blank - see BLANK_IS_NO_SETTING.
+            if name is None or requirement.blank_ok:
                 continue
             if is_blank(row.get(name)):
                 blank.setdefault(name, []).append(index)
@@ -258,6 +260,64 @@ def _replicate_alias(frame) -> list[Issue]:
             fix_hint=f"Rename the column to {correct!r}. The manual is wrong.",
         )]
     return []
+
+
+def _replication(frame, selected) -> list[Issue]:
+    """The optional replication and exclusion settings, when they are used.
+
+    Blank is the normal case and means "sample everything afresh", so nothing
+    here fires on an empty cell. What does fire: naming a replicate without the
+    file to read it from (``pd.read_csv(nan)``), and a key Bryan does not
+    recognise - ``set_replicates``/``set_exclusions`` skip those in silence, so
+    the run goes ahead sampling, or applying, exactly what it was told not to.
+    """
+    # None when neither spelling is there - _missing_columns has that already.
+    replicate_column = next((candidate for candidate in REPLICATE_FILE_ALIASES
+                             if candidate in frame.columns), None)
+
+    no_file, unknown = [], {}
+    for index in selected:
+        row = frame.loc[index]
+        method = normalise_method(row.get("Method"))
+        if not method or method == RESERVOIR_ROUTING or not runs_models(row):
+            continue
+        for column, known in (("Replicates", REPLICATE_KEYS),
+                              ("Exclusions", EXCLUSION_KEYS)):
+            if column not in frame.columns:
+                continue
+            keys = listed_keys(row.get(column))
+            for key in keys:
+                if key not in known:
+                    unknown.setdefault((column, key), []).append(index)
+            if (column == "Replicates" and replicate_column is not None
+                    and any(key in REPLICATE_KEYS for key in keys)
+                    and is_blank(row.get(replicate_column))):
+                no_file.append(index)
+
+    issues = []
+    if no_file:
+        issues.append(Issue(
+            BLOCK, "replicates-without-file",
+            f"{len(no_file)} selected row(s) ask for replicated sampling but "
+            f"leave {replicate_column!r} blank.",
+            rows=tuple(no_file),
+            fix_hint="Point it at the mcdf of the run being replicated, or "
+                     "clear 'Replicates' to sample afresh. Simulator.__init__ "
+                     "reads the file as soon as a replicate key is "
+                     "recognised.",
+        ))
+    for (column, key), rows in sorted(unknown.items()):
+        issues.append(Issue(
+            WARN, "unknown-key",
+            f"{len(rows)} selected row(s) list {key!r} under {column!r}, which "
+            f"Bryan does not recognise. It is skipped without a message, so "
+            f"the run looks normal and does not do it.",
+            rows=tuple(rows),
+            fix_hint=f"Keys for {column!r}: "
+                     + ", ".join(REPLICATE_KEYS if column == "Replicates"
+                                 else EXCLUSION_KEYS),
+        ))
+    return issues
 
 
 def _needs_prior_results(frame, config, selected, completions) -> list[Issue]:
