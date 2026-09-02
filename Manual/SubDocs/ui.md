@@ -196,7 +196,16 @@ A **lake level** loading is converted to an AEP by reading it off the level freq
 
 **Export csv** writes the same list as a table, one row per loading, with the metrics of the chosen event. The ```hydrograph``` column is the name of the column to pull out of the stored ```_inflows```, ```_levels``` and ```_outflows``` files: simulation 42 is ```sim_00042```.
 
-Extracting those hydrographs and plotting each event is not done here — that is ```util/GetRepresentativeEvents.py```'s half of the job.
+### Extracting the hydrographs
+
+The page chooses events; pulling out their hydrographs and plotting them is one command, shown on the page under *Extract the hydrographs and plot them* once the selection is saved:
+
+```bat
+python util\RepresentativeEvents.py --config sims_config.json ^
+    --selection sims_mc\results\GWL1p3_representative_events.json
+```
+
+Run it with **Bryan's** interpreter rather than the launcher's — it rebuilds the rainfall, which drives the storm generator. For each chosen event it writes a three-panel plot (the hyetograph drawn downwards from zero at the top, the inflow and outflow, and the lake level, all on one time axis measured from the start of the main burst) and a workbook holding every series. The hyetograph is **rebuilt** from what the run sampled and then checked against the depths the run recorded; a rebuild that does not match is said so rather than shown as fact. See [the utilities](utilities.md) for the detail.
 
 ### What it needs
 

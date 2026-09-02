@@ -205,6 +205,25 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Everything except the PMP cap and the distance limit **flags** rather than excludes. A tool
   that silently drops the event someone was looking for does not get trusted twice.
 
+### Rebuilding one storm (`lib/EventStorm.py`)
+- Replays the storm generation for a single realisation so a chosen representative event can be
+  given a **hyetograph** — an mcdf records what was *sampled*, never the rainfall series.
+  Deterministic, because every draw is in the mcdf row.
+- Written from `Simulator.run_models`, not from `StormInstance.py`, which does the same job for
+  a different purpose and has drifted: it omits the `buffer=0.9` on the pre-burst filter. The
+  buffers are **not the same** — 1.1 for the main burst, 0.9 for the pre-burst — and getting one
+  wrong changes the pattern without changing its total, so no check on depths would catch it.
+  Both are pinned by tests.
+- **Every rebuild is checked against what the run wrote down**: `mean_rain_mm`, `preburst_mm` and
+  the `embedded_bursts` comment. The three are independent, so agreement with all of them means
+  it is the storm that was modelled. A rebuild that disagrees is reported, never quietly plotted.
+- Temporal patterns are **percentages of the burst depth** throughout (`uniform_preburst`:
+  `preburst_depth = preburst_proportion * 100`), so depths are `pattern / 100 * ave_rain`. The
+  index is hours with the pre-burst at negative times: t = 0 is the start of the main burst,
+  which is also what the stored hydrographs are shifted onto.
+- Needs scipy and matplotlib, so it is **not** UI-importable and does not try to be — the split
+  from `lib/RepresentativeEvents.py` is the whole reason that one stays cheap.
+
 ### Curve fitting (`lib/InterpolationCurves.py`)
 - `Curve`, `CoercedQuadratic`, `GEV` — used to extrapolate rainfall to rare/extreme AEPs.
 
@@ -307,6 +326,15 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
 (frequency plots), `GetRepresentativeEvents.py` (representative event selection),
 `DesignFloodInterpolation.py`, `MaxQuantiles.py`, `ReportCollation.py`. See
 `Manual/SubDocs/utilities.md`.
+- `RepresentativeEvents.py` is the launcher's other half: an argparse CLI that takes the Events
+  page's saved JSON and writes the hydrographs, the rebuilt hyetographs, a three-panel plot per
+  event and a workbook. It shares `lib/RepresentativeEvents.py` with the page, so the event that
+  gets plotted is the event that was chosen. Time runs from the **start of the main burst**; the
+  stored hydrographs start at the beginning of the storm file, so they are shifted by the
+  pre-burst duration — taken from the rebuild, or failing that from how much longer the run is
+  than the model config's simulation period, which `Simulator.run_models` lengthens by exactly
+  that amount. It reads the simulation period out of the JSON rather than through `UrbsModel`,
+  whose constructor rmtree's the run's working folder.
 - `GetRepresentativeEvents.py` picks representative events and then extracts and plots their
   hydrographs, driven by an `_analyseRepresentativeEvents.xlsx` control sheet with hard-coded
   paths. The **selection** half of it now also exists as `lib/RepresentativeEvents.py`, which

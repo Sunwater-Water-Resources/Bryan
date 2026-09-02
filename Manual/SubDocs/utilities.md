@@ -20,6 +20,28 @@ Use the ```GetRepresentativeEvents.py``` script to extract summary information f
 folder = r'C:\PythonProjects\TFD_2024\03_Design\runs\E001\sims_mc\representative_events'  # change this to your folder
 filename = '_analyseRepresentativeEvents.xlsx'  # change this to your file
 ```
+### Extracting the events chosen in the launcher
+
+```RepresentativeEvents.py``` is the other half of that job, for events chosen on the [run launcher's](ui.md) Events page rather than in a spreadsheet. It is a command line script, not a block of paths to edit:
+
+```bat
+python util\RepresentativeEvents.py --config sims_config.json ^
+    --selection sims_mc\results\GWL1p3_representative_events.json
+```
+
+It reads the selection file the launcher saved, and for each chosen event writes:
+
+| Output | Holds |
+| ----------- | ----------- |
+| ```<selection>_<loading>_sim<id>.png``` | a three-panel plot: the hyetograph at the top, drawn downwards from zero; the inflow and outflow; and the lake level |
+| ```<selection>_events.xlsx``` | a sheet per series (```inflows```, ```levels```, ```outflows```, ```hyetographs```), one column per event, plus an ```events``` summary sheet |
+
+**The hyetograph is rebuilt, not read.** An mcdf records what was *sampled* - the rainfall variate, the pattern number, the pre-burst proportion - not the rainfall series, so the storm generation is replayed for that one realisation. The replay is then checked against three things the run itself wrote down: the catchment average burst depth (```mean_rain_mm```), the pre-burst depth (```preburst_mm```) and the embedded burst comment. A rebuild that disagrees with any of them is reported on the plot and in the workbook rather than presented as the storm that was modelled. Use ```--no-hyetograph``` to skip the rebuild, which is much faster and works where the rainfall data is not to hand.
+
+Time on the plot runs **from the start of the main burst**, so the pre-burst is at negative times and events with different pre-burst durations can be compared. The stored hydrographs begin at the start of the storm file - that is, at the start of the pre-burst - so they are shifted by the pre-burst duration; where the hyetograph is not rebuilt, the shift comes from how much longer the run is than the simulation period in the model config, which Bryan lengthens by exactly that amount.
+
+Options: ```--out``` for a different folder, ```--name``` to change the output basename, ```--no-plots``` for the workbook alone, and ```--dpi```.
+
 ## Calibrating temporal pattern weights
 Use the ```CalibrateTpWeights.py``` script to calibrate temporal pattern probability weights so that the Monte Carlo ensemble satisfies the sub-burst AEP-neutrality condition - see [the sub-burst check](sub_burst_check.md) for the background. The script works entirely from the mcdf file (ideally from an unfiltered simulation run with ```Run models``` set to *storms only*): trial weights are evaluated by re-weighting the recorded realisations in the TPT, so no model reruns are needed. Patterns whose sub-bursts exceed the same-z IFD are progressively down-weighted until the weighted sub-burst frequency curves sit at or below the IFD. Outputs are the calibrated weights, the neutrality margins before and after calibration, and (if flow results are present in the mcdf) the weighted flood quantiles as a preview of the effect on the flood frequency curve. If the weights land on the floor without achieving neutrality, weighting alone is not enough for that simulation - consider the embedded burst filter, or review the offending patterns. For a production run, the calibrated weights file can be applied to the pattern sampling itself using the ```TP weights``` key in the [simulation list](sim_list.md). Note that the calibration is against **main-burst** sub-burst depths only - the pre-burst is not scanned, so weights that achieve neutrality say nothing about the pre-burst-inclusive storm. The only part of the script that should need editing is shown below:
 
