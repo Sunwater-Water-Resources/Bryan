@@ -93,3 +93,36 @@ async def test_the_page_is_in_the_navigation(user, project):
     _open(project)
     await user.open("/results")
     await user.should_see("Events")
+
+
+@pytest.mark.asyncio
+async def test_typing_a_loading_value_does_not_rebuild_the_row(user, project):
+    """The row must survive being typed into.
+
+    Redrawing the loadings on every keystroke destroys the input the digits
+    are going into, so the field took the first one and lost focus.
+    """
+    _open(project)
+    await user.open("/events")
+
+    field = next(iter(user.find(marker="loading-value-0").elements))
+    identity = field.id
+    for digits in (2, 20, 200, 2000):                 # typing "2000"
+        field.set_value(digits)
+        await user.should_see("Loadings")
+
+    still = next(iter(user.find(marker="loading-value-0").elements))
+    assert still.id == identity, "the input was replaced mid-edit"
+    assert still.value == 2000
+
+
+@pytest.mark.asyncio
+async def test_adding_a_loading_does_redraw_the_rows(user, project):
+    """The other half of it: a new row has to appear."""
+    _open(project)
+    await user.open("/events")
+    assert len(user.find(marker="loading-value-2").elements) == 1
+
+    user.find("Add loading").click()
+    await user.should_see("Loadings")
+    assert len(user.find(marker="loading-value-3").elements) == 1
