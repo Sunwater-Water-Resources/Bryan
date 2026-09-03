@@ -70,6 +70,60 @@ def remove_tree(path, attempts=ATTEMPTS, delay=INITIAL_DELAY):
             time.sleep(delay * 2 ** attempt)
 
 
+def write_csv(frame, path, description='output'):
+    """Write a dataframe to csv, making its folder first and asking only about a lock.
+
+    ``store_simulations`` used to do the whole thing inside one ``try`` whose
+    ``except IOError`` said "the file may be open in Excel" and blocked on
+    ``input()``. Two things were wrong with that.
+
+    The folder is created here, *outside* the try. ``os.makedirs('')`` raises
+    ``FileNotFoundError`` - an ``OSError``, so the old handler caught it - and
+    that is what a sims-list ``Output file`` with no folder part produces. The
+    run then claimed the file was open in Excel, and wrote it successfully to
+    the working directory the moment enter was pressed, because pressing enter
+    skipped the ``makedirs`` rather than fixing anything.
+
+    Only a file that is actually there and cannot be written is worth asking a
+    person about. A short retry first, because on Windows a file written
+    moments ago can still be held by an antivirus scanner or a sync agent (see
+    the module docstring); Excel, by contrast, holds it until it is closed, so
+    that case does need the prompt. Anything else is raised with its own error
+    rather than being blamed on Excel.
+
+    The ``input()`` is deliberate: a windowless run launched with
+    ``stdin=DEVNULL`` gets ``EOFError`` instead of hanging, which Main.py
+    catches per row and the launcher explains (``ui/core/progress.py``).
+    """
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
+    last_error = None
+    for attempt in range(ATTEMPTS):
+        try:
+            frame.to_csv(path)
+            return
+        except OSError as error:
+            if not _looks_locked(path, error):
+                raise
+            last_error = error
+            if attempt < ATTEMPTS - 1:
+                time.sleep(INITIAL_DELAY * 2 ** attempt)
+
+    input(f'Could not write the {description} file - it is open in another '
+          f'program (Excel holds a .csv open until it is closed).\n'
+          f'  {path}\n'
+          f'  {last_error}\n'
+          f'Close the file and press enter.')
+    frame.to_csv(path)
+
+
+def _looks_locked(path, error):
+    """Is this the "someone else has the file" case, rather than a bad path?"""
+    return isinstance(error, PermissionError) and os.path.exists(path)
+
+
 class MopWarnings:
     """Counts and reports files the mop-up could not delete, without drowning the log.
 

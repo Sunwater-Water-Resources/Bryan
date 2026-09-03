@@ -234,9 +234,12 @@ def explain_error(error: str) -> str:
     """Turn a run-log Error into something actionable.
 
     ``EOFError`` is the one worth explaining: the UI launches Bryan with
-    ``stdin=DEVNULL``, so the ``input()`` prompts in MCScheme.store_simulations
-    (lib/MCScheme.py:162) and lib/EnbScheme.py:60 raise instead of hanging a
-    windowless process forever. Bryan catches that per row and carries on.
+    ``stdin=DEVNULL``, so the prompt both schemes' ``store_simulations`` reach
+    through ``FileTools.write_csv`` raises instead of hanging a windowless
+    process forever. Bryan catches that per row and carries on. Since that
+    prompt now fires only for a file that exists and will not open for writing,
+    an EOFError here really does mean the csv is held open - it used to mean
+    that *or* an ``Output file`` with no folder part.
 
     There used to be a third, in lib/URBSmodel.py, when the URBS executable was
     not where the model config said. That one now warns and carries on instead,

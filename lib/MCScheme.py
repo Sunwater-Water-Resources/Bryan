@@ -1,6 +1,8 @@
 import os.path
 import random
 from pathlib import Path
+
+from lib.FileTools import write_csv
 import scipy.stats
 from scipy.special import ndtri, ndtr
 from scipy import stats
@@ -154,13 +156,8 @@ class SampleScheme:
         # filename = Path(filename).stem + '__mcdf.csv'                # Add common suffix
         # output_path = os.path.join(self.output_folder, filename)
         filename = f'{filename}__mcdf.csv'
-        try:
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            print('Storing the monte carlo method analysis file:', filename)
-            self.df.to_csv(filename)
-        except IOError:
-            input("Could not save the simulation file. The file may be open in Excel. Please close the file and press enter.")
-            self.df.to_csv(filename)
+        print('Storing the monte carlo method analysis file:', filename)
+        write_csv(self.df, filename, 'monte carlo method analysis')
 
     def compute_quantiles(self, start_q, end_q, step_q, result_type, output_filename):
         number_of_q = int((end_q - start_q) / step_q) + 1
