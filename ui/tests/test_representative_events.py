@@ -329,3 +329,46 @@ def test_the_sim_label_matches_the_stored_hydrograph_columns():
     assert events.sim_label(0) == "sim_00000"
     assert events.sim_label(42) == "sim_00042"
     assert events.sim_label(12345) == "sim_12345"
+
+
+# -- reading the stored series -----------------------------------------------
+
+def _hydrograph_frame():
+    return pd.DataFrame({"sim_00000": [1.0, 2.0, 3.0],
+                         "sim_00001": [4.0, 5.0, 6.0]},
+                        index=pd.Index([0.0, 0.5, 1.0], name="time"))
+
+
+def test_hydrographs_read_from_a_csv(tmp_path):
+    path = tmp_path / "flows_inflows.csv"
+    _hydrograph_frame().to_csv(path)
+    frame = events.read_hydrographs(path)
+    assert list(frame.columns) == ["sim_00000", "sim_00001"]
+    assert frame["sim_00001"].tolist() == [4.0, 5.0, 6.0]
+
+
+def test_hydrographs_read_from_a_parquet(tmp_path):
+    """A routed row's inflows come from the sims list, and are often parquet.
+
+    Reading one with read_csv raises UnicodeDecodeError on the parquet magic,
+    which used to end the whole plotting run rather than one panel.
+    """
+    pytest.importorskip("pyarrow")
+    path = tmp_path / "flows_inflows.parquet"
+    # index=False is how they are written: the time axis arrives as an
+    # ordinary first column and has to be promoted back.
+    _hydrograph_frame().reset_index().to_parquet(path, index=False)
+
+    frame = events.read_hydrographs(path)
+    assert list(frame.columns) == ["sim_00000", "sim_00001"]
+    assert frame.index.tolist() == [0.0, 0.5, 1.0]
+    assert frame["sim_00000"].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_a_parquet_read_as_a_csv_is_the_failure_being_fixed(tmp_path):
+    pytest.importorskip("pyarrow")
+    path = tmp_path / "flows_inflows.parquet"
+    _hydrograph_frame().reset_index().to_parquet(path, index=False)
+    # The exact exception is pandas', not ours - only that it cannot be done.
+    with pytest.raises((UnicodeDecodeError, ValueError, pd.errors.ParserError)):
+        pd.read_csv(path, index_col=0)

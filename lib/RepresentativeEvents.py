@@ -136,6 +136,30 @@ def load_mcdf(path) -> pd.DataFrame:
     return pd.read_csv(path, index_col=0)
 
 
+def read_hydrographs(path) -> pd.DataFrame:
+    """A stored hydrograph file, indexed by time, one column per simulation.
+
+    Bryan only ever *writes* these as csv, but a reservoir routing row's
+    inflows are not written by the run at all - they are its input, taken
+    verbatim from the sims-list ``Inflow`` column, and that file is routinely
+    ``.parquet`` (``ReservoirRouting._read_inflows``). Reading it with
+    ``read_csv`` gets a UnicodeDecodeError on the parquet magic, which is what
+    used to end the whole plotting run.
+
+    The index promotion is unconditional here, unlike ``load_mcdf`` above:
+    parquet written with ``index=False`` carries the time axis as an ordinary
+    first column, and a hydrograph file's first column is always the time.
+    """
+    path = str(path)
+    if path.lower().endswith('.parquet'):
+        frame = pd.read_parquet(path)
+        if frame.index.name is None and frame.columns.size:
+            frame = frame.set_index(frame.columns[0])
+            frame.index.name = None
+        return frame
+    return pd.read_csv(path, index_col=0)
+
+
 def sim_label(sim_id) -> str:
     """The hydrograph column for a simulation id: 'sim_00042'."""
     return 'sim_{}'.format(str(int(sim_id)).zfill(5))

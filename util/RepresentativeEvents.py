@@ -125,10 +125,13 @@ def read_series(path, column):
 
     Ragged files are ordinary here - an ensemble file pads every duration out
     to the longest - so the trailing NaN are dropped rather than filled.
+
+    Read through the shared module, which knows that a routed row's inflows
+    come from the sims list and may be parquet.
     """
     if not path or not os.path.isfile(path):
         return None
-    frame = pd.read_csv(path, index_col=0)
+    frame = events.read_hydrographs(path)
     if column not in frame.columns:
         return None
     series = pd.to_numeric(frame[column], errors='coerce').dropna()
@@ -216,11 +219,18 @@ def collect(target, frame, config, storms, rebuild=True):
 
     series = {}
     for kind, path in hydrographs.items():
-        found = read_series(resolve(project, path), column)
+        name = os.path.basename(str(path))
+        # A file that will not read is one event's missing panel, not the end
+        # of the run: the other loadings still have their series.
+        try:
+            found = read_series(resolve(project, path), column)
+        except Exception as error:                    # noqa: BLE001
+            notes.append(f'{kind} could not be read from {name} ({error})')
+            continue
         if found is not None:
             series[kind] = found
         else:
-            notes.append(f'no {kind} for {column} in {os.path.basename(str(path))}')
+            notes.append(f'no {kind} for {column} in {name}')
 
     hyeto = None
     if rebuild and sim is not None:
