@@ -1,4 +1,6 @@
 import os.path
+
+from lib.FileTools import write_csv
 import scipy.stats
 from scipy.special import ndtri, ndtr
 from scipy import stats
@@ -52,10 +54,5 @@ class Ensemble:
     def store_simulations(self, filename='simulation_out'):
         # output_path = os.path.join(self.output_folder, filename)
         output_path = f'{filename}.csv'
-        try:
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            print('Storing the ensemble method analysis file:', output_path)
-            self.df.to_csv(output_path)
-        except IOError:
-            input("Could not save the simulation file. The file may be open in Excel. Please close the file and press enter.")
-            self.df.to_csv(output_path)
+        print('Storing the ensemble method analysis file:', output_path)
+        write_csv(self.df, output_path, 'ensemble method analysis')
