@@ -37,6 +37,11 @@ KIND_LABELS = {"aep": "AEP", "level": "Lake level"}
 # table into a second database.
 DEFAULT_COUNT = 10
 
+# How long a number field waits after the last keystroke before it reports the
+# value. Re-ranking an mcdf on every digit is wasted work, and "1000" would be
+# evaluated as 1, 10, 100 and 1000 on the way past.
+TYPING_PAUSE_MS = 500
+
 
 def events_page() -> None:
     with page_frame("Events"):
@@ -106,14 +111,16 @@ class _EventsView:
                 ui.number("AEP of the PMP (1 in X)",
                           value=self.filters.aep_of_pmp, format="%.0f",
                           on_change=lambda e: self._on_filter("aep_of_pmp", e.value)
-                          ).classes("w-56").props("clearable") \
+                          ).classes("w-56") \
+                    .props(f"clearable debounce={TYPING_PAUSE_MS}") \
                     .tooltip("Rainfall rarer than this cannot be sampled, so "
                              "events near it are the edge of the scheme. Read "
                              "from the IFD files config the storm config points at.")
                 ui.number("Furthest Δz to offer", value=self.filters.max_delta_z,
                           format="%.2f", step=0.1,
                           on_change=lambda e: self._on_filter("max_delta_z", e.value)
-                          ).classes("w-48").props("clearable")
+                          ).classes("w-48") \
+                    .props(f"clearable debounce={TYPING_PAUSE_MS}")
                 ui.checkbox("Drop events with an embedded burst",
                             value=self.filters.exclude_embedded,
                             on_change=lambda e: self._on_filter("exclude_embedded",
@@ -184,7 +191,7 @@ class _EventsView:
             exclude_embedded=bool(settings.get("exclude_embedded")),
             exclude_flagged=bool(settings.get("exclude_flagged")),
         )
-        self.refresh()
+        self.refresh(redraw_targets=True)
 
     def _pmp_aep(self):
         """From the storm config chain, as a Monte Carlo run gets it."""
@@ -196,14 +203,22 @@ class _EventsView:
             self._curve = events.level_curve(self.project, self._sources())
         return self._curve
 
-    def refresh(self) -> None:
+    def refresh(self, redraw_targets: bool = False) -> None:
+        """Re-rank and redraw.
+
+        `redraw_targets` rebuilds the loading rows, which is what adding or
+        removing one needs - and what editing a value must *not* do: clearing
+        the column destroys the input being typed into, so the field would
+        take the first digit and lose focus.
+        """
         sources = self._sources()
         self.outcomes = [
             events.evaluate(self.project, sources, target, self.filters,
                             curve=self._curve_for_levels())
             for target in self.targets
         ]
-        self._draw_targets()
+        if redraw_targets:
+            self._draw_targets()
         self._draw_details()
         self._draw_summary()
         self._draw_command()
@@ -226,7 +241,8 @@ class _EventsView:
                               ).props("no-caps dense")
                     ui.number("Value", value=target.value, format="%g",
                               on_change=lambda e, i=position: self._edit(i, "value", e.value)
-                              ).classes("w-32")
+                              ).classes("w-32").props(f"debounce={TYPING_PAUSE_MS}") \
+                        .mark(f"loading-value-{position}")
                     ui.select([""] + labels, value=target.source, label="From",
                               on_change=lambda e, i=position: self._edit(i, "source", e.value)
                               ).classes("w-40") \
@@ -234,12 +250,13 @@ class _EventsView:
                                  "this loading's AEP.")
                     ui.number("Rain AEP", value=target.rain_aep, format="%g",
                               on_change=lambda e, i=position: self._edit(i, "rain_aep", e.value)
-                              ).classes("w-32").props("clearable") \
+                              ).classes("w-32") \
+                        .props(f"clearable debounce={TYPING_PAUSE_MS}") \
                         .tooltip("Blank judges the rainfall against the loading "
                                  "itself, which is the AEP-neutral case.")
                     ui.number("Show", value=target.count, format="%d",
                               on_change=lambda e, i=position: self._edit(i, "count", e.value)
-                              ).classes("w-24")
+                              ).classes("w-24").props(f"debounce={TYPING_PAUSE_MS}")
                     ui.button(icon="delete", on_click=lambda _, i=position: self._remove(i)
                               ).props("flat dense round")
 
@@ -343,11 +360,15 @@ class _EventsView:
         if position >= len(self.targets):
             return
         target = self.targets[position]
+        if name in ("value", "count") and value in (None, ""):
+            # An empty box is mid-edit, not a loading of zero: the row is not
+            # redrawn while it is being typed into, so leave the target alone
+            # and take the value when there is one.
+            return
         if name in ("value", "rain_aep"):
-            value = float(value) if value not in (None, "") else (
-                None if name == "rain_aep" else 0.0)
+            value = float(value) if value not in (None, "") else None
         if name == "count":
-            value = max(int(value or 1), 1)
+            value = max(int(value), 1)
         if getattr(target, name) == value:
             return
         setattr(target, name, value)
@@ -360,12 +381,12 @@ class _EventsView:
         self.targets.append(events.Target(kind="aep", value=100,
                                           result_type=self.result_type,
                                           count=DEFAULT_COUNT))
-        self.refresh()
+        self.refresh(redraw_targets=True)
 
     def _remove(self, position) -> None:
         if position < len(self.targets):
             self.targets.pop(position)
-        self.refresh()
+        self.refresh(redraw_targets=True)
 
     def _pick(self, position, row) -> None:
         if position < len(self.targets) and isinstance(row, dict):
