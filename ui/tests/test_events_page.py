@@ -126,3 +126,36 @@ async def test_adding_a_loading_does_redraw_the_rows(user, project):
     user.find("Add loading").click()
     await user.should_see("Loadings")
     assert len(user.find(marker="loading-value-3").elements) == 1
+
+
+@pytest.mark.asyncio
+async def test_picking_an_event_leaves_the_cards_where_they_were(user, project):
+    """Every pick redraws the details, so the open cards have to survive it.
+
+    They did not: the expansions were built with `value = position == 0`, so
+    choosing an event in the third loading collapsed it and sprang the first
+    one open underneath.
+    """
+    _open(project)
+    await user.open("/events")
+
+    def cards():
+        return [next(iter(user.find(marker=f"target-{position}").elements))
+                for position in range(3)]
+
+    cards()[0].set_value(False)
+    cards()[2].set_value(True)
+    await user.should_see("Loadings")
+
+    _pick_candidate(user, position=2, index=1)
+    await user.should_see("Loadings")
+
+    assert [card.value for card in cards()] == [False, False, True]
+
+
+def _pick_candidate(user, position, index):
+    """Choose a candidate the way the table's radio does."""
+    table = next(iter(user.find(marker=f"candidates-{position}").elements))
+    listener = next(listener for listener in table._event_listeners.values()
+                    if listener.type == "pick")
+    table._handle_event({"listener_id": listener.id, "args": table.rows[index]})

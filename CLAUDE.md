@@ -305,6 +305,9 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   envelope is the design quantile the level was quoted from. The chosen list is saved per group
   as `<group>_representative_events.json` beside the databases — per group because a GWL series
   usually shares one results folder.
+  **Which loading cards are open is view state the page has to keep** (`open_cards`): picking an
+  event redraws every expansion, so a `value=position == 0` on the rebuild collapsed the card
+  being worked on and sprang the first one open under it.
 - **A critical-duration crossover is judged over the range the new duration holds, not at the
   crossing point.** The margin at a crossover is near zero by definition — the curves are equal
   there — so measuring strength there would dismiss every real crossover as noise. `Band.peak_margin`

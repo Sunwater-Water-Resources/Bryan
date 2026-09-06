@@ -80,6 +80,10 @@ class _EventsView:
         self.outcomes: list = []
         self.folder = None
         self._curve = None                    # the level envelope, per group
+        # Which loading cards are open. Every redraw rebuilds the expansions,
+        # so without this the first one springs open and the one being worked
+        # on shuts every time an event is picked.
+        self.open_cards: set[int] = {0}
 
         self.target_box = None
         self.detail_box = None
@@ -185,6 +189,9 @@ class _EventsView:
                           count=DEFAULT_COUNT)
             for aep in (100, 1000, 10_000)
         ]
+        # A different group is a different set of loadings, so start again
+        # with the first one open.
+        self.open_cards = {0}
         self.filters = events.Filters(
             aep_of_pmp=settings.get("aep_of_pmp") or self._pmp_aep(),
             max_delta_z=settings.get("max_delta_z"),
@@ -277,7 +284,9 @@ class _EventsView:
         if picked is not None:
             headline += f"  -  sim {int(picked.name)}"
 
-        with ui.expansion(headline, value=position == 0).classes("w-full") \
+        with ui.expansion(headline, value=position in self.open_cards,
+                          on_value_change=lambda e, i=position:
+                              self._card_toggled(i, e.value)).classes("w-full") \
                 .mark(f"target-{position}"):
             for note in outcome.notes:
                 ui.label(note).classes("text-xs text-gray-500")
@@ -314,6 +323,16 @@ class _EventsView:
             </q-td>
         """)
         table.on("pick", lambda event, i=position: self._pick(i, event.args))
+
+    def _card_toggled(self, position, is_open) -> None:
+        """Remember an open card, and nothing else - no redraw.
+
+        Redrawing here would destroy the expansion that raised the event.
+        """
+        if is_open:
+            self.open_cards.add(position)
+        else:
+            self.open_cards.discard(position)
 
     def _draw_command(self) -> None:
         if self.command_box is None:
@@ -381,11 +400,17 @@ class _EventsView:
         self.targets.append(events.Target(kind="aep", value=100,
                                           result_type=self.result_type,
                                           count=DEFAULT_COUNT))
+        # Open the one just added: it is what the user is about to work on.
+        self.open_cards.add(len(self.targets) - 1)
         self.refresh(redraw_targets=True)
 
     def _remove(self, position) -> None:
         if position < len(self.targets):
             self.targets.pop(position)
+        # The cards are keyed by position, so the ones above a deletion move
+        # down with their loading.
+        self.open_cards = {index if index < position else index - 1
+                           for index in self.open_cards if index != position}
         self.refresh(redraw_targets=True)
 
     def _pick(self, position, row) -> None:
