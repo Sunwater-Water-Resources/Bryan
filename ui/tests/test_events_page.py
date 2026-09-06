@@ -159,3 +159,21 @@ def _pick_candidate(user, position, index):
     listener = next(listener for listener in table._event_listeners.values()
                     if listener.type == "pick")
     table._handle_event({"listener_id": listener.id, "args": table.rows[index]})
+
+
+@pytest.mark.asyncio
+async def test_the_rank_order_can_be_switched_to_the_result(user, project):
+    """Reaching the loading is often what matters; neutrality is then a flag."""
+    _open(project)
+    await user.open("/events")
+
+    toggle = next(iter(user.find(marker="rank-order").elements))
+    assert toggle.value == "delta_z"
+
+    toggle.set_value("result")
+    await user.should_see("Loadings")
+    await user.should_see("design value at 1 in")
+
+    table = next(iter(user.find(marker="candidates-0").elements))
+    assert "Δ target" in [column["label"] for column in table.columns]
+    assert table.rows[0]["delta_value"] != "-"

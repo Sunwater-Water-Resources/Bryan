@@ -10,6 +10,7 @@ plot.
 from __future__ import annotations
 
 import json
+import math
 
 import pandas as pd
 import pytest
@@ -372,3 +373,65 @@ def test_a_parquet_read_as_a_csv_is_the_failure_being_fixed(tmp_path):
     # The exact exception is pandas', not ours - only that it cannot be done.
     with pytest.raises((UnicodeDecodeError, ValueError, pd.errors.ParserError)):
         pd.read_csv(path, index_col=0)
+
+
+# -- ranking on the result rather than on neutrality -------------------------
+#
+# Hitting the loading is often what the event is for - a gate operation or a
+# dambreak run needs the lake at a level - and AEP neutrality is the thing
+# traded against it. So the two are offered as orders, and whichever is not
+# ranked on is still in the table.
+
+def test_the_design_value_is_read_back_off_the_curve():
+    """value_for_aep inverts aep_for_level on the same interpolation."""
+    assert events.value_for_aep(LEVEL_CURVE, 1000) == pytest.approx(220.0)
+    level = events.value_for_aep(LEVEL_CURVE, 3000)
+    assert 220.0 < level < 223.0
+    assert events.aep_for_level(LEVEL_CURVE, level).aep == pytest.approx(3000, rel=0.01)
+
+
+def test_an_aep_off_the_curve_has_no_design_value():
+    """Reported as NaN, not extrapolated - the caller says so and falls back."""
+    assert math.isnan(events.value_for_aep(LEVEL_CURVE, 1_000_000))
+    assert math.isnan(events.value_for_aep(LEVEL_CURVE, 2))
+
+
+def test_ranking_on_the_result_takes_the_event_that_reaches_the_level(mcdf, scored):
+    """Row 1 reaches 220.5 m off 1 in 100 rainfall; row 0 is the neutral one.
+
+    Ranked on neutrality row 0 wins, which is the default and right when the
+    AEP is the loading. Ranked on the level, the event that actually gets there
+    wins and its rainfall is left to the flags to argue about.
+    """
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.5)
+    assert events.rank(on_level, count=3, order=events.RESULT).candidates.index[0] == 1
+    assert events.rank(on_level, count=3).candidates.index[0] == 0
+
+
+def test_the_result_ranking_breaks_its_ties_on_neutrality(mcdf):
+    """Four events reach the same level; the least neutral one comes last."""
+    mcdf.loc[1, "level"] = 220.1                  # row 1's rainfall is 1 in 100
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.1)
+    order = list(events.rank(on_level, count=7, order=events.RESULT).candidates.index)
+    tied = [sim for sim in order if sim in (1, 3, 4, 5)]
+    assert tied == [3, 4, 5, 1], "the 1 in 100 rainfall should lose the tie"
+
+
+def test_without_a_design_value_the_result_ranking_says_what_it_used(scored):
+    """No level to measure against - the result axis in z is the same order."""
+    ranking = events.rank(scored, count=7, order=events.RESULT)
+    assert any("no design value" in note for note in ranking.notes)
+    distances = ranking.candidates["d_z_result"].abs()
+    assert distances.is_monotonic_increasing
+
+
+def test_the_delta_to_the_loading_is_reported_either_way(mcdf, scored):
+    """The column is there whether or not it is ranked on - and NaN, not zero,
+    where there is no design value, so nothing reads as a perfect match."""
+    assert scored["delta_value"].isna().all()
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.5)
+    assert on_level.loc[1, "delta_value"] == pytest.approx(0.0)
+    assert on_level.loc[2, "delta_value"] == pytest.approx(6.5)

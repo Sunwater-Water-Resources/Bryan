@@ -185,17 +185,23 @@ def _curve_sources(project, sources, result_type):
     return found.get(result_type, [])
 
 
-def level_curve(project, sources) -> pd.Series:
-    """The level frequency curve a level target is read off.
+def envelope_curve(project, sources, result_type="level") -> pd.Series:
+    """The design frequency curve a loading is read against.
 
     The **envelope** over the durations, not one duration's curve, because the
     envelope is the design quantile - the number a loading of '220.5 m AHD' was
-    quoted from in the first place.
+    quoted from in the first place. The same curve read the other way gives the
+    design value at a design AEP, which is what ranking on the result needs.
     """
-    curves = _curve_sources(project, sources, "level")
+    curves = _curve_sources(project, sources, result_type)
     if not curves:
         return pd.Series(dtype=float)
     return results.analyse(results.compare(curves)).envelope
+
+
+def level_curve(project, sources) -> pd.Series:
+    """The level envelope - the curve a level loading is read off."""
+    return envelope_curve(project, sources, "level")
 
 
 def critical_source(project, sources, result_type, target_aep):
@@ -239,6 +245,7 @@ class Outcome:
 
     target: Target
     aep: float | None = None
+    target_value: float | None = None        # the loading in the result's units
     source: EventSource | None = None
     ranking: object = None                   # EVENTS.Ranking
     notes: list = field(default_factory=list)
@@ -267,21 +274,43 @@ class Outcome:
 
 
 def evaluate(project, sources, target: Target, filters: Filters,
-             curve=None) -> Outcome:
-    """Rank the realisations of one database against one loading."""
+             curve=None, order=EVENTS.DELTA_Z, curves=None) -> Outcome:
+    """Rank the realisations of one database against one loading.
+
+    ``order`` is what closeness means - see ``EVENTS.rank``. Ranking on the
+    result needs the loading in the result's own units: a level loading names
+    it outright, and a design AEP has it read off the design curve for the
+    result type. ``curve`` is the level envelope (a level loading is always
+    read off the level curve, whatever result is being ranked); ``curves`` is
+    the caller's cache of envelopes by result type, so the page does not
+    rebuild one per loading.
+    """
     outcome = Outcome(target=target)
     if not sources:
         outcome.problem = "No Monte Carlo database has been run for this group."
         return outcome
 
-    aep, above_curve = target.value, False
+    def envelope(result_type):
+        if result_type == "level" and curve is not None and len(curve):
+            return curve
+        if curves is not None and result_type in curves:
+            return curves[result_type]
+        found = envelope_curve(project, sources, result_type)
+        if curves is not None:
+            curves[result_type] = found
+        return found
+
+    aep, above_curve, target_value = target.value, False, None
     if target.kind == "level":
-        curve = level_curve(project, sources) if curve is None else curve
-        if curve is None or len(curve) == 0:
+        # The loading is a lake level, so it is read off the level curve even
+        # when the ranking is on inflow.
+        target_value = target.value if target.result_type == "level" else None
+        level = envelope("level")
+        if level is None or len(level) == 0:
             outcome.problem = ("There is no level frequency curve to read this "
                                "loading off - the rows have not been analysed.")
             return outcome
-        lookup = EVENTS.aep_for_level(curve, target.value)
+        lookup = EVENTS.aep_for_level(level, target.value)
         above_curve = lookup.above_curve
         aep = lookup.aep
         if lookup.note:
@@ -290,6 +319,25 @@ def evaluate(project, sources, target: Target, filters: Filters,
             outcome.problem = lookup.note or "The level is off the frequency curve."
             return outcome
     outcome.aep = aep
+
+    if order == EVENTS.RESULT and target_value is None and aep and not above_curve:
+        # The loading is named in the wrong units for this ranking - a design
+        # AEP, or a level while the inflow is being ranked - so the design
+        # value at that AEP is read off the curve for the result type.
+        design = envelope(target.result_type)
+        value = (EVENTS.value_for_aep(design, aep)
+                 if design is not None and len(design) else float("nan"))
+        target_value = None if value != value else float(value)
+        if target_value is None:
+            outcome.notes.append(
+                f"No design {target.result_type} at 1 in "
+                f"{results.format_aep(aep)} on the envelope, so the ranking "
+                f"falls back to the result AEP.")
+        else:
+            outcome.notes.append(
+                f"Ranking on {target.result_type}: the design value at 1 in "
+                f"{results.format_aep(aep)} is {target_value:,.2f}.")
+    outcome.target_value = target_value
 
     source = _source_named(sources, target.source)
     if source is None:
@@ -309,9 +357,10 @@ def evaluate(project, sources, target: Target, filters: Filters,
 
     # Above the curve there is no target to be near; rank() sorts by level
     # instead, and the scoring AEP is only there to fill the distance columns.
-    scored = EVENTS.score(frame, aep or _top_aep(frame), target.rain_aep)
+    scored = EVENTS.score(frame, aep or _top_aep(frame), target.rain_aep,
+                          target_value=target_value)
     outcome.ranking = EVENTS.rank(scored, filters, target.count,
-                                  above_curve=above_curve)
+                                  above_curve=above_curve, order=order)
     return outcome
 
 
@@ -347,10 +396,12 @@ def summary_rows(outcomes) -> list:
             "target aep (1 in x)": (round(outcome.aep, 1)
                                     if outcome.aep else ""),
             "source": outcome.source.label if outcome.source else "",
+            "target value": _round(outcome.target_value, 2),
             "output file": outcome.source.output_name if outcome.source else "",
             "sim": "", "hydrograph": "",
             "rain aep (1 in x)": "", "result aep (1 in x)": "",
-            "delta z": "", "level": "", "inflow": "", "outflow": "",
+            "delta z": "", "delta target": "",
+            "level": "", "inflow": "", "outflow": "",
             "sub-burst ratio": "", "preburst percentile": "",
             "lake z": "", "adv (ml)": "", "flags": outcome.problem,
         }
@@ -362,6 +413,7 @@ def summary_rows(outcomes) -> list:
                 "rain aep (1 in x)": _round(picked.get("rain_aep"), 1),
                 "result aep (1 in x)": _round(picked.get("result_aep"), 1),
                 "delta z": _round(picked.get("delta_z"), 3),
+                "delta target": _round(picked.get("delta_value"), 2),
                 "level": _round(picked.get("level"), 2),
                 "inflow": _round(picked.get("inflow"), 1),
                 "outflow": _round(picked.get("outflow"), 1),
@@ -392,6 +444,7 @@ CANDIDATE_COLUMNS = (
     ("rain_aep", "Rain AEP"),
     ("result_aep", "Result AEP"),
     ("delta_z", "\u0394z"),
+    ("delta_value", "\u0394 target"),
     ("subburst_ratio", "Sub-burst"),
     ("preburst_p", "Pre-burst p"),
     ("lake_z", "Lake z"),
@@ -401,7 +454,8 @@ CANDIDATE_COLUMNS = (
     ("flags", "Flags"),
 )
 
-_PLACES = {"rain_aep": 0, "result_aep": 0, "delta_z": 3, "subburst_ratio": 2,
+_PLACES = {"rain_aep": 0, "result_aep": 0, "delta_z": 3, "delta_value": 2,
+           "subburst_ratio": 2,
            "preburst_p": 2, "lake_z": 2, "level": 2, "inflow": 0, "outflow": 0}
 
 

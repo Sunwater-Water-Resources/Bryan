@@ -33,6 +33,12 @@ TYPE_LABELS = {"level": "Lake level", "inflow": "Peak inflow",
 
 KIND_LABELS = {"aep": "AEP", "level": "Lake level"}
 
+# What "closest" means. Neutrality is usually secondary to reaching the loading
+# - an event exists to put the lake at a level - so both are offered and the
+# one not ranked on is still reported in the table.
+ORDER_LABELS = {events.EVENTS.DELTA_Z: "\u0394z (AEP neutral)",
+                events.EVENTS.RESULT: "Closest result"}
+
 # Enough to see the shape of the cloud around the target without turning the
 # table into a second database.
 DEFAULT_COUNT = 10
@@ -75,11 +81,13 @@ class _EventsView:
         self.available = available            # group -> [EventSource]
         self.group = next(iter(available), None)
         self.result_type = "level"
+        self.order = events.EVENTS.DELTA_Z
         self.targets: list = []
         self.filters = events.Filters()
         self.outcomes: list = []
         self.folder = None
         self._curve = None                    # the level envelope, per group
+        self._curves: dict = {}               # design envelopes by result type
         # Which loading cards are open. Every redraw rebuilds the expansions,
         # so without this the first one springs open and the one being worked
         # on shuts every time an event is picked.
@@ -108,6 +116,14 @@ class _EventsView:
                           ).classes("min-w-96")
                 ui.toggle(TYPE_LABELS, value=self.result_type,
                           on_change=self._on_type).props("no-caps dense")
+                ui.toggle(ORDER_LABELS, value=self.order,
+                          on_change=self._on_order).props("no-caps dense") \
+                    .mark("rank-order") \
+                    .tooltip("\u0394z ranks on reaching the loading and being "
+                             "AEP neutral about it, at once. Closest result "
+                             "ranks on the loading itself - the level in "
+                             "metres, or the design value at that AEP - and "
+                             "leaves neutrality to be read off the table.")
                 ui.button("Reload", icon="refresh", on_click=self._reload
                           ).props("flat dense")
             ui.separator()
@@ -174,6 +190,7 @@ class _EventsView:
     def _load_group(self, group) -> None:
         self.group = group
         self._curve = None
+        self._curves = {}
         sources = self._sources()
         self.folder = events.default_folder(sources)
 
@@ -184,6 +201,8 @@ class _EventsView:
         # Before the defaults are built, so they are made for the right type.
         if settings.get("result_type") in TYPE_LABELS:
             self.result_type = settings["result_type"]
+        if settings.get("order") in ORDER_LABELS:
+            self.order = settings["order"]
         self.targets = saved or [
             events.Target(kind="aep", value=aep, result_type=self.result_type,
                           count=DEFAULT_COUNT)
@@ -221,7 +240,8 @@ class _EventsView:
         sources = self._sources()
         self.outcomes = [
             events.evaluate(self.project, sources, target, self.filters,
-                            curve=self._curve_for_levels())
+                            curve=self._curve_for_levels(), order=self.order,
+                            curves=self._curves)
             for target in self.targets
         ]
         if redraw_targets:
@@ -365,6 +385,10 @@ class _EventsView:
             target.result_type = self.result_type
         self.refresh()
 
+    def _on_order(self, event) -> None:
+        self.order = event.value
+        self.refresh()
+
     def _on_filter(self, name, value) -> None:
         if name in ("aep_of_pmp", "max_delta_z"):
             value = float(value) if value not in (None, "") else None
@@ -425,6 +449,7 @@ class _EventsView:
 
     def _settings(self) -> dict:
         return {"result_type": self.result_type,
+                "order": self.order,
                 "aep_of_pmp": self.filters.aep_of_pmp,
                 "max_delta_z": self.filters.max_delta_z,
                 "exclude_embedded": self.filters.exclude_embedded,
