@@ -316,3 +316,66 @@ def test_the_plots_can_be_skipped(project):
     run(project, selection, "--no-plots")
     assert not list(selection.parent.glob("*.png"))
     assert (selection.parent / "GWL1p3_representative_events_events.xlsx").is_file()
+
+
+# -- where the storm inputs come from ----------------------------------------
+#
+# A reservoir routing row leaves Duration and Focal subcatchments blank by
+# design - it re-routes hydrographs a previous run stored - so the storm behind
+# a realisation belongs to the run its Input MCDF names. Rebuilding off the
+# routed row instead reached pd.read_csv(None) and reported a NoneType buffer.
+
+def sims_frame(rows):
+    return pd.DataFrame(rows)
+
+
+ROUTED = {"Method": "reservoir routing", "Output file": r"routed\TFD_rr_FSL672",
+          "Input MCDF": r"sims_mc\results\TFD_mc_24h_GWL1p3__mcdf.csv",
+          "Duration": None, "Focal subcatchments": None, "Output suffix": "_FSL672"}
+SOURCE = {"Method": "monte carlo", "Output file": OUTPUT_FILE, "Input MCDF": None,
+          "Duration": 24, "Focal subcatchments": "focal.csv", "Output suffix": ""}
+
+
+def test_a_routed_row_takes_its_storm_inputs_from_the_run_it_re_routed():
+    module = cli()
+    frame = sims_frame([SOURCE, ROUTED])
+    row, note = module.storm_row(frame, frame.loc[1])
+    assert row["Output file"] == OUTPUT_FILE
+    assert row["Duration"] == 24
+    assert "TFD_mc_24h_GWL1p3" in note
+
+
+def test_a_monte_carlo_row_is_its_own_storm_row():
+    module = cli()
+    frame = sims_frame([SOURCE, ROUTED])
+    row, note = module.storm_row(frame, frame.loc[0])
+    assert row["Output file"] == OUTPUT_FILE
+    assert note is None
+
+
+def test_a_routed_row_whose_source_is_not_in_the_sims_list_says_so():
+    module = cli()
+    frame = sims_frame([ROUTED])
+    row, note = module.storm_row(frame, frame.loc[0])
+    assert row is None
+    assert "TFD_mc_24h_GWL1p3__mcdf.csv" in note and "no-hyetograph" in note
+
+
+def test_a_row_with_no_focal_subcatchments_names_the_key(project):
+    module = cli()
+    config = module.load_config(str(project / "sims_config.json"))
+    row = pd.Series({"Output file": OUTPUT_FILE, "Duration": 24,
+                     "Focal subcatchments": None})
+    with pytest.raises(ValueError) as raised:
+        module.rebuild_hyetograph(row, None, config, {})
+    assert "Focal subcatchments" in str(raised.value)
+
+
+def test_the_focal_file_has_to_exist(project):
+    module = cli()
+    config = module.load_config(str(project / "sims_config.json"))
+    row = pd.Series({"Output file": OUTPUT_FILE, "Duration": 24,
+                     "Focal subcatchments": "no_such_focal.csv"})
+    with pytest.raises(ValueError) as raised:
+        module.rebuild_hyetograph(row, None, config, {})
+    assert "not found" in str(raised.value)

@@ -20,6 +20,10 @@ that one realisation and checks the result against the depths the run itself
 recorded. A rebuild that does not match is reported on the plot and in the
 workbook rather than passed off as the storm that was modelled.
 
+The storm inputs are not always on the row the event came from: a reservoir
+routing row leaves ``Duration`` and ``Focal subcatchments`` blank, so the
+rebuild follows its ``Input MCDF`` back to the row that generated the storms.
+
 Time is measured **from the start of the main burst**, so the pre-burst runs at
 negative times and events with different pre-burst durations line up with each
 other. The stored hydrographs start at the beginning of the storm file, which
@@ -107,6 +111,72 @@ def find_row(frame, output_file):
         if os.path.basename(str(value).replace('\\', '/')) == wanted:
             return frame.loc[index]
     return None
+
+
+def storm_row(frame, row):
+    """The sims-list row holding the storm inputs behind an event.
+
+    A **reservoir routing** row has none of them: it re-routes hydrographs a
+    previous run stored, so ``Duration`` and ``Focal subcatchments`` are blank
+    by design (see Manual/SubDocs/sim_list.md). The storm behind a realisation
+    belongs to the run named by that row's ``Input MCDF``, so that is the row
+    to rebuild from - without this the rebuild reaches
+    ``load_subcatchment_areas(None)`` and pandas complains about a NoneType
+    buffer, which says nothing about the actual problem.
+
+    Returns ``(row, note)``; the row is None where the source cannot be found.
+    """
+    if row is None:
+        return None, 'the sims-list row was not found, so there is nothing to rebuild from'
+    method = str(cell(row, 'Method', 'monte carlo')).strip().lower()
+    if method != 'reservoir routing':
+        return row, None
+
+    database = None
+    for name in ('Input MCDF', 'Input database'):
+        database = cell(row, name)
+        if database:
+            break
+    routed = str(cell(row, 'Output file', ''))
+    if not database:
+        return None, ('this is a reservoir routing row and it names no "Input MCDF", '
+                      'so the run that generated the storms cannot be identified')
+
+    source = _row_behind(frame, database, exclude=routed)
+    if source is None:
+        return None, (f'this is a reservoir routing row and no sims-list row produced '
+                      f'{os.path.basename(str(database))}, so the storm inputs '
+                      f'(Duration, Focal subcatchments) are not available - run the CLI '
+                      f'against the sims list holding the source run, or pass '
+                      f'--no-hyetograph')
+    return source, (f'reservoir routing row: the storm inputs come from '
+                    f'{os.path.basename(str(cell(source, "Output file", "")))}, '
+                    f'the run that produced {os.path.basename(str(database))}')
+
+
+def _row_behind(frame, database, exclude=''):
+    """The row whose ``Output file`` produced an input database.
+
+    Monte Carlo input is ``<Output file>__mcdf.csv``, ensemble input is
+    ``<Output file><suffix>.csv``, and a re-routed database carries an
+    ``Output suffix`` as well - so the match is on the stem *starting* with an
+    Output file name, longest first, rather than on equality.
+    """
+    if frame is None or 'Output file' not in frame.columns:
+        return None
+    stem = os.path.splitext(os.path.basename(str(database).replace('\\', '/')))[0]
+    excluded = os.path.basename(str(exclude).replace('\\', '/'))
+    best, best_length = None, -1
+    for index in frame.index:
+        candidate = frame.loc[index].get('Output file')
+        if pd.isna(candidate):
+            continue
+        name = os.path.basename(str(candidate).replace('\\', '/'))
+        if not name or name == excluded:
+            continue
+        if stem.startswith(name) and len(name) > best_length:
+            best, best_length = frame.loc[index], len(name)
+    return best
 
 
 def cell(row, name, default=None):
@@ -232,10 +302,17 @@ def collect(target, frame, config, storms, rebuild=True):
         else:
             notes.append(f'no {kind} for {column} in {name}')
 
+    # The storm inputs are not always on this row: a routed row re-routes
+    # someone else's hydrographs and leaves Duration and Focal subcatchments
+    # blank, so the storm - and the storm duration - belong to the source run.
+    storm_source, storm_note = storm_row(frame, row)
+    if storm_note and rebuild:
+        notes.append(storm_note)
+
     hyeto = None
-    if rebuild and sim is not None:
+    if rebuild and sim is not None and storm_source is not None:
         try:
-            hyeto = rebuild_hyetograph(row, sim, config, storms)
+            hyeto = rebuild_hyetograph(storm_source, sim, config, storms)
         except Exception as error:                    # noqa: BLE001 - one event, not the run
             notes.append(f'the hyetograph could not be rebuilt ({error})')
     if hyeto is not None and not hyeto.trustworthy:
@@ -243,7 +320,7 @@ def collect(target, frame, config, storms, rebuild=True):
                      for problem in hyeto.problems)
 
     period = simulation_period(config['filepaths'].get('model_config'),
-                              cell(row, 'Duration', 0))
+                              cell(storm_source, 'Duration', cell(row, 'Duration', 0)))
     # Any one of them dates the run - but `a or b` on a Series raises, so pick
     # the first that is actually there rather than leaning on truthiness.
     reference = next((series[kind] for kind in ('inflows', 'levels', 'outflows')
@@ -258,17 +335,35 @@ def collect(target, frame, config, storms, rebuild=True):
 
 
 def rebuild_hyetograph(row, sim, config, storms):
-    """The storm behind one realisation, reusing the run's rainfall data."""
+    """The storm behind one realisation, reusing the run's rainfall data.
+
+    ``row`` is the row that generated the storms - ``storm_row`` above, not
+    necessarily the row the event was chosen from.
+    """
+    name = str(cell(row, 'Output file', 'the row'))
     duration = float(cell(row, 'Duration', 0) or 0)
     if not duration:
-        raise ValueError('the row has no Duration')
+        raise ValueError(f'{name} has no Duration in the sims list')
+
+    # Everything the rebuild needs, checked here rather than several libraries
+    # down: pandas and json both report a missing path as a type error, which
+    # names neither the key nor the row it should have come from.
+    focal = resolve(config['project_folder'], cell(row, 'Focal subcatchments'))
+    if not focal:
+        raise ValueError(f'{name} has no "Focal subcatchments" in the sims list, and '
+                         'the catchment average rainfall is weighted by those areas')
+    if not os.path.isfile(focal):
+        raise ValueError(f'the focal subcatchments file was not found: {focal}')
+    storm_config = config['filepaths'].get('storm_config')
+    if not storm_config or not os.path.isfile(str(storm_config)):
+        raise ValueError('the sims config names no storm_config file, so the rainfall '
+                         'data cannot be loaded')
 
     key = (str(cell(row, 'Output file', '')), duration)
     if key not in storms:
         context = EventStorm.StormContext(
-            storm_config=config['filepaths'].get('storm_config'),
-            focal_subcatchments=resolve(config['project_folder'],
-                                        cell(row, 'Focal subcatchments')),
+            storm_config=storm_config,
+            focal_subcatchments=focal,
             duration=duration,
             climate_config=config['filepaths'].get('climate_config'),
             gwl=cell(row, 'GWL'), year=cell(row, 'Year'), ssp=cell(row, 'SSP'),
