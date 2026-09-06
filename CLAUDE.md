@@ -308,6 +308,13 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   **Which loading cards are open is view state the page has to keep** (`open_cards`): picking an
   event redraws every expansion, so a `value=position == 0` on the rebuild collapsed the card
   being worked on and sprang the first one open under it.
+  **Ranking has two orders and neither is a filter** (`rank(order=...)`): `delta_z` is the
+  distance on both axes at once, `result` is the distance from the loading in the result's own
+  units (`delta_value`, ties broken on `delta_z`) — for the common case where hitting the lake
+  level matters more than AEP neutrality. A level loading names that value; a design AEP has it
+  read back off the envelope by `value_for_aep`, the inverse of `aep_for_level` on the same
+  (log value, z) interpolation. Both distances are always computed, so whichever is not ranked
+  on is still in the table.
 - **A critical-duration crossover is judged over the range the new duration holds, not at the
   crossing point.** The margin at a crossover is near zero by definition — the curves are equal
   there — so measuring strength there would dismiss every real crossover as noise. `Band.peak_margin`

@@ -171,6 +171,15 @@ The rank is the distance from the loading, measured on two axes at once: the flo
 
 Distance is measured in **standard normal variate space**, not in ```1 in X```. At a 1 in 2,000 loading, being 200 out is nothing; at 1 in 100 it is everything, and a distance in ```1 in X``` would rank the rare end almost at random. The ```1 in X``` distance the older ```util/GetRepresentativeEvents.py``` sorts on is still computed, as ```delta_aep```, so a selection made with that script can be checked.
 
+**Rank by** chooses between the two, and it is the control to reach for when reaching the loading matters more than being neutral about it:
+
+| Rank by | Sorts on | Use it when |
+| ----------- | ----------- | ----------- |
+| ```Δz (AEP neutral)``` | both axes at once — the default | the loading is a design AEP and the event has to be defensible as that AEP |
+| ```Closest result``` | the result alone: how far the event is from the loading **in its own units** (metres for a lake level, m³/s for a flow), with Δz breaking the ties | the event exists to put the lake at a particular level, and the rarity of the rainfall is something to check afterwards rather than to rank on |
+
+A lake level loading names the target outright. A **design AEP** loading is converted the other way — the design value at that AEP is read off the same envelope curve, and the page says what it read — so ```Closest result``` works for both. Where the curve cannot answer (an AEP off the end of it), the ranking falls back to the result AEP and says so. The distance is reported as **Δ target** in the candidate table and in the exported list whichever order is in force, so the measure not being ranked on can still be read.
+
 ### What it warns about
 
 Closeness is not enough on its own, so every candidate carries the things that would make it indefensible:

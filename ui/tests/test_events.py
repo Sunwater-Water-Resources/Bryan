@@ -293,3 +293,57 @@ def test_the_database_is_read_once_and_re_read_when_it_changes(project):
     frame.loc[0, "level"] = 999.0
     frame.to_csv(source.path)
     assert events.prepared(source, "level") is not first
+
+
+# -- what "closest" means ----------------------------------------------------
+
+def test_ranking_on_the_result_reads_the_design_value_off_the_envelope(project):
+    """A loading quoted as an AEP still has a level the event has to reach."""
+    sources = events.sources_for_rows(project)
+    curve = events.level_curve(project, sources)
+    target = events.Target(kind="aep", value=1000, result_type="level",
+                           source="24h", count=3)
+
+    outcome = events.evaluate(project, sources, target, events.Filters(),
+                              order=events.EVENTS.RESULT)
+    assert outcome.target_value == pytest.approx(float(curve.loc[1000]), rel=1e-6)
+    assert any("design value at 1 in" in note for note in outcome.notes)
+
+
+def test_a_level_loading_ranks_on_the_level_it_names(project):
+    """No curve read needed - the loading is already in metres."""
+    sources = events.sources_for_rows(project)
+    curve = events.level_curve(project, sources)
+    level = float(curve.loc[1000])
+    target = events.Target(kind="level", value=level, result_type="level",
+                           source="24h", count=7)
+
+    outcome = events.evaluate(project, sources, target, events.Filters(),
+                              order=events.EVENTS.RESULT)
+    assert outcome.target_value == pytest.approx(level)
+    distances = (outcome.candidates["level"] - level).abs()
+    assert distances.is_monotonic_increasing
+
+
+def test_the_default_order_is_still_the_neutral_one(project):
+    """The change is an option, not a new default."""
+    sources = events.sources_for_rows(project)
+    target = events.Target(kind="aep", value=1000, result_type="level",
+                           source="24h", count=3)
+    outcome = events.evaluate(project, sources, target, events.Filters())
+    assert outcome.picked_id == 0
+    assert outcome.target_value is None
+
+
+def test_ranking_the_inflow_reads_the_inflow_curve(project):
+    """The design value comes from the curve for the result being ranked."""
+    sources = events.sources_for_rows(project)
+    levels = events.level_curve(project, sources)
+    inflows = events.envelope_curve(project, sources, "inflow")
+    target = events.Target(kind="aep", value=1000, result_type="inflow",
+                           source="24h", count=3)
+
+    outcome = events.evaluate(project, sources, target, events.Filters(),
+                              order=events.EVENTS.RESULT)
+    assert outcome.target_value == pytest.approx(float(inflows.loc[1000]), rel=1e-6)
+    assert outcome.target_value != pytest.approx(float(levels.loc[1000]), rel=1e-6)

@@ -58,6 +58,11 @@ import pandas as pd
 
 RESULT_TYPES = ('level', 'inflow', 'outflow')
 
+# What 'closest to the loading' means when the candidates are ranked. See rank().
+DELTA_Z = 'delta_z'          # both axes: reach the loading, and be neutral about it
+RESULT = 'result'            # the result alone: hit the level, report the neutrality
+ORDERS = (DELTA_Z, RESULT)
+
 # lib/Simulator.py:1115-1116 writes these in pairs, one per sub-duration
 # shorter than the storm. Their ratio is the quantitative embedded burst
 # measure; the 'embedded_bursts' comment is the same finding in words.
@@ -302,6 +307,45 @@ def aep_for_level(curve, level) -> LevelLookup:
     return LevelLookup(level=level, note='could not interpolate the AEP')
 
 
+def value_for_aep(curve, aep) -> float:
+    """The design value a frequency curve gives at an AEP - the inverse of
+    ``aep_for_level``, on the same (log value, z) interpolation.
+
+    This is what lets a **design AEP** loading be ranked on the result itself:
+    the loading is quoted as a 1 in X, but what the event has to hit is the
+    lake level that goes with it. NaN where the curve cannot answer, which the
+    caller reports rather than silently ranking on something else.
+    """
+    z_target = normal_variate(aep)
+    if math.isnan(z_target):
+        return math.nan
+
+    points = []
+    for curve_aep, value in dict(curve).items():
+        z = normal_variate(curve_aep)
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(z) or math.isnan(value) or value <= 0:
+            continue
+        points.append((z, math.log10(value)))
+    points.sort()
+    if len(points) < 2:
+        return math.nan
+
+    if z_target <= points[0][0]:
+        return 10 ** points[0][1] if z_target == points[0][0] else math.nan
+    if z_target >= points[-1][0]:
+        return 10 ** points[-1][1] if z_target == points[-1][0] else math.nan
+    for (z0, v0), (z1, v1) in zip(points, points[1:]):
+        if z0 <= z_target <= z1:
+            if z1 == z0:
+                return 10 ** v0
+            return 10 ** (v0 + (v1 - v0) * (z_target - z0) / (z1 - z0))
+    return math.nan
+
+
 # -- the metrics -------------------------------------------------------------
 
 def prepare(frame, result_type: str) -> pd.DataFrame:
@@ -332,6 +376,10 @@ def prepare(frame, result_type: str) -> pd.DataFrame:
     else:
         out['z_rain'] = pd.to_numeric(
             out.get('rain_aep'), errors='coerce').map(normal_variate)
+
+    # The result in its own units - metres for a level, m3/s for a flow - so a
+    # loading can be ranked on what it actually has to hit as well as on its AEP.
+    out['result_value'] = pd.to_numeric(out.get(result_type), errors='coerce')
 
     out['subburst_ratio'] = _subburst_ratio(out)
     out['preburst_offset'] = _offset(out, 'preburst_p')
@@ -367,12 +415,18 @@ def _subburst_ratio(frame) -> pd.Series:
     return pd.concat(ratios, axis=1).max(axis=1, skipna=True)
 
 
-def score(prepared, target_aep, rain_aep=None) -> pd.DataFrame:
+def score(prepared, target_aep, rain_aep=None, target_value=None) -> pd.DataFrame:
     """Distance from one target. Cheap - call it per loading.
 
     ``rain_aep`` overrides the rainfall AEP the event is judged against. It
     defaults to the target, which is the AEP-neutral case; setting it asks for
     events whose rainfall is deliberately more or less rare than their flood.
+
+    ``target_value`` is the loading in the result's own units - the lake level
+    a loading of '220.5 m AHD' names outright, or the level the design curve
+    gives at a '1 in 2,000'. It fills ``d_value``/``delta_value``, which
+    ``rank(order='result')`` sorts on: hitting the level is often what the
+    event is for, and AEP neutrality the thing traded against it.
     """
     target_aep = float(target_aep)
     rain_target = float(rain_aep) if rain_aep else target_aep
@@ -390,6 +444,13 @@ def score(prepared, target_aep, rain_aep=None) -> pd.DataFrame:
     d_result = out['result_aep'] - target_aep
     d_rain = pd.to_numeric(out.get('rain_aep'), errors='coerce') - rain_target
     out['delta_aep'] = (d_result ** 2 + d_rain ** 2) ** 0.5
+
+    values = pd.to_numeric(out.get('result_value'), errors='coerce')
+    if target_value is None or values is None or _isnan(target_value):
+        out['d_value'] = pd.Series(math.nan, index=out.index)
+    else:
+        out['d_value'] = values - float(target_value)
+    out['delta_value'] = out['d_value'].abs()
     return out
 
 
@@ -429,6 +490,24 @@ class Ranking:
     @property
     def is_empty(self) -> bool:
         return self.candidates.empty
+
+
+def _by_result(frame) -> tuple:
+    """Sorted by how close the result is to the loading, ties on ``delta_z``.
+
+    The loading's own units where they are known. Where they are not - no
+    design value for that AEP, or a database with no such column - the result
+    axis in z is the same order for the same reason, and the note says so
+    rather than leaving the table looking like it sorted on the level.
+    """
+    distance = pd.to_numeric(frame.get('delta_value'), errors='coerce')
+    if distance is not None and distance.notna().any():
+        return frame.assign(_distance=distance).sort_values(
+            by=['_distance', 'delta_z']).drop(columns='_distance'), ''
+    return (frame.assign(_distance=frame['d_z_result'].abs())
+            .sort_values(by=['_distance', 'delta_z']).drop(columns='_distance'),
+            'Ranked on the result AEP: there is no design value at this '
+            'loading to measure against.')
 
 
 def flags_for(row, filters: Filters = Filters()) -> tuple:
@@ -531,8 +610,20 @@ def _isnan(value) -> bool:
 
 
 def rank(scored, filters: Filters = Filters(), count: int = 10,
-         above_curve: bool = False) -> Ranking:
+         above_curve: bool = False, order: str = DELTA_Z) -> Ranking:
     """The best candidates for one target, and an account of the rest.
+
+    ``order`` is what closeness means here:
+
+    - ``'delta_z'`` (the default) is the distance on both axes at once - the
+      event should reach the loading *and* be AEP neutral about it.
+    - ``'result'`` sorts on the result alone: the difference from the loading
+      in its own units (``delta_value``) where the target value is known, and
+      failing that the distance on the result axis in z. Neutrality is then
+      reported rather than ranked on, which is the right way round when the
+      event exists to reach a particular lake level and the rainfall's rarity
+      is a thing to be checked afterwards. ``delta_z`` breaks its ties, so of
+      two events at the same level the neutral one still comes first.
 
     ``above_curve`` comes from ``aep_for_level``: the loading is rarer than
     anything simulated, so there is no distance to minimise and the honest
@@ -576,6 +667,10 @@ def rank(scored, filters: Filters = Filters(), count: int = 10,
 
     if above_curve:
         frame = frame.sort_values(by=['level', 'rain_aep'], ascending=False)
+    elif order == RESULT:
+        frame, note = _by_result(frame)
+        if note:
+            result.notes.append(note)
     else:
         frame = frame.sort_values(by=['delta_z', 'd_z_result'])
 
