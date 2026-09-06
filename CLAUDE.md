@@ -335,6 +335,11 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
   than the model config's simulation period, which `Simulator.run_models` lengthens by exactly
   that amount. It reads the simulation period out of the JSON rather than through `UrbsModel`,
   whose constructor rmtree's the run's working folder.
+  **The storm inputs come from the row that generated the storms, not the row the event
+  came from**: a reservoir routing row has no `Duration` and no `Focal subcatchments`, so
+  `storm_row` follows its `Input MCDF` back to the source run. Without that the rebuild
+  reached `load_subcatchment_areas(None)` and pandas reported a NoneType buffer, which
+  named neither the key nor the row.
 - `GetRepresentativeEvents.py` picks representative events and then extracts and plots their
   hydrographs, driven by an `_analyseRepresentativeEvents.xlsx` control sheet with hard-coded
   paths. The **selection** half of it now also exists as `lib/RepresentativeEvents.py`, which
