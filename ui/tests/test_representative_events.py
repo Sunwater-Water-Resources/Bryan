@@ -523,3 +523,40 @@ def test_the_rounding_decides_between_equally_distant_events(mcdf):
 
     rounded = events.rank(on_level, count=7, order=events.RESULT, rounding=0.05)
     assert rounded.candidates.index[0] == 0
+
+
+# -- the design curve and the realisations are two different answers ----------
+
+def _run(levels, variates):
+    return pd.DataFrame({"result_value": levels, "z_result": variates})
+
+
+def test_a_level_is_placed_where_this_run_reached_it():
+    """Not where the design curve puts it - the two are not the same number."""
+    run = _run([214.0, 220.0, 226.0], [2.0, 3.0, 4.0])
+    assert events.variate_at_value(run, 220.0) == pytest.approx(3.0)
+    assert events.variate_at_value(run, 223.0) == pytest.approx(3.5)
+
+
+def test_a_level_outside_the_run_has_no_place_in_it():
+    """NaN, not the nearest end: nothing in the run reached it."""
+    run = _run([214.0, 220.0, 226.0], [2.0, 3.0, 4.0])
+    assert math.isnan(events.variate_at_value(run, 230.0))
+    assert math.isnan(events.variate_at_value(run, 210.0))
+    assert math.isnan(events.variate_at_value(run, None))
+
+
+def test_a_run_with_nothing_analysed_places_nothing():
+    assert math.isnan(events.variate_at_value(_run([], []), 220.0))
+    assert math.isnan(events.variate_at_value(
+        _run([220.0], [float("nan")]), 220.0))
+
+
+def test_repeated_levels_are_placed_at_the_first_one_to_reach_it():
+    """Exceedance, not equality: everything rarer reaches the level too.
+
+    So a flat spot in the curve is entered at its frequent end - the AEP of
+    'this run reaches 220 m' is the first realisation that does.
+    """
+    run = _run([214.0, 220.0, 220.0, 226.0], [2.0, 3.0, 3.4, 4.0])
+    assert events.variate_at_value(run, 220.0) == pytest.approx(3.0)

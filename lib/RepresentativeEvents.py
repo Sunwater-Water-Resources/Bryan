@@ -51,6 +51,7 @@ import json
 import math
 import os
 import re
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from statistics import NormalDist
 
@@ -452,6 +453,47 @@ def score(prepared, target_aep, rain_aep=None, target_value=None) -> pd.DataFram
         out['d_value'] = values - float(target_value)
     out['delta_value'] = out['d_value'].abs()
     return out
+
+
+def variate_at_value(prepared, value) -> float:
+    """Where a result value sits in *this* database's own realisations, in z.
+
+    The design curve and the realisations answer the same question differently.
+    The curve says what AEP a level is; the realisations say what AEP the run
+    reached that level at. They are not the same number: the curve is the
+    envelope over the durations, it is read as a straight line between the
+    standard AEPs of the quantile table, and it has been through the analysis.
+    A plot that marks a level loading with the design AEP alone therefore puts
+    the mark somewhere the events do not agree with, for reasons that have
+    nothing to do with rounding.
+
+    NaN where the value is outside the range the run produced - that is the
+    honest answer, and a caller can say 'off the top of this run' with it.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return math.nan
+    if math.isnan(value):
+        return math.nan
+
+    pairs = prepared[['result_value', 'z_result']].dropna()
+    if pairs.empty:
+        return math.nan
+    pairs = pairs.sort_values('result_value')
+    values = pairs['result_value'].tolist()
+    variates = pairs['z_result'].tolist()
+    if value < values[0] or value > values[-1]:
+        return math.nan
+
+    position = bisect_left(values, value)
+    if position == 0:
+        return variates[0]
+    x0, x1 = values[position - 1], values[position]
+    z0, z1 = variates[position - 1], variates[position]
+    if x1 == x0:                                  # a flat spot, entered at its
+        return min(z0, z1)                        # frequent end - exceedance
+    return z0 + (z1 - z0) * (value - x0) / (x1 - x0)
 
 
 # -- filtering and ranking ---------------------------------------------------

@@ -92,7 +92,13 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
     z_target = normal_variate(outcome.aep) if outcome.aep else None
     z_rain_target = normal_variate(
         outcome.target.rain_aep or outcome.aep) if outcome.aep else None
-    for value in (z_target, z_rain_target):
+    # Where the loading sits in this database's own realisations, which is not
+    # where the design curve puts it: the curve is the envelope over the
+    # durations, read as a straight line between the standard AEPs and smoothed
+    # on the way. Marking only the design AEP makes that gap look like the plot
+    # is wrong, so both are drawn.
+    z_data = numeric(getattr(outcome, "data_z", None))
+    for value in (z_target, z_rain_target, z_data):
         if numeric(value) is not None:
             variates.append(value)
 
@@ -137,6 +143,17 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
             "z": 5,
             "data": [_point(picked, picked.name, CHOSEN)],
             "tooltip": {":formatter": _TOOLTIP},
+        })
+
+    if z_data is not None:
+        series.append({
+            "name": f"{outcome.target.label} in this run",
+            "type": "line",
+            "symbol": "none",
+            "silent": True,
+            "z": 2,
+            "lineStyle": {"color": CHOSEN, "type": "dotted", "width": 1.5},
+            "data": [[z_data, vertical["min"]], [z_data, vertical["max"]]],
         })
 
     if numeric(z_target) is not None:

@@ -277,6 +277,8 @@ class Outcome:
     target: Target
     aep: float | None = None
     target_value: float | None = None        # the loading in the result's units
+    data_z: float | None = None              # where that value sits in this run
+    data_aep: float | None = None
     source: EventSource | None = None
     ranking: object = None                   # EVENTS.Ranking
     notes: list = field(default_factory=list)
@@ -337,6 +339,7 @@ def evaluate(project, sources, target: Target, filters: Filters,
         # The loading is a lake level, so it is read off the level curve even
         # when the ranking is on inflow.
         target_value = target.value if target.result_type == "level" else None
+        # Set whatever the order is: the plot marks it either way.
         level = envelope("level")
         if level is None or len(level) == 0:
             outcome.problem = ("There is no level frequency curve to read this "
@@ -398,6 +401,23 @@ def evaluate(project, sources, target: Target, filters: Filters,
     except ValueError as error:
         outcome.problem = str(error)
         return outcome
+
+    if target_value is not None:
+        # Where the loading sits in this database's own realisations, which is
+        # not where the design curve puts it - see EVENTS.variate_at_value. The
+        # plot marks both, because a mark at the design AEP alone reads as an
+        # error in the run.
+        z_data = EVENTS.variate_at_value(frame, target_value)
+        if z_data == z_data:                             # not NaN
+            outcome.data_z = float(z_data)
+            outcome.data_aep = EVENTS.aep_of_variate(z_data)
+            z_design = EVENTS.normal_variate(aep) if aep else float("nan")
+            if z_design == z_design and abs(z_data - z_design) > 0.05:
+                outcome.notes.append(
+                    f"This run reaches {target_value:,.2f} at 1 in "
+                    f"{results.format_aep(outcome.data_aep)}; the design curve "
+                    f"puts it at 1 in {results.format_aep(aep)}. The plot marks "
+                    f"both.")
 
     # Above the curve there is no target to be near; rank() sorts by level
     # instead, and the scoring AEP is only there to fill the distance columns.

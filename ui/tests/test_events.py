@@ -384,3 +384,27 @@ def test_neither_is_mentioned_when_ranking_on_neutrality(project):
     outcome = events.evaluate(project, sources, _level_target(), events.Filters(),
                               band=0.02, rounding=0.01)
     assert not any("rounded" in note for note in outcome.notes)
+
+
+def test_a_level_loading_says_where_this_run_reached_it(project):
+    """The design AEP and the run's own AEP for a level are different numbers.
+
+    Both are honest and the page reports the gap rather than leaving the plot
+    looking like it marked the wrong place.
+    """
+    sources = events.sources_for_rows(project)
+    target = events.Target(kind="level", value=220.4, result_type="level",
+                           source="24h", count=5)
+    outcome = events.evaluate(project, sources, target, events.Filters())
+    # 220.4 m is off the top of this fixture's level curve but well inside the
+    # realisations, which is exactly the case the second mark is for.
+    assert outcome.data_z is not None
+    assert outcome.data_aep and outcome.data_aep > 1
+
+
+def test_a_level_outside_the_run_gets_no_second_mark(project):
+    sources = events.sources_for_rows(project)
+    target = events.Target(kind="level", value=400.0, result_type="level",
+                           source="24h", count=5)
+    outcome = events.evaluate(project, sources, target, events.Filters())
+    assert outcome.data_z is None
