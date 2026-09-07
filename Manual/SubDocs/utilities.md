@@ -38,7 +38,13 @@ It reads the selection file the launcher saved, and for each chosen event writes
 
 **The hyetograph is rebuilt, not read.** An mcdf records what was *sampled* - the rainfall variate, the pattern number, the pre-burst proportion - not the rainfall series, so the storm generation is replayed for that one realisation. The replay is then checked against three things the run itself wrote down: the catchment average burst depth (```mean_rain_mm```), the pre-burst depth (```preburst_mm```) and the embedded burst comment. A rebuild that disagrees with any of them is reported on the plot and in the workbook rather than presented as the storm that was modelled. Use ```--no-hyetograph``` to skip the rebuild, which is much faster and works where the rainfall data is not to hand.
 
-**Events chosen from a routed run take their storm from the run that was re-routed.** A ```reservoir routing``` row has no ```Duration``` and no ```Focal subcatchments``` - it re-routes hydrographs a previous run stored - so the script follows that row's ```Input MCDF``` back to the sims-list row that produced it and rebuilds from there, saying so in the notes. Both rows therefore have to be in the one simulation list; where the source run is not there, the event still gets its hydrographs and the note says why there is no hyetograph.
+**Events chosen from a routed run take their storm from the run that was re-routed.** A ```reservoir routing``` row has no ```Duration``` and no ```Focal subcatchments``` - it re-routes hydrographs a previous run stored - so the script follows that row's ```Input MCDF``` back to the sims-list row that produced it and rebuilds from there, saying so in the notes. The realisation itself is never the problem: a routed database is the inherited one with the routed peaks written over it, so every draw the storm was made from is still in the row. Only those two keys are missing, and there are three ways to supply them:
+
+- have the source run in the same simulation list, which is the usual case and needs nothing;
+- point at the list it *is* in with ```--source-sims-list``` (repeatable) - routing rows commonly live in a sims list of their own;
+- put a ```Duration``` and a ```Focal subcatchments``` on the routing row itself. The method ignores both, so they cost nothing and the rebuild will use them.
+
+Failing all three the event still gets its hydrographs, and the note says which two keys would have fixed it.
 
 Time on the plot runs **from the start of the main burst**, so the pre-burst is at negative times and events with different pre-burst durations can be compared. The stored hydrographs begin at the start of the storm file - that is, at the start of the pre-burst - so they are shifted by the pre-burst duration; where the hyetograph is not rebuilt, the shift comes from how much longer the run is than the simulation period in the model config, which Bryan lengthens by exactly that amount.
 

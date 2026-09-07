@@ -228,3 +228,25 @@ async def test_the_rounding_is_its_own_field(user, project):
     next(iter(user.find(marker="result-type").elements)).set_value("level")
     await user.should_see("Loadings")
     assert next(iter(user.find(marker="result-rounding").elements)).value == 25
+
+
+@pytest.mark.asyncio
+async def test_the_extract_command_can_be_copied(user, project):
+    """The command wraps over several lines, so copying it by hand loses half."""
+    _open(project)
+    await user.open("/events")
+
+    button = next(iter(user.find(marker="copy-command").elements))
+    written = []
+    from nicegui import ui as nicegui_ui
+    original = nicegui_ui.clipboard.write
+    nicegui_ui.clipboard.write = written.append
+    try:
+        listener = next(listener for listener in button._event_listeners.values()
+                        if listener.type == "click")
+        button._handle_event({"listener_id": listener.id, "args": {}})
+    finally:
+        nicegui_ui.clipboard.write = original
+
+    assert written and "RepresentativeEvents.py" in written[0]
+    assert "representative_events.json" in written[0]

@@ -358,7 +358,8 @@ def test_a_routed_row_whose_source_is_not_in_the_sims_list_says_so():
     frame = sims_frame([ROUTED])
     row, note = module.storm_row(frame, frame.loc[0])
     assert row is None
-    assert "TFD_mc_24h_GWL1p3__mcdf.csv" in note and "no-hyetograph" in note
+    assert "TFD_mc_24h_GWL1p3__mcdf.csv" in note
+    assert note.count("\\") == 0, "the note should name the file, not the path"
 
 
 def test_a_row_with_no_focal_subcatchments_names_the_key(project):
@@ -379,3 +380,41 @@ def test_the_focal_file_has_to_exist(project):
     with pytest.raises(ValueError) as raised:
         module.rebuild_hyetograph(row, None, config, {})
     assert "not found" in str(raised.value)
+
+
+def test_a_routed_row_can_name_the_storm_inputs_itself():
+    """The realisation is all there in the inherited database.
+
+    A routed mcdf is the inherited one with the routed peaks written over it,
+    so every draw the storm was made from survives. Only Duration and Focal
+    subcatchments are missing, and a routing row is free to carry them.
+    """
+    module = cli()
+    row = dict(ROUTED, Duration=24, **{"Focal subcatchments": "focal.csv"})
+    frame = sims_frame([row])
+    found, note = module.storm_row(frame, frame.loc[0])
+    assert found is not None
+    assert found["Duration"] == 24
+    assert "inherited" in note
+
+
+def test_a_routed_row_with_nothing_to_go_on_says_what_would_fix_it():
+    module = cli()
+    frame = sims_frame([ROUTED])
+    found, note = module.storm_row(frame, frame.loc[0])
+    assert found is None
+    assert "Focal subcatchments" in note and "--source-sims-list" in note
+
+
+def test_the_source_run_can_be_in_another_sims_list(project, capsys):
+    """Routing rows commonly live in a sims list of their own."""
+    other = project / "sources.xlsx"
+    write_sims_list(other)                        # holds the monte carlo row
+
+    selection = write_selection(project, [target()])
+    module = cli()
+    code = module.main(["--config", str(project / "sims_config.json"),
+                        "--selection", str(selection), "--no-hyetograph",
+                        "--source-sims-list", str(other)])
+    assert code == 0
+    assert "also looking in" in capsys.readouterr().out

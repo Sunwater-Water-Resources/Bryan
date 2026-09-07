@@ -355,7 +355,10 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
   came from**: a reservoir routing row has no `Duration` and no `Focal subcatchments`, so
   `storm_row` follows its `Input MCDF` back to the source run. Without that the rebuild
   reached `load_subcatchment_areas(None)` and pandas reported a NoneType buffer, which
-  named neither the key nor the row.
+  named neither the key nor the row. **The realisation is never what is missing**: a routed
+  mcdf is the inherited one with the routed peaks written over it (`_write_mcdf`), so every
+  draw survives — only those two sims-list keys do not, and they can come from the source row,
+  from another sims list (`--source-sims-list`), or from the routing row itself.
 - `GetRepresentativeEvents.py` picks representative events and then extracts and plots their
   hydrographs, driven by an `_analyseRepresentativeEvents.xlsx` control sheet with hard-coded
   paths. The **selection** half of it now also exists as `lib/RepresentativeEvents.py`, which

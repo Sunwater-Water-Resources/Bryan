@@ -420,8 +420,21 @@ class _EventsView:
         if self.folder is None:
             return
         path = events.selection_path(self.folder, self.group)
+        command = events.extract_command(self.project, path)
         with self.command_box:
-            ui.code(events.extract_command(self.project, path)).classes("w-full text-xs")
+            with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                ui.code(command).classes("grow text-xs")
+                # The command is long and wraps, so selecting it by hand is
+                # fiddly and easy to get half of.
+                ui.button(icon="content_copy",
+                          on_click=lambda: self._copy(command)) \
+                    .props("flat dense round").mark("copy-command") \
+                    .tooltip("Copy the command")
+
+    def _copy(self, command) -> None:
+        """Onto the clipboard, which needs localhost or https - as the launcher is."""
+        ui.clipboard.write(command)
+        ui.notify("Command copied")
 
     def _draw_summary(self) -> None:
         self.summary_box.clear()
