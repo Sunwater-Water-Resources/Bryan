@@ -177,3 +177,34 @@ async def test_the_rank_order_can_be_switched_to_the_result(user, project):
     table = next(iter(user.find(marker="candidates-0").elements))
     assert "Δ target" in [column["label"] for column in table.columns]
     assert table.rows[0]["delta_value"] != "-"
+
+
+@pytest.mark.asyncio
+async def test_the_band_defaults_to_twenty_millimetres_of_level(user, project):
+    _open(project)
+    await user.open("/events")
+
+    band = next(iter(user.find(marker="result-band").elements))
+    assert band.value == 20
+    await user.should_see("mm")
+
+
+@pytest.mark.asyncio
+async def test_the_band_follows_the_result_type(user, project):
+    """20 mm of lake level is not 20 m3/s, so the two are kept apart."""
+    _open(project)
+    await user.open("/events")
+
+    band = next(iter(user.find(marker="result-band").elements))
+    band.set_value(50)
+    await user.should_see("Loadings")
+
+    next(iter(user.find(marker="result-type").elements)).set_value("inflow")
+    await user.should_see("Loadings")
+    band = next(iter(user.find(marker="result-band").elements))
+    assert band.value == 10                       # the inflow default, in m3/s
+
+    next(iter(user.find(marker="result-type").elements)).set_value("level")
+    await user.should_see("Loadings")
+    band = next(iter(user.find(marker="result-band").elements))
+    assert band.value == 50                       # the level band, as it was left

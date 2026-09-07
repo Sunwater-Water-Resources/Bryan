@@ -435,3 +435,43 @@ def test_the_delta_to_the_loading_is_reported_either_way(mcdf, scored):
                             target_value=220.5)
     assert on_level.loc[1, "delta_value"] == pytest.approx(0.0)
     assert on_level.loc[2, "delta_value"] == pytest.approx(6.5)
+
+
+def test_a_band_makes_near_enough_levels_equal_and_neutrality_decide(mcdf):
+    """Row 0 is 90 mm from the loading and neutral; rows 3-5 are 10 mm off it.
+
+    Without a band the 10 mm wins on a difference the rating curve cannot
+    resolve. Inside a 100 mm band all four count as reaching the loading, and
+    the AEP neutral one comes first.
+    """
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.09)
+    close = events.rank(on_level, count=7, order=events.RESULT)
+    assert close.candidates.index[0] in (3, 4, 5)
+
+    banded = events.rank(on_level, count=7, order=events.RESULT, band=0.1)
+    assert banded.candidates.index[0] == 0
+
+
+def test_the_band_only_groups_what_is_inside_it(mcdf):
+    """A 20 mm band leaves the 90 mm event where it was - behind the closer ones."""
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.09)
+    ranking = events.rank(on_level, count=7, order=events.RESULT, band=0.02)
+    order = list(ranking.candidates.index)
+    assert order[0] in (3, 4, 5)
+    assert order.index(0) > order.index(3)
+
+
+def test_no_band_is_the_plain_distance(mcdf):
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.09)
+    distances = events.banded(on_level["delta_value"], 0)
+    assert distances.equals(on_level["delta_value"])
+
+
+def test_the_band_survives_a_missing_distance(mcdf):
+    """NaN stays NaN - a band is not a reason to call an unknown result a match."""
+    distances = events.banded(pd.Series([float("nan"), 0.015, 0.045]), 0.02)
+    assert math.isnan(distances.iloc[0])
+    assert list(distances.iloc[1:]) == [0, 2]

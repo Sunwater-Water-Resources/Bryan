@@ -82,6 +82,9 @@ class _EventsView:
         self.group = next(iter(available), None)
         self.result_type = "level"
         self.order = events.EVENTS.DELTA_Z
+        # How close counts as the same result, per result type and in the units
+        # the field asks for (millimetres of lake level, m3/s of flow).
+        self.bands = dict(events.DEFAULT_BANDS)
         self.targets: list = []
         self.filters = events.Filters()
         self.outcomes: list = []
@@ -93,6 +96,8 @@ class _EventsView:
         # on shuts every time an event is picked.
         self.open_cards: set[int] = {0}
 
+        self.band_input = None
+        self.band_units = None
         self.target_box = None
         self.detail_box = None
         self.summary_box = None
@@ -115,7 +120,8 @@ class _EventsView:
                           on_change=lambda event: self._load_group(event.value)
                           ).classes("min-w-96")
                 ui.toggle(TYPE_LABELS, value=self.result_type,
-                          on_change=self._on_type).props("no-caps dense")
+                          on_change=self._on_type).props("no-caps dense") \
+                    .mark("result-type")
                 ui.toggle(ORDER_LABELS, value=self.order,
                           on_change=self._on_order).props("no-caps dense") \
                     .mark("rank-order") \
@@ -124,6 +130,20 @@ class _EventsView:
                              "ranks on the loading itself - the level in "
                              "metres, or the design value at that AEP - and "
                              "leaves neutrality to be read off the table.")
+                self.band_input = ui.number(
+                    "Same result within", value=self.bands[self.result_type],
+                    format="%g", step=5,
+                    on_change=lambda e: self._on_band(e.value)) \
+                    .classes("w-44").props(f"debounce={TYPING_PAUSE_MS}") \
+                    .mark("result-band") \
+                    .tooltip("Only used by 'Closest result'. Events this close "
+                             "to the loading count as reaching it, and are then "
+                             "ordered by AEP neutrality - a lake level is not "
+                             "meaningful to the millimetre, and without a band "
+                             "the sort is decided by noise.")
+                self.band_units = ui.label(
+                    events.band_units(self.result_type)[0]
+                ).classes("text-xs text-gray-500")
                 ui.button("Reload", icon="refresh", on_click=self._reload
                           ).props("flat dense")
             ui.separator()
@@ -203,6 +223,15 @@ class _EventsView:
             self.result_type = settings["result_type"]
         if settings.get("order") in ORDER_LABELS:
             self.order = settings["order"]
+        saved_bands = settings.get("bands")
+        if isinstance(saved_bands, dict):
+            self.bands = {**events.DEFAULT_BANDS,
+                          **{key: float(value) for key, value in saved_bands.items()
+                             if key in events.DEFAULT_BANDS}}
+        if self.band_input is not None:
+            self.band_input.value = self.bands.get(self.result_type, 0.0)
+        if self.band_units is not None:
+            self.band_units.set_text(events.band_units(self.result_type)[0])
         self.targets = saved or [
             events.Target(kind="aep", value=aep, result_type=self.result_type,
                           count=DEFAULT_COUNT)
@@ -241,7 +270,7 @@ class _EventsView:
         self.outcomes = [
             events.evaluate(self.project, sources, target, self.filters,
                             curve=self._curve_for_levels(), order=self.order,
-                            curves=self._curves)
+                            curves=self._curves, band=self._band())
             for target in self.targets
         ]
         if redraw_targets:
@@ -379,10 +408,26 @@ class _EventsView:
 
     # -- events -----------------------------------------------------------
 
+    def _band(self) -> float:
+        """The band in the result's own units - metres, not millimetres."""
+        return events.band_in_result_units(self.result_type,
+                                           self.bands.get(self.result_type, 0.0))
+
     def _on_type(self, event) -> None:
         self.result_type = event.value
         for target in self.targets:
             target.result_type = self.result_type
+        # The band is per result type: 20 mm of lake level is not 20 m3/s.
+        if self.band_input is not None:
+            self.band_input.value = self.bands.get(self.result_type, 0.0)
+        if self.band_units is not None:
+            self.band_units.set_text(events.band_units(self.result_type)[0])
+        self.refresh()
+
+    def _on_band(self, value) -> None:
+        if value in (None, ""):
+            return                            # mid-edit, as the loading rows are
+        self.bands[self.result_type] = max(float(value), 0.0)
         self.refresh()
 
     def _on_order(self, event) -> None:
@@ -450,6 +495,7 @@ class _EventsView:
     def _settings(self) -> dict:
         return {"result_type": self.result_type,
                 "order": self.order,
+                "bands": dict(self.bands),
                 "aep_of_pmp": self.filters.aep_of_pmp,
                 "max_delta_z": self.filters.max_delta_z,
                 "exclude_embedded": self.filters.exclude_embedded,

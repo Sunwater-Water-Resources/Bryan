@@ -314,7 +314,10 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   level matters more than AEP neutrality. A level loading names that value; a design AEP has it
   read back off the envelope by `value_for_aep`, the inverse of `aep_for_level` on the same
   (log value, z) interpolation. Both distances are always computed, so whichever is not ranked
-  on is still in the table.
+  on is still in the table. The `result` order is **banded** (`banded`, default 20 mm of level):
+  distances go into bands of that width and the order inside a band is `delta_z`, because a
+  level is not meaningful to the millimetre and an unbanded sort is decided by noise. The band
+  is per result type and the UI asks for it in millimetres for a level, m³/s for a flow.
 - **A critical-duration crossover is judged over the range the new duration holds, not at the
   crossing point.** The margin at a crossover is near zero by definition — the curves are equal
   there — so measuring strength there would dismiss every real crossover as noise. `Band.peak_margin`
