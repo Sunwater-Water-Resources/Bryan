@@ -302,7 +302,12 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   that is **critical at that loading's AEP**, reusing `results.compare`/`analyse`; for level
   that genuinely differs across the frequency range, so one list of loadings draws from several
   runs. A level loading is read off the **envelope**, not one duration's curve, because the
-  envelope is the design quantile the level was quoted from. The chosen list is saved per group
+  envelope is the design quantile the level was quoted from. **A level loading therefore has two places on the
+  result axis and the plot marks both** (`variate_at_value`, `data_z`): the design AEP off
+  that envelope, and the AEP this database's own realisations reach the level at. They
+  differ by the envelope-versus-duration gap, the straight-line read between the standard
+  AEPs, and the smoothing — nothing to do with rounding, and marking only the first made the
+  line look offset from the level that was asked for. The chosen list is saved per group
   as `<group>_representative_events.json` beside the databases — per group because a GWL series
   usually shares one results folder.
   **Which loading cards are open is view state the page has to keep** (`open_cards`): picking an
