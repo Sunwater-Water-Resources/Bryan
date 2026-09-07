@@ -510,6 +510,7 @@ CANDIDATE_COLUMNS = (
     ("result_aep", "Result AEP"),
     ("delta_z", "\u0394z"),
     ("delta_value", "\u0394 target"),
+    ("shape", "Shape"),
     ("subburst_ratio", "Sub-burst"),
     ("preburst_p", "Pre-burst p"),
     ("lake_z", "Lake z"),
@@ -524,8 +525,13 @@ _PLACES = {"rain_aep": 0, "result_aep": 0, "delta_z": 3, "delta_value": 2,
            "preburst_p": 2, "lake_z": 2, "level": 2, "inflow": 0, "outflow": 0}
 
 
-def candidate_rows(outcome) -> list:
-    """The ranked candidates as table rows - plain types, ready for ui.table."""
+def candidate_rows(outcome, shapes=None) -> list:
+    """The ranked candidates as table rows - plain types, ready for ui.table.
+
+    ``shapes`` is what ``core/hydrographs.shapes_for`` found, or None where the
+    stored hydrographs have not been read - the column then says '-' rather
+    than implying every candidate is a simple single-peaked event.
+    """
     frame = outcome.candidates
     if frame is None or frame.empty:
         return []
@@ -535,7 +541,9 @@ def candidate_rows(outcome) -> list:
         # Plain bool, not numpy's: these rows are serialised to the browser,
         # and json.dumps refuses a numpy bool_ - which is a blank table, not an
         # error anyone would see in a test that only builds the rows.
+        shape = (shapes or {}).get(int(sim_id))
         entry = {"sim": int(sim_id), "picked": bool(sim_id == picked),
+                 "shape": shape.summary if shape is not None else "-",
                  "flags": "; ".join(row.get("flags") or ()) or "-"}
         for column, places in _PLACES.items():
             value = _round(row.get(column), places)

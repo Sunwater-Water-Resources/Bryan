@@ -250,3 +250,48 @@ async def test_the_extract_command_can_be_copied(user, project):
 
     assert written and "RepresentativeEvents.py" in written[0]
     assert "representative_events.json" in written[0]
+
+
+@pytest.fixture
+def with_hydrographs(tmp_path):
+    """A project whose runs were made with 'Store hydrographs' on."""
+    from core import events, hydrographs
+    from test_hydrographs import write_hydrographs
+    events.forget_cached()
+    hydrographs.forget_cached()
+    return write_hydrographs(build(tmp_path), tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_the_hydrograph_preview_shows_the_shape_of_the_candidates(
+        user, with_hydrographs):
+    """A representative event should be simple, and the mcdf cannot say so.
+
+    The peak is in the database; whether it is one rise or two is only in the
+    stored hydrographs, which is why this reads them - on request, because the
+    file is one column per simulation.
+    """
+    _open(with_hydrographs)
+    await user.open("/events")
+
+    table = next(iter(user.find(marker="candidates-0").elements))
+    assert all(row["shape"] == "-" for row in table.rows), "not read until asked"
+
+    user.find(marker="preview-button-0").click()
+    await user.should_see("showing sim")
+
+    table = next(iter(user.find(marker="candidates-0").elements))
+    assert any(row["shape"] == "single peaked" for row in table.rows)
+    chart = next(iter(user.find(marker="hydrograph-0").elements))
+    names = [series["name"] for series in chart.options["series"]]
+    assert {"Inflow", "Outflow", "Lake level"} <= set(names)
+
+
+@pytest.mark.asyncio
+async def test_a_run_without_stored_hydrographs_says_so(user, project):
+    """The one case the whole feature depends on, and it is common."""
+    _open(project)
+    await user.open("/events")
+
+    user.find(marker="preview-button-0").click()
+    await user.should_see("Store hydrographs")

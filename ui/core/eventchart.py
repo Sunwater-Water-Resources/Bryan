@@ -174,3 +174,59 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
         "yAxis": vertical,
         "series": series,
     }
+
+
+# -- the hydrograph preview --------------------------------------------------
+
+HYDROGRAPH_COLOURS = {"inflows": PALETTE[0], "outflows": PALETTE[3],
+                      "levels": PALETTE[2]}
+HYDROGRAPH_LABELS = {"inflows": "Inflow", "outflows": "Outflow",
+                     "levels": "Lake level"}
+
+
+def hydrograph_chart(series, sim_id, title="") -> dict:
+    """One realisation's stored hydrographs - the shape behind the peak.
+
+    Flows on the left axis and the lake level on the right, because the two are
+    orders of magnitude apart and the question being asked - is this one rise
+    and one recession, or two - is about the shape of each, not their ratio.
+    """
+    from . import hydrographs                       # local: avoids a cycle
+
+    drawn = []
+    for kind in ("inflows", "outflows", "levels"):
+        found = series.get(kind)
+        if found is None or not len(found):
+            continue
+        times, values = hydrographs.for_plot(found)
+        drawn.append({
+            "name": HYDROGRAPH_LABELS[kind],
+            "type": "line",
+            "showSymbol": False,
+            "smooth": False,
+            "yAxisIndex": 1 if kind == "levels" else 0,
+            "lineStyle": {"width": 1.8,
+                          "type": "dashed" if kind == "levels" else "solid"},
+            "itemStyle": {"color": HYDROGRAPH_COLOURS[kind]},
+            "data": [[time, value] for time, value in zip(times, values)],
+        })
+    if not drawn:
+        return {"series": []}
+
+    return {
+        "title": {"text": title or f"sim {int(sim_id)}", "left": "center",
+                  "textStyle": {"fontSize": 13}},
+        "tooltip": {"trigger": "axis"},
+        "legend": {"type": "scroll", "top": 24},
+        "grid": {"left": 70, "right": 70, "top": 60, "bottom": 50},
+        "xAxis": {"type": "value", "name": "Time (hours)", "nameLocation": "middle",
+                  "nameGap": 30, "splitLine": {"show": True,
+                                               "lineStyle": {"opacity": 0.25}}},
+        "yAxis": [
+            {"type": "value", "name": "Flow (m\u00b3/s)", "nameGap": 45,
+             "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}}},
+            {"type": "value", "name": "Level (m AHD)", "nameGap": 45,
+             "splitLine": {"show": False}, "scale": True},
+        ],
+        "series": drawn,
+    }

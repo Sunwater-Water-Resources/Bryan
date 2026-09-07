@@ -202,6 +202,16 @@ Closeness is not enough on its own, so every candidate carries the things that w
 
 Nothing is dropped quietly. Everything above **flags** by default and is still offered, because the choice between the closest match and the cleanest storm belongs to whoever has to defend the event. Two filters do drop candidates, and both are opt-in: *drop events with an embedded burst* and *drop anything flagged*. The rainfall cap is the exception — rainfall rarer than about the **AEP of the PMP** is the edge of the sampling scheme rather than a real event, so it is capped at 1.1 times that AEP, exactly as the old script does. The number is read from the IFD files config the storm config points at, which is where a Monte Carlo run gets it, and can be overridden on the page.
 
+### Is it a simple event?
+
+Closeness is not the only thing that makes an event usable. A representative event is usually wanted **simple** — one rise, one peak, one recession — because a double-peaked outflow makes a gate operation ambiguous and a dambreak run arguable. The mcdf records the peak and says nothing about the shape either side of it, so **Preview hydrographs** reads the run's stored hydrographs:
+
+- it fills a **Shape** column for every candidate — ```single peaked```, or ```2 peaks``` — counting only the peaks worth arguing about: at least a fifth of the flood, and standing at least a tenth of it above the trough before them. The steps and shoulders every routed outflow has on its recession are not counted, because counting them would call almost everything multi-peaked and the column would say nothing;
+- it draws the chosen event — inflow and outflow on the left axis, lake level dashed on the right;
+- and after that, **clicking any candidate row** draws that one, so the shapes can be compared without choosing between them.
+
+It is a button rather than something the page does by itself because the file is one column per simulation and tens of megabytes: it takes a few seconds the first time, and nothing after that. **This only works where the run stored its hydrographs** (```Store hydrographs``` = ```yes``` in the [simulation list](sim_list.md)); where it did not, the panel says so.
+
 ### The two marks on a level loading
 
 The plot marks the loading with a line on each axis. For a **lake level** loading there are two honest answers to *where is this level on the result axis*, and both are drawn:
