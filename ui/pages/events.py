@@ -24,7 +24,9 @@ from pathlib import Path
 import pandas as pd
 from nicegui import ui
 
-from core import events, eventchart, results
+from nicegui import app, run
+
+from core import events, eventchart, hydrographs, results
 from layout import page_frame, require_project, severity_banner
 from state import STATE
 
@@ -47,6 +49,21 @@ DEFAULT_COUNT = 10
 # value. Re-ranking an mcdf on every digit is wasted work, and "1000" would be
 # evaluated as 1, 10, 100 and 1000 on the way past.
 TYPING_PAUSE_MS = 500
+
+
+async def _off_thread(function, *args):
+    """Run something slow off the event loop, and still get its answer.
+
+    ``run.io_bound`` returns None when the call is cancelled or the app is
+    stopping, which is not distinguishable from a real result here - so a None
+    that is not a shutdown is run inline rather than reported as an empty
+    preview. Reading a stored hydrograph file is seconds of parsing, and doing
+    it in the handler would freeze every other page for the duration.
+    """
+    result = await run.io_bound(function, *args)
+    if result is None:
+        return (None, None) if app.is_stopping else function(*args)
+    return result
 
 
 def _saved_numbers(saved, defaults) -> dict:
@@ -112,6 +129,14 @@ class _EventsView:
         # so without this the first one springs open and the one being worked
         # on shuts every time an event is picked.
         self.open_cards: set[int] = {0}
+        # The hydrograph preview, per loading. Reading a stored hydrograph file
+        # costs seconds - one column per simulation, thousands of them - so it
+        # happens when the user asks and the result is held here, not fetched
+        # again on every redraw.
+        self.preview: dict = {}               # position -> sim id
+        self.preview_series: dict = {}        # position -> {kind: series}
+        self.preview_notes: dict = {}         # position -> [str]
+        self.shapes: dict = {}                # database path -> {sim: Shape}
 
         self.band_input = None
         self.rounding_input = None
@@ -378,11 +403,13 @@ class _EventsView:
                     for reason, count in outcome.ranking.excluded.items())
                 ).classes("text-xs text-gray-500")
 
-            rows = events.candidate_rows(outcome)
+            shapes = self.shapes.get(self._source_key(outcome), {})
+            rows = events.candidate_rows(outcome, shapes)
             if not rows:
                 severity_banner("warn", "No candidate events survive the filters.")
                 return
             self._candidate_table(position, rows)
+            self._preview_panel(position, outcome)
             chart = ui.echart(eventchart.neutrality_chart(
                 outcome, self.result_type)).classes("w-full h-96")
             chart.mark(f"neutrality-{position}")
@@ -402,6 +429,9 @@ class _EventsView:
             </q-td>
         """)
         table.on("pick", lambda event, i=position: self._pick(i, event.args))
+        # Clicking the row itself previews it, which is the cheap way to ask
+        # 'what shape is this one' without choosing it.
+        table.on("rowClick", lambda event, i=position: self._on_row(i, event.args))
 
     def _card_toggled(self, position, is_open) -> None:
         """Remember an open card, and nothing else - no redraw.
@@ -412,6 +442,79 @@ class _EventsView:
             self.open_cards.add(position)
         else:
             self.open_cards.discard(position)
+
+    def _preview_panel(self, position, outcome) -> None:
+        """The button that reads the stored hydrographs, and what it found."""
+        sim_id = self.preview.get(position)
+        with ui.row().classes("items-center gap-2 flex-wrap"):
+            ui.button("Preview hydrographs", icon="show_chart",
+                      on_click=lambda _, i=position: self._load_preview(i)) \
+                .props("flat dense").mark(f"preview-button-{position}") \
+                .tooltip("Reads this run's stored hydrographs - a few seconds "
+                         "the first time - fills the Shape column for every "
+                         "candidate, and draws the chosen event. Click any row "
+                         "afterwards to draw that one.")
+            if sim_id is not None:
+                ui.label(f"showing sim {int(sim_id)}").classes("text-xs text-gray-500")
+        for note in self.preview_notes.get(position, ()):
+            ui.label(note).classes("text-xs text-gray-500")
+
+        series = self.preview_series.get(position)
+        if series:
+            ui.echart(eventchart.hydrograph_chart(series, sim_id)) \
+                .classes("w-full h-80").mark(f"hydrograph-{position}")
+
+    def _source_key(self, outcome) -> str:
+        return str(outcome.source.path) if outcome.source is not None else ""
+
+    async def _load_preview(self, position, sim_id=None) -> None:
+        """Read the run's hydrographs and show one of them.
+
+        Off the event loop: the file is tens of megabytes and parsing it in the
+        handler would freeze every other page for the duration.
+        """
+        if position >= len(self.outcomes):
+            return
+        outcome = self.outcomes[position]
+        source = outcome.source
+        frame = outcome.candidates
+        if source is None or frame is None or frame.empty:
+            return
+        if sim_id is None:
+            sim_id = outcome.picked_id
+        if sim_id is None:
+            return
+
+        notify = ui.notification("Reading the stored hydrographs...", spinner=True,
+                                 timeout=None)
+        try:
+            sims = [int(index) for index in frame.index]
+            shapes, notes = await _off_thread(
+                hydrographs.shapes_for, self.project, source, sims)
+            series, more = await _off_thread(
+                hydrographs.series_for, self.project, source, int(sim_id))
+        finally:
+            notify.dismiss()
+        if shapes is None:
+            return                            # the app is going away
+
+        self.shapes.setdefault(self._source_key(outcome), {}).update(shapes)
+        self.preview[position] = int(sim_id)
+        self.preview_series[position] = series
+        # The same file missing for both is one problem, not two.
+        self.preview_notes[position] = list(dict.fromkeys(notes + more))
+        self.refresh()
+
+    async def _on_row(self, position, args) -> None:
+        """A click on a candidate row: preview it, without choosing it.
+
+        Only once the panel is in use. A first click should not spend seconds
+        reading a file nobody asked for - the button is where that is agreed to.
+        """
+        row = next((item for item in (args or []) if isinstance(item, dict)), None)
+        if not row or "sim" not in row or position not in self.preview:
+            return
+        await self._load_preview(position, int(row["sim"]))
 
     def _draw_command(self) -> None:
         if self.command_box is None:
@@ -550,6 +653,7 @@ class _EventsView:
 
     def _reload(self) -> None:
         events.forget_cached()
+        hydrographs.forget_cached()
         STATE.reload_project()
         ui.navigate.to("/events")
 

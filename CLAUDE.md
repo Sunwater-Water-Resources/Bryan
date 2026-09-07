@@ -310,6 +310,15 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   line look offset from the level that was asked for. The chosen list is saved per group
   as `<group>_representative_events.json` beside the databases — per group because a GWL series
   usually shares one results folder.
+  **`core/hydrographs.py` is the only thing that reads a stored hydrograph file**, and it does
+  so on the button, never on a redraw: one column per simulation is tens of megabytes, so the
+  frame is cached per file (mtime and size) and the read is pushed off the event loop. It
+  answers the question the mcdf cannot — whether an event is one rise or two — with
+  `shape_of`, whose prominence rule (a fifth of the peak, a tenth of it above the preceding
+  trough) is what stops every step on a routed recession counting as a second flood.
+  `run.io_bound` returns None on cancellation *and* when there is no live pool, which is
+  indistinguishable from a result, so `_off_thread` falls back to running inline unless the
+  app is stopping.
   **Which loading cards are open is view state the page has to keep** (`open_cards`): picking an
   event redraws every expansion, so a `value=position == 0` on the rebuild collapsed the card
   being worked on and sprang the first one open under it.
