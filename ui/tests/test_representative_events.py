@@ -466,7 +466,7 @@ def test_the_band_only_groups_what_is_inside_it(mcdf):
 def test_no_band_is_the_plain_distance(mcdf):
     on_level = events.score(events.prepare(mcdf, "level"), TARGET,
                             target_value=220.09)
-    distances = events.banded(on_level["delta_value"], 0)
+    distances = events.banded(on_level["delta_value"], 0, 0)
     assert distances.equals(on_level["delta_value"])
 
 
@@ -474,4 +474,52 @@ def test_the_band_survives_a_missing_distance(mcdf):
     """NaN stays NaN - a band is not a reason to call an unknown result a match."""
     distances = events.banded(pd.Series([float("nan"), 0.015, 0.045]), 0.02)
     assert math.isnan(distances.iloc[0])
-    assert list(distances.iloc[1:]) == [0, 2]
+    assert distances.iloc[1] == 0
+    assert distances.iloc[2] > 0
+
+
+# -- the band and the rounding are two different questions --------------------
+
+def test_the_band_is_what_counts_as_reaching_the_loading():
+    """Everything inside it is one group, whatever the rounding says."""
+    distances = pd.Series([0.000, 0.012, 0.020, 0.021])
+    key = events.banded(distances, band=0.02, rounding=0.01)
+    assert list(key[:3]) == [0, 0, 0]
+    assert key.iloc[3] > 0
+
+
+def test_the_rounding_groups_what_is_outside_the_band():
+    """32 mm and 34 mm are the same distance away to any defensible precision."""
+    distances = pd.Series([0.032, 0.034, 0.055])
+    key = events.banded(distances, band=0.02, rounding=0.01)
+    assert key.iloc[0] == key.iloc[1]
+    assert key.iloc[2] != key.iloc[0]
+
+
+def test_a_coarse_rounding_never_swallows_the_band():
+    """Outside the band is outside it, however coarse the grid."""
+    key = events.banded(pd.Series([0.010, 0.030]), band=0.02, rounding=0.5)
+    assert key.iloc[0] == 0
+    assert key.iloc[1] > 0
+
+
+def test_rounding_alone_still_ties_the_near_enough_events():
+    """No band: the closest event leads, but 32 mm and 34 mm still tie."""
+    key = events.banded(pd.Series([0.032, 0.034, 0.004]), band=0, rounding=0.01)
+    assert key.iloc[0] == key.iloc[1]
+    assert key.iloc[2] < key.iloc[0]
+
+
+def test_the_rounding_decides_between_equally_distant_events(mcdf):
+    """Rows 3-5 are 40 mm out and row 0 is 60 mm; on a 50 mm grid they tie.
+
+    Row 0 is the AEP neutral one, so it comes first once they do - which it
+    does not on the raw distance, where 20 mm of lake level decides it.
+    """
+    on_level = events.score(events.prepare(mcdf, "level"), TARGET,
+                            target_value=220.06)
+    raw = events.rank(on_level, count=7, order=events.RESULT)
+    assert raw.candidates.index[0] in (3, 4, 5)
+
+    rounded = events.rank(on_level, count=7, order=events.RESULT, rounding=0.05)
+    assert rounded.candidates.index[0] == 0

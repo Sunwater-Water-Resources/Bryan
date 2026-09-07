@@ -49,6 +49,20 @@ DEFAULT_COUNT = 10
 TYPING_PAUSE_MS = 500
 
 
+def _saved_numbers(saved, defaults) -> dict:
+    """A per-result-type setting out of a selection file, defaults filled in."""
+    if not isinstance(saved, dict):
+        return dict(defaults)
+    out = dict(defaults)
+    for key, value in saved.items():
+        if key in defaults:
+            try:
+                out[key] = max(float(value), 0.0)
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
 def events_page() -> None:
     with page_frame("Events"):
         project = require_project()
@@ -83,8 +97,11 @@ class _EventsView:
         self.result_type = "level"
         self.order = events.EVENTS.DELTA_Z
         # How close counts as the same result, per result type and in the units
-        # the field asks for (millimetres of lake level, m3/s of flow).
+        # the fields ask for (millimetres of lake level, m3/s of flow). The band
+        # is how far off still counts as reaching the loading; the rounding is
+        # the grid everything further out is measured on.
         self.bands = dict(events.DEFAULT_BANDS)
+        self.roundings = dict(events.DEFAULT_ROUNDINGS)
         self.targets: list = []
         self.filters = events.Filters()
         self.outcomes: list = []
@@ -97,7 +114,9 @@ class _EventsView:
         self.open_cards: set[int] = {0}
 
         self.band_input = None
+        self.rounding_input = None
         self.band_units = None
+        self.rounding_units = None
         self.target_box = None
         self.detail_box = None
         self.summary_box = None
@@ -142,6 +161,21 @@ class _EventsView:
                              "meaningful to the millimetre, and without a band "
                              "the sort is decided by noise.")
                 self.band_units = ui.label(
+                    events.band_units(self.result_type)[0]
+                ).classes("text-xs text-gray-500")
+                self.rounding_input = ui.number(
+                    "Round differences to",
+                    value=self.roundings[self.result_type],
+                    format="%g", step=5,
+                    on_change=lambda e: self._on_rounding(e.value)) \
+                    .classes("w-44").props(f"debounce={TYPING_PAUSE_MS}") \
+                    .mark("result-rounding") \
+                    .tooltip("Only used by 'Closest result'. Events further "
+                             "from the loading than the band are compared on "
+                             "this grid, so two that are the same distance away "
+                             "to any defensible precision are separated by AEP "
+                             "neutrality rather than by noise.")
+                self.rounding_units = ui.label(
                     events.band_units(self.result_type)[0]
                 ).classes("text-xs text-gray-500")
                 ui.button("Reload", icon="refresh", on_click=self._reload
@@ -223,15 +257,10 @@ class _EventsView:
             self.result_type = settings["result_type"]
         if settings.get("order") in ORDER_LABELS:
             self.order = settings["order"]
-        saved_bands = settings.get("bands")
-        if isinstance(saved_bands, dict):
-            self.bands = {**events.DEFAULT_BANDS,
-                          **{key: float(value) for key, value in saved_bands.items()
-                             if key in events.DEFAULT_BANDS}}
-        if self.band_input is not None:
-            self.band_input.value = self.bands.get(self.result_type, 0.0)
-        if self.band_units is not None:
-            self.band_units.set_text(events.band_units(self.result_type)[0])
+        self.bands = _saved_numbers(settings.get("bands"), events.DEFAULT_BANDS)
+        self.roundings = _saved_numbers(settings.get("roundings"),
+                                        events.DEFAULT_ROUNDINGS)
+        self._show_bands()
         self.targets = saved or [
             events.Target(kind="aep", value=aep, result_type=self.result_type,
                           count=DEFAULT_COUNT)
@@ -270,7 +299,8 @@ class _EventsView:
         self.outcomes = [
             events.evaluate(self.project, sources, target, self.filters,
                             curve=self._curve_for_levels(), order=self.order,
-                            curves=self._curves, band=self._band())
+                            curves=self._curves, band=self._band(),
+                            rounding=self._rounding())
             for target in self.targets
         ]
         if redraw_targets:
@@ -413,21 +443,39 @@ class _EventsView:
         return events.band_in_result_units(self.result_type,
                                            self.bands.get(self.result_type, 0.0))
 
+    def _rounding(self) -> float:
+        return events.band_in_result_units(
+            self.result_type, self.roundings.get(self.result_type, 0.0))
+
     def _on_type(self, event) -> None:
         self.result_type = event.value
         for target in self.targets:
             target.result_type = self.result_type
-        # The band is per result type: 20 mm of lake level is not 20 m3/s.
-        if self.band_input is not None:
-            self.band_input.value = self.bands.get(self.result_type, 0.0)
-        if self.band_units is not None:
-            self.band_units.set_text(events.band_units(self.result_type)[0])
+        # They are per result type: 20 mm of lake level is not 20 m3/s.
+        self._show_bands()
         self.refresh()
 
+    def _show_bands(self) -> None:
+        """Put this result type's band and rounding in their fields."""
+        for element, values in ((self.band_input, self.bands),
+                                (self.rounding_input, self.roundings)):
+            if element is not None:
+                element.value = values.get(self.result_type, 0.0)
+        unit = events.band_units(self.result_type)[0]
+        for label in (self.band_units, self.rounding_units):
+            if label is not None:
+                label.set_text(unit)
+
     def _on_band(self, value) -> None:
+        self._set_band(self.bands, value)
+
+    def _on_rounding(self, value) -> None:
+        self._set_band(self.roundings, value)
+
+    def _set_band(self, values, value) -> None:
         if value in (None, ""):
             return                            # mid-edit, as the loading rows are
-        self.bands[self.result_type] = max(float(value), 0.0)
+        values[self.result_type] = max(float(value), 0.0)
         self.refresh()
 
     def _on_order(self, event) -> None:
@@ -496,6 +544,7 @@ class _EventsView:
         return {"result_type": self.result_type,
                 "order": self.order,
                 "bands": dict(self.bands),
+                "roundings": dict(self.roundings),
                 "aep_of_pmp": self.filters.aep_of_pmp,
                 "max_delta_z": self.filters.max_delta_z,
                 "exclude_embedded": self.filters.exclude_embedded,
