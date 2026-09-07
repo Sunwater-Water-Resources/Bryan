@@ -202,6 +202,15 @@ Closeness is not enough on its own, so every candidate carries the things that w
 
 Nothing is dropped quietly. Everything above **flags** by default and is still offered, because the choice between the closest match and the cleanest storm belongs to whoever has to defend the event. Two filters do drop candidates, and both are opt-in: *drop events with an embedded burst* and *drop anything flagged*. The rainfall cap is the exception — rainfall rarer than about the **AEP of the PMP** is the edge of the sampling scheme rather than a real event, so it is capped at 1.1 times that AEP, exactly as the old script does. The number is read from the IFD files config the storm config points at, which is where a Monte Carlo run gets it, and can be overridden on the page.
 
+### The two marks on a level loading
+
+The plot marks the loading with a line on each axis. For a **lake level** loading there are two honest answers to *where is this level on the result axis*, and both are drawn:
+
+- the **design AEP** — where the frequency curve puts the level. This is the loading, and it is the one the ranking uses;
+- **the level in this run** (the dotted line) — the AEP at which this database's own realisations reach it.
+
+They rarely coincide, and the gap is not a rounding error. The design AEP is read off the **envelope** over the durations, as a straight line between the standard AEPs of the quantile table, from a curve that has been through the analysis; the dots are one duration's raw realisations. Where the two are more than about 0.05 in z apart the page says so in the loading's notes — *"This run reaches 220.50 at 1 in 1,340; the design curve puts it at 1 in 1,000"* — which is worth reading, because a large gap means the run being drawn is not the one the loading was quoted from. A level nothing in the run reached gets no second mark.
+
 ### Which run the event comes from
 
 Leave **From** blank and the page takes the event from the duration that is **critical at that loading's AEP**, using the same envelope the Results page draws, and says so. This matters for lake level, where the critical duration is long at frequent AEPs and short on the rare tail: a list of loadings spanning the frequency range will legitimately draw its events from different runs. Naming a duration explicitly overrides it.
