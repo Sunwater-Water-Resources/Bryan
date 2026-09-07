@@ -357,19 +357,30 @@ def test_the_band_is_asked_for_in_millimetres_of_level(project):
     assert events.band_in_result_units("level", None) == 0.0
 
 
-def test_the_band_is_reported_against_the_loading(project):
-    sources = events.sources_for_rows(project)
-    target = events.Target(kind="aep", value=1000, result_type="level",
-                           source="24h", count=3)
-    outcome = events.evaluate(project, sources, target, events.Filters(),
-                              order=events.EVENTS.RESULT, band=0.02)
-    assert any("within 20 mm" in note for note in outcome.notes)
+def _level_target():
+    return events.Target(kind="aep", value=1000, result_type="level",
+                         source="24h", count=3)
 
 
-def test_the_band_is_not_mentioned_when_ranking_on_neutrality(project):
+def test_the_band_and_the_rounding_are_reported_against_the_loading(project):
     sources = events.sources_for_rows(project)
-    target = events.Target(kind="aep", value=1000, result_type="level",
-                           source="24h", count=3)
-    outcome = events.evaluate(project, sources, target, events.Filters(),
-                              band=0.02)
-    assert not any("within" in note for note in outcome.notes)
+    outcome = events.evaluate(project, sources, _level_target(), events.Filters(),
+                              order=events.EVENTS.RESULT, band=0.02, rounding=0.01)
+    note = next(note for note in outcome.notes if "count as reaching" in note)
+    assert "within 20 mm" in note
+    assert "rounded to 10 mm" in note
+
+
+def test_the_rounding_is_reported_on_its_own(project):
+    sources = events.sources_for_rows(project)
+    outcome = events.evaluate(project, sources, _level_target(), events.Filters(),
+                              order=events.EVENTS.RESULT, rounding=0.01)
+    assert any("differences are rounded to 10 mm" in note
+               for note in outcome.notes)
+
+
+def test_neither_is_mentioned_when_ranking_on_neutrality(project):
+    sources = events.sources_for_rows(project)
+    outcome = events.evaluate(project, sources, _level_target(), events.Filters(),
+                              band=0.02, rounding=0.01)
+    assert not any("rounded" in note for note in outcome.notes)

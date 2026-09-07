@@ -178,7 +178,14 @@ Distance is measured in **standard normal variate space**, not in ```1 in X```. 
 | ```Δz (AEP neutral)``` | both axes at once — the default | the loading is a design AEP and the event has to be defensible as that AEP |
 | ```Closest result``` | the result alone: how far the event is from the loading **in its own units** (metres for a lake level, m³/s for a flow), with Δz breaking the ties | the event exists to put the lake at a particular level, and the rarity of the rainfall is something to check afterwards rather than to rank on |
 
-**Same result within** is how close counts as *the same*, and it is what makes ```Closest result``` usable: a lake level is not meaningful to the millimetre - the rating curve, the routing timestep and the model are nowhere near that precision - so without a band the order is decided by noise and neutrality never gets a look in. Distances are grouped into bands of that width and the order **within a band is AEP neutrality**, so every event that reaches the loading is offered best-neutrality-first. It is asked for in **millimetres** for a lake level and in **m³/s** for a flow, it is kept per result type (20 mm of level is not 20 m³/s), and it defaults to 20 mm. Zero turns the banding off and sorts on the raw distance.
+Two settings make ```Closest result``` usable, because a lake level is not meaningful to the millimetre — the rating curve, the routing timestep and the model itself are nowhere near that precision, so an exact sort on the difference is decided by noise and neutrality never gets a look in:
+
+| Setting | What it does |
+| ----------- | ----------- |
+| **Same result within** | how far off still counts as **reaching** the loading. Everything inside it is one group, ordered by AEP neutrality — so of every event that gets there, the most neutral is offered first. Defaults to 20 mm of lake level |
+| **Round differences to** | the grid everything further out is measured on. Two events that round to the same difference are the same distance away as far as anyone can defend, so they tie and neutrality separates them too. Defaults to 10 mm |
+
+Both are asked for in **millimetres** for a lake level and in **m³/s** for a flow, and both are kept per result type — 20 mm of level is not 20 m³/s. Either can be set to zero on its own: with no band the closest event still leads, and with no rounding the events outside the band keep their exact order.
 
 A lake level loading names the target outright. A **design AEP** loading is converted the other way — the design value at that AEP is read off the same envelope curve, and the page says what it read — so ```Closest result``` works for both. Where the curve cannot answer (an AEP off the end of it), the ranking falls back to the result AEP and says so. The distance is reported as **Δ target** in the candidate table and in the exported list whichever order is in force, so the measure not being ranked on can still be read.
 

@@ -208,3 +208,23 @@ async def test_the_band_follows_the_result_type(user, project):
     await user.should_see("Loadings")
     band = next(iter(user.find(marker="result-band").elements))
     assert band.value == 50                       # the level band, as it was left
+
+
+@pytest.mark.asyncio
+async def test_the_rounding_is_its_own_field(user, project):
+    """The band and the grid answer different questions, so they are two boxes."""
+    _open(project)
+    await user.open("/events")
+
+    band = next(iter(user.find(marker="result-band").elements))
+    rounding = next(iter(user.find(marker="result-rounding").elements))
+    assert (band.value, rounding.value) == (20, 10)
+
+    rounding.set_value(25)
+    next(iter(user.find(marker="result-type").elements)).set_value("inflow")
+    await user.should_see("Loadings")
+    assert next(iter(user.find(marker="result-rounding").elements)).value == 5
+
+    next(iter(user.find(marker="result-type").elements)).set_value("level")
+    await user.should_see("Loadings")
+    assert next(iter(user.find(marker="result-rounding").elements)).value == 25

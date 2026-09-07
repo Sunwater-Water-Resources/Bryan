@@ -196,6 +196,10 @@ BAND_UNITS = {"level": ("mm", 1000.0),
 # deciding the order, not the hydrology.
 DEFAULT_BANDS = {"level": 20.0, "inflow": 10.0, "outflow": 10.0}
 
+# The grid everything outside the band is measured on, so events that are the
+# same distance away to any defensible precision are separated by neutrality.
+DEFAULT_ROUNDINGS = {"level": 10.0, "inflow": 5.0, "outflow": 5.0}
+
 
 def band_units(result_type) -> tuple:
     """(label, how many of them make one of the result's own units)."""
@@ -301,7 +305,8 @@ class Outcome:
 
 
 def evaluate(project, sources, target: Target, filters: Filters,
-             curve=None, order=EVENTS.DELTA_Z, curves=None, band=0.0) -> Outcome:
+             curve=None, order=EVENTS.DELTA_Z, curves=None, band=0.0,
+             rounding=0.0) -> Outcome:
     """Rank the realisations of one database against one loading.
 
     ``order`` is what closeness means - see ``EVENTS.rank``. Ranking on the
@@ -364,11 +369,18 @@ def evaluate(project, sources, target: Target, filters: Filters,
             outcome.notes.append(
                 f"Ranking on {target.result_type}: the design value at 1 in "
                 f"{results.format_aep(aep)} is {target_value:,.2f}.")
-    if order == EVENTS.RESULT and band:
+    if order == EVENTS.RESULT and (band or rounding):
         unit, scale = band_units(target.result_type)
+        said = []
+        if band:
+            said.append(f"events within {band * scale:g} {unit} of the loading "
+                        f"count as reaching it")
+        if rounding:
+            said.append(f"differences{' beyond that' if band else ''} are "
+                        f"rounded to {rounding * scale:g} {unit}")
         outcome.notes.append(
-            f"Events within {band * scale:g} {unit} of the loading count as "
-            f"reaching it and are ordered by AEP neutrality.")
+            f"Ranked by AEP neutrality where the {target.result_type} is the "
+            f"same: " + ", and ".join(said) + ".")
     outcome.target_value = target_value
 
     source = _source_named(sources, target.source)
@@ -393,7 +405,7 @@ def evaluate(project, sources, target: Target, filters: Filters,
                           target_value=target_value)
     outcome.ranking = EVENTS.rank(scored, filters, target.count,
                                   above_curve=above_curve, order=order,
-                                  band=band)
+                                  band=band, rounding=rounding)
     return outcome
 
 
