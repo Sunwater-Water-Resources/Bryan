@@ -124,6 +124,18 @@ def storm_row(frame, row):
     ``load_subcatchment_areas(None)`` and pandas complains about a NoneType
     buffer, which says nothing about the actual problem.
 
+    **The realisation itself is not the problem.** A routed database is the
+    inherited one with the routed peaks written over it (``_write_mcdf``), so
+    every draw the storm was made from is still in the row. Only the two
+    sims-list inputs are missing, and there are three places to find them, in
+    this order:
+
+    1. the row that produced the ``Input MCDF``, which has all of them;
+    2. the routing row itself, where it carries a ``Duration`` and a
+       ``Focal subcatchments`` of its own - a routing row is free to name them
+       even though the method ignores them;
+    3. nowhere, and then the note says which two keys would fix it.
+
     Returns ``(row, note)``; the row is None where the source cannot be found.
     """
     if row is None:
@@ -137,21 +149,41 @@ def storm_row(frame, row):
         database = cell(row, name)
         if database:
             break
-    routed = str(cell(row, 'Output file', ''))
-    if not database:
-        return None, ('this is a reservoir routing row and it names no "Input MCDF", '
-                      'so the run that generated the storms cannot be identified')
 
-    source = _row_behind(frame, database, exclude=routed)
-    if source is None:
-        return None, (f'this is a reservoir routing row and no sims-list row produced '
-                      f'{os.path.basename(str(database))}, so the storm inputs '
-                      f'(Duration, Focal subcatchments) are not available - run the CLI '
-                      f'against the sims list holding the source run, or pass '
-                      f'--no-hyetograph')
-    return source, (f'reservoir routing row: the storm inputs come from '
-                    f'{os.path.basename(str(cell(source, "Output file", "")))}, '
-                    f'the run that produced {os.path.basename(str(database))}')
+    source = (_row_behind(frame, database, exclude=cell(row, 'Output file', ''))
+              if database else None)
+    if source is not None:
+        return source, (f'reservoir routing row: the storm inputs come from '
+                        f'{_name(cell(source, "Output file", ""))}, '
+                        f'the run that produced {_name(database)}')
+
+    if _has_storm_inputs(row):
+        return row, ('reservoir routing row: the inflows were inherited, but this row '
+                     'names a Duration and a Focal subcatchments of its own, so the '
+                     'storms are rebuilt from those')
+
+    named = (f'no sims-list row produced {_name(database)}'
+             if database else 'this row names no "Input MCDF"')
+    return None, (f'this is a reservoir routing row and {named}, so the storm inputs '
+                  f'are not available. Everything else the rebuild needs is in the '
+                  f'inherited database - add "Duration" and "Focal subcatchments" to '
+                  f'this row, or pass --source-sims-list with the sims list that holds '
+                  f'the run the inflows came from')
+
+
+def _name(path) -> str:
+    """The file name out of a sims-list path, on either separator.
+
+    ``os.path.basename`` keeps the backslashes of a Windows path when it runs
+    on Linux, which turns a note naming a file into a note naming the whole
+    path.
+    """
+    return str(path).replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+
+
+def _has_storm_inputs(row) -> bool:
+    """Whether a row names the two things a rebuild cannot do without."""
+    return bool(cell(row, 'Duration')) and bool(cell(row, 'Focal subcatchments'))
 
 
 def _row_behind(frame, database, exclude=''):
@@ -553,6 +585,13 @@ def parse_args(argv=None):
                         help='where to write (default: beside the selection file)')
     parser.add_argument('--name', default=None,
                         help='basename for the outputs (default: the selection file stem)')
+    parser.add_argument('--source-sims-list', action='append', default=[],
+                        metavar='XLSX',
+                        help='another simulation list to look in for the run an '
+                             'inherited database came from. Reservoir routing rows '
+                             'often live in their own sims list, and the storm '
+                             'inputs belong to the run that was re-routed. May be '
+                             'given more than once')
     parser.add_argument('--no-hyetograph', action='store_true',
                         help='skip rebuilding the rainfall - much faster, and needed '
                              'where the storm data is not to hand')
@@ -565,6 +604,14 @@ def main(argv=None):
     args = parse_args(argv)
     config = load_config(args.config)
     frame = read_sims_list(config['sims_list'])
+    for extra in args.source_sims_list:
+        path = resolve(config['project_folder'], extra)
+        try:
+            frame = pd.concat([frame, read_sims_list(path)], ignore_index=True)
+        except Exception as error:                    # noqa: BLE001
+            print(f'  NOTE: {extra} could not be read ({error})')
+        else:
+            print(f'  also looking in {path}')
     targets, settings = events.read_selection(args.selection)
 
     chosen = [target for target in targets if target.picked is not None]

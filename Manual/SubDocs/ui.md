@@ -223,7 +223,9 @@ python util\RepresentativeEvents.py --config sims_config.json ^
     --selection sims_mc\results\GWL1p3_representative_events.json
 ```
 
-Run it with **Bryan's** interpreter rather than the launcher's — it rebuilds the rainfall, which drives the storm generator. For each chosen event it writes a three-panel plot (the hyetograph drawn downwards from zero at the top, the inflow and outflow, and the lake level, all on one time axis measured from the start of the main burst) and a workbook holding every series. The hyetograph is **rebuilt** from what the run sampled and then checked against the depths the run recorded; a rebuild that does not match is said so rather than shown as fact. See [the utilities](utilities.md) for the detail.
+The **copy button** beside it puts the whole command on the clipboard, which is worth using: it wraps over several lines and half of it is easy to miss by hand.
+
+Run it with **Bryan's** interpreter rather than the launcher's — it rebuilds the rainfall, which drives the storm generator. For each chosen event it writes a three-panel plot (the hyetograph drawn downwards from zero at the top, the inflow and outflow, and the lake level, all on one time axis measured from the start of the main burst) and a workbook holding every series. The hyetograph is **rebuilt** from what the run sampled and then checked against the depths the run recorded; a rebuild that does not match is said so rather than shown as fact. Events chosen from a **reservoir routing** row need one thing more: the storms belong to the run whose inflows were inherited, so either that run is in the same sims list, or its list is named with ```--source-sims-list```, or the routing row carries a ```Duration``` and a ```Focal subcatchments``` of its own. See [the utilities](utilities.md) for the detail.
 
 ### What it needs
 
