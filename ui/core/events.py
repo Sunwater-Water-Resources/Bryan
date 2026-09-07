@@ -185,6 +185,33 @@ def _curve_sources(project, sources, result_type):
     return found.get(result_type, [])
 
 
+# How close two results count as the same, and the units the page asks for it
+# in. A lake level is quoted in millimetres because that is the precision it is
+# argued about at; a flow in m3/s, which is its own unit.
+BAND_UNITS = {"level": ("mm", 1000.0),
+              "inflow": ("m\u00b3/s", 1.0),
+              "outflow": ("m\u00b3/s", 1.0)}
+
+# 20 mm on a level: inside that the rating curve and the routing timestep are
+# deciding the order, not the hydrology.
+DEFAULT_BANDS = {"level": 20.0, "inflow": 10.0, "outflow": 10.0}
+
+
+def band_units(result_type) -> tuple:
+    """(label, how many of them make one of the result's own units)."""
+    return BAND_UNITS.get(result_type, ("", 1.0))
+
+
+def band_in_result_units(result_type, shown) -> float:
+    """The page's number, in the units the ranking measures in."""
+    try:
+        shown = float(shown)
+    except (TypeError, ValueError):
+        return 0.0
+    scale = band_units(result_type)[1]
+    return max(shown, 0.0) / scale
+
+
 def envelope_curve(project, sources, result_type="level") -> pd.Series:
     """The design frequency curve a loading is read against.
 
@@ -274,7 +301,7 @@ class Outcome:
 
 
 def evaluate(project, sources, target: Target, filters: Filters,
-             curve=None, order=EVENTS.DELTA_Z, curves=None) -> Outcome:
+             curve=None, order=EVENTS.DELTA_Z, curves=None, band=0.0) -> Outcome:
     """Rank the realisations of one database against one loading.
 
     ``order`` is what closeness means - see ``EVENTS.rank``. Ranking on the
@@ -337,6 +364,11 @@ def evaluate(project, sources, target: Target, filters: Filters,
             outcome.notes.append(
                 f"Ranking on {target.result_type}: the design value at 1 in "
                 f"{results.format_aep(aep)} is {target_value:,.2f}.")
+    if order == EVENTS.RESULT and band:
+        unit, scale = band_units(target.result_type)
+        outcome.notes.append(
+            f"Events within {band * scale:g} {unit} of the loading count as "
+            f"reaching it and are ordered by AEP neutrality.")
     outcome.target_value = target_value
 
     source = _source_named(sources, target.source)
@@ -360,7 +392,8 @@ def evaluate(project, sources, target: Target, filters: Filters,
     scored = EVENTS.score(frame, aep or _top_aep(frame), target.rain_aep,
                           target_value=target_value)
     outcome.ranking = EVENTS.rank(scored, filters, target.count,
-                                  above_curve=above_curve, order=order)
+                                  above_curve=above_curve, order=order,
+                                  band=band)
     return outcome
 
 

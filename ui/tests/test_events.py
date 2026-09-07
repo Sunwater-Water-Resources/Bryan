@@ -347,3 +347,29 @@ def test_ranking_the_inflow_reads_the_inflow_curve(project):
                               order=events.EVENTS.RESULT)
     assert outcome.target_value == pytest.approx(float(inflows.loc[1000]), rel=1e-6)
     assert outcome.target_value != pytest.approx(float(levels.loc[1000]), rel=1e-6)
+
+
+def test_the_band_is_asked_for_in_millimetres_of_level(project):
+    """The page asks in mm because that is what a level is argued about in."""
+    assert events.band_units("level") == ("mm", 1000.0)
+    assert events.band_in_result_units("level", 20) == pytest.approx(0.02)
+    assert events.band_in_result_units("inflow", 20) == pytest.approx(20.0)
+    assert events.band_in_result_units("level", None) == 0.0
+
+
+def test_the_band_is_reported_against_the_loading(project):
+    sources = events.sources_for_rows(project)
+    target = events.Target(kind="aep", value=1000, result_type="level",
+                           source="24h", count=3)
+    outcome = events.evaluate(project, sources, target, events.Filters(),
+                              order=events.EVENTS.RESULT, band=0.02)
+    assert any("within 20 mm" in note for note in outcome.notes)
+
+
+def test_the_band_is_not_mentioned_when_ranking_on_neutrality(project):
+    sources = events.sources_for_rows(project)
+    target = events.Target(kind="aep", value=1000, result_type="level",
+                           source="24h", count=3)
+    outcome = events.evaluate(project, sources, target, events.Filters(),
+                              band=0.02)
+    assert not any("within" in note for note in outcome.notes)

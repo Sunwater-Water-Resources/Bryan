@@ -492,8 +492,16 @@ class Ranking:
         return self.candidates.empty
 
 
-def _by_result(frame) -> tuple:
+def _by_result(frame, band: float = 0.0) -> tuple:
     """Sorted by how close the result is to the loading, ties on ``delta_z``.
+
+    ``band`` is how close counts as *the same*, in the result's own units. A
+    lake level read to the millimetre is false precision - the rating curve,
+    the routing timestep and the model itself are nowhere near that - so
+    without a band the sort is decided by noise and neutrality never gets a
+    look in. Distances are put in bands of that width and the order within a
+    band is ``delta_z``: every event that reaches the loading, best neutrality
+    first. A band of zero is the plain distance.
 
     The loading's own units where they are known. Where they are not - no
     design value for that AEP, or a database with no such column - the result
@@ -502,12 +510,30 @@ def _by_result(frame) -> tuple:
     """
     distance = pd.to_numeric(frame.get('delta_value'), errors='coerce')
     if distance is not None and distance.notna().any():
-        return frame.assign(_distance=distance).sort_values(
+        return frame.assign(_distance=banded(distance, band)).sort_values(
             by=['_distance', 'delta_z']).drop(columns='_distance'), ''
     return (frame.assign(_distance=frame['d_z_result'].abs())
             .sort_values(by=['_distance', 'delta_z']).drop(columns='_distance'),
             'Ranked on the result AEP: there is no design value at this '
             'loading to measure against.')
+
+
+def banded(distance, band: float):
+    """Distances in whole bands - what makes two results count as the same.
+
+    The band a distance falls in, not the distance rounded: everything within
+    one band of the loading is band 0 and is ordered on neutrality instead.
+    Kept separate so a caller can say which events are being treated as
+    equally on target.
+    """
+    try:
+        band = float(band)
+    except (TypeError, ValueError):
+        band = 0.0
+    if not band > 0:
+        return distance
+    return (distance / band).apply(lambda value: value if _isnan(value)
+                                   else math.floor(value))
 
 
 def flags_for(row, filters: Filters = Filters()) -> tuple:
@@ -610,7 +636,8 @@ def _isnan(value) -> bool:
 
 
 def rank(scored, filters: Filters = Filters(), count: int = 10,
-         above_curve: bool = False, order: str = DELTA_Z) -> Ranking:
+         above_curve: bool = False, order: str = DELTA_Z,
+         band: float = 0.0) -> Ranking:
     """The best candidates for one target, and an account of the rest.
 
     ``order`` is what closeness means here:
@@ -623,7 +650,8 @@ def rank(scored, filters: Filters = Filters(), count: int = 10,
       reported rather than ranked on, which is the right way round when the
       event exists to reach a particular lake level and the rainfall's rarity
       is a thing to be checked afterwards. ``delta_z`` breaks its ties, so of
-      two events at the same level the neutral one still comes first.
+      two events at the same level the neutral one still comes first, and
+      ``band`` is what 'the same level' means - see ``_by_result``.
 
     ``above_curve`` comes from ``aep_for_level``: the loading is rarer than
     anything simulated, so there is no distance to minimise and the honest
@@ -668,7 +696,7 @@ def rank(scored, filters: Filters = Filters(), count: int = 10,
     if above_curve:
         frame = frame.sort_values(by=['level', 'rain_aep'], ascending=False)
     elif order == RESULT:
-        frame, note = _by_result(frame)
+        frame, note = _by_result(frame, band)
         if note:
             result.notes.append(note)
     else:
