@@ -58,8 +58,9 @@ class ifdCurves:
             extreme_spatial_smoothing_method = self.config_data['extreme_spatial_smoothing_method']
             if extreme_spatial_smoothing_method == 'interpolate_depths':
                 print ('Applying depths interpolation method for smoothing very rare – extreme spatial patterns')
-                self.extreme_spatial_method == 'interpolate_depths'
-            elif 'interpolate_weights' in extreme_spatial_smoothing_method.keys():
+                self.extreme_spatial_method = 'interpolate_depths'
+            elif (isinstance(extreme_spatial_smoothing_method, dict)
+                  and 'interpolate_weights' in extreme_spatial_smoothing_method.keys()):
                 print ('Applying weights interpolation method for smoothing very rare – extreme spatial patterns')
                 smoothing_bounds = extreme_spatial_smoothing_method['interpolate_weights']
                 self.extreme_spatial_method = 'interpolate_weights'
@@ -67,7 +68,8 @@ class ifdCurves:
                 self.catchment_ave_curves = {}
                 self.smoothed_weights = WeightInterpolatedSpatialPattern(smoothing_bounds, self.config_data["AEP_of_PMP"])
             else:
-                raise Exception('extreme_spatial_smoothing_method is invalid')
+                raise Exception('extreme_spatial_smoothing_method is invalid: '
+                                f'{extreme_spatial_smoothing_method!r}')
         else:
             print('CHECK:   The method for smoothing spatial patterns for extreme storms not specified')
             print('         Defaulting to interpolated depths method for smoothing very rare – extreme spatial patterns')
