@@ -97,6 +97,11 @@ class DownstreamRainfall:
         self.bounds = cfg['storm_method_config']['aep_changeover_to_extreme']
         self.pmp_aep = cfg['pmp_aep_by_region']
         self.mass_balance = cfg.get('mass_balance', {})
+        # JPA's reverse-fitted GEV per region and duration. Read with
+        # row['shape'] and never row.shape - a Series' .shape is its dimensions,
+        # and the column here is genuinely called 'shape'.
+        anchors = pd.read_csv(paths['pmp_anchors'])
+        self.gev = {(int(r['Duration_h']), r['Region']): r for _, r in anchors.iterrows()}
         self.areal_folder = paths['areal_ifd_folder']
         self._ifd = {}
         self._areal = {}
@@ -179,9 +184,32 @@ class DownstreamRainfall:
         """
         if target in self.mass_balance:
             return self._by_mass_balance(target, duration, aep)
+        rare, _ = self.bounds
         table = self.areal(duration)
-        return float(interp_in_z(table.index.to_numpy(), table[target].to_numpy(),
-                                 min(aep, self.pmp_aep[target]), log=True))
+        if aep <= table.index.max() and aep <= 2000:
+            return float(interp_in_z(table.index.to_numpy(), table[target].to_numpy(),
+                                     aep, log=True))
+        return self._extreme(target, duration, aep)
+
+    def _extreme(self, target, duration, aep):
+        """Depth beyond 1 in 2,000, from JPA's reverse-fitted GEV.
+
+        Reading the tabulated rows instead does not work at the top: the table
+        stops at 1 in 2,000,000, which is *short of* the AEP of the PMP for the
+        regions whose PMP is rarer than that - DST at 1 in 4.01M, KRO_dam at
+        3.04M - so an interpolation plateaus below the PMP and was 7.7% low for
+        DST. Where the table does extend past a region's PMP AEP it is flat at
+        the PMP, which flattens the curve early and costs another half percent.
+
+        The fitted parameters hit each region's own PMP at its own AEP of the
+        PMP to 0.006%, and meet the tabulated depth at the 1 in 2,000 join to
+        0.014%, so this is the same curve rather than a second opinion.
+        """
+        row = self.gev[(duration, target)]
+        k, scale, location = row['shape'], row['scale'], row['location']
+        capped = min(aep, row['pmp_aep'])
+        factor = 1 - (-np.log(1 - 1 / capped)) ** k
+        return float(location + scale / k * factor)
 
     def _by_mass_balance(self, target, duration, aep):
         """A region JPA derives as a residual rather than fitting a curve to.
