@@ -95,6 +95,8 @@ class DownstreamRainfall:
         self.arr_file = paths['arr_datahub_file']
         self.ifd_folder = paths['ifd_folder']
         self.bounds = cfg['storm_method_config']['aep_changeover_to_extreme']
+        self.driver = cfg['driver']
+        self.driver_area_km2 = float(cfg['driver_area_km2'])
         self.pmp_aep = cfg['pmp_aep_by_region']
         self.mass_balance = cfg.get('mass_balance', {})
         # JPA's reverse-fitted GEV per region and duration. Read with
@@ -267,3 +269,159 @@ class DownstreamRainfall:
                 mean_depth_mm=round(float((depth * area).sum() / area.sum()), 1),
                 min_mm=round(float(depth.min()), 1), max_mm=round(float(depth.max()), 1)))
         return pd.DataFrame(rows).set_index('cond_target')
+
+
+class DownstreamStormWriter:
+    """Turn a chosen representative event into a storm file for the regional model.
+
+    The event is a realisation of an upstream Monte Carlo run, so everything
+    about it except the rainfall depths is read back out of that run's mcdf -
+    the temporal pattern it drew, its losses, its storm method - rather than
+    re-sampled. Re-sampling would produce *a* storm of the right rarity instead
+    of *the* storm whose dam outflow the event was chosen for.
+
+    The temporal pattern comes from the **upstream** storm config, because it is
+    the driving event's pattern and one pattern applies across the whole
+    regional model. The depths come from ``DownstreamRainfall``, which works
+    region by region.
+    """
+
+    #: mcdf columns this needs, and what they are.
+    EVENT_COLUMNS = ('rain_z', 'rain_aep', 'tp', 'storm_method',
+                     'initial_loss', 'continuing_loss', 'preburst_mm', 'embedded_bursts')
+
+    def __init__(self, rainfall, storm_config, model_config, climate_config=None,
+                 driver_area_km2=None):
+        from lib.StormGenerator import StormBurst
+        from lib.URBSmodel import UrbsModel
+        self.rainfall = rainfall
+        self.storm = StormBurst(storm_config)
+        # **The driver catchment's area, not the regional model's.** The ARR
+        # areal patterns are banded by area and the GTSMR pattern file is named
+        # for one, so this selects which pattern set is read. The pattern being
+        # rebuilt is the one the *upstream* event drew, over the dam catchment,
+        # so the regional model's 4,677 km2 would fetch a different set and
+        # quietly replace the event's own temporal pattern with a plausible
+        # stranger.
+        self.storm.area = driver_area_km2 or rainfall.driver_area_km2
+        self.model = UrbsModel(model_config)
+        self.climate_config = climate_config
+        self._imported = set()
+
+    def _import_patterns(self, duration):
+        if duration in self._imported:
+            return
+        self.storm.import_arr_areal_patterns([duration])
+        self.storm.import_arr_point_patterns([duration])
+        self.storm.import_gsdm_temporal_patterns([duration])
+        self.storm.import_gtsmr_temporal_patterns([duration])
+        self._imported.add(duration)
+
+    @staticmethod
+    def read_event(mcdf_path, realisation):
+        """One realisation's sampled parameters, from the run that produced it."""
+        frame = (pd.read_parquet(mcdf_path) if str(mcdf_path).endswith('.parquet')
+                 else pd.read_csv(mcdf_path))
+        if frame.index.name is None and 'Unnamed: 0' in frame.columns:
+            frame = frame.set_index('Unnamed: 0')
+        return frame.loc[realisation]
+
+    def climate_scaling(self, duration, gwl):
+        if not self.climate_config or not gwl:
+            return 1.0
+        from lib.ClimateChange import ClimateAdjustment
+        adjust = ClimateAdjustment(config_file=self.climate_config, method='gwl', gwl=gwl)
+        return adjust.get_rainfall_uplift_factor(duration)
+
+    def losses(self, event, il_scaling=1.0, cl_scaling=1.0, cl_floor=0.0):
+        """Initial and continuing loss for the storm file.
+
+        The storm file's initial loss is what is left of the sampled initial
+        loss once the pre-burst has already spent some of it, floored at zero -
+        the pre-burst rain is not in this file. Neither loss is scaled for
+        climate: Bryan has already done that, and the mcdf records the scaled
+        values.
+        """
+        il = float(event['initial_loss']) - float(event['preburst_mm'])
+        il = round(max(il, 0.0) * il_scaling, 1)
+        cl = max(round(float(event['continuing_loss']) * cl_scaling, 1), cl_floor)
+        return il, cl
+
+    def duration_dip(self, duration, driver_aep):
+        """Regions whose rain would be *deeper* at the duration below this one.
+
+        JPA's conditional depths are not monotone in duration for the weakly
+        coupled regions, so an event drawn here can carry less rain than the
+        same event one duration shorter. It cannot corrupt this storm - it has
+        one duration - but nothing in the file would say so, hence the flag.
+        """
+        durations = sorted(self.rainfall.conditional.index.get_level_values('Duration_h').unique())
+        if duration not in durations or durations.index(duration) == 0:
+            return []
+        below = durations[durations.index(duration) - 1]
+        here = self.rainfall.conditional_aep(duration, driver_aep)
+        under = self.rainfall.conditional_aep(below, driver_aep)
+        return sorted(t for t in here.index if here[t] < under[t] - 1e-9)
+
+    def write(self, event, duration, filename, gwl=0.0, rain_lag_hours=0.0,
+              il_scaling=1.0, cl_scaling=1.0, cl_floor=0.0, report=True):
+        """Write one storm file. Returns what went into it."""
+        self._import_patterns(duration)
+        driver_aep = float(event['rain_aep'])
+        method = str(event['storm_method'])
+        scaling = self.climate_scaling(duration, gwl)
+
+        depths = self.rainfall.depths(duration, driver_aep, method) * scaling
+        depths = depths.reindex(self.rainfall.subareas.index)
+
+        pattern = self.storm.get_temporal_pattern(
+            storm_method=method, duration=duration,
+            tp_sample=int(event['tp']), rain_sample_z=float(event['rain_z']))
+        period = self.model.get_simulation_period(duration)
+        if rain_lag_hours:
+            pattern = shift_pattern(pattern, rain_lag_hours)
+            period += abs(rain_lag_hours)
+
+        il, cl = self.losses(event, il_scaling, cl_scaling, cl_floor)
+        self.model.create_storm_file(
+            rainfall_depths=depths, temporal_pattern=pattern,
+            data_interval=self.storm.timesteps, filename=filename,
+            run_duration=period, storm_duration=duration,
+            storm_duration_excl_pb=duration, initial_loss=il, continuing_loss=cl,
+            ari=int(round(driver_aep)), ensemble=int(event['tp']))
+
+        record = dict(filename=filename, duration=duration, driver_aep=driver_aep,
+                      storm_method=method, tp=int(event['tp']), gwl=gwl,
+                      climate_scaling=round(scaling, 4), initial_loss=il, continuing_loss=cl,
+                      mean_depth_mm=round(float((depths * self.rainfall.subareas['area_km2']).sum()
+                                                / self.rainfall.subareas['area_km2'].sum()), 1),
+                      embedded_bursts=str(event.get('embedded_bursts', '')),
+                      duration_dip=';'.join(self.duration_dip(duration, driver_aep)))
+        if report:
+            if record['embedded_bursts'] not in ('', 'No embedded bursts'):
+                print(f"  WARNING {filename}: {record['embedded_bursts']}")
+            if record['duration_dip']:
+                print(f"  CHECK   {filename}: conditional depth falls from the duration below "
+                      f"in {record['duration_dip']}")
+        return record
+
+
+def shift_pattern(pattern, hours):
+    """Move a temporal pattern in time, padding the end it leaves behind.
+
+    A positive shift delays the rain over the downstream catchment relative to
+    the upstream event; a negative one brings it forward. The pattern's index is
+    hours, so the padding is whole timesteps of zero rain.
+    """
+    step = float(pattern.index[0])
+    steps = int(round(hours / step))
+    pattern = pattern.copy()
+    if steps > 0:
+        pattern.index = pattern.index + steps * step
+        for i in range(1, steps + 1):
+            pattern.loc[i * step] = 0.0
+    elif steps < 0:
+        end = float(pattern.index[-1])
+        for i in range(1, -steps + 1):
+            pattern.loc[end + i * step] = 0.0
+    return pattern.sort_index()
