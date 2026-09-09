@@ -15,6 +15,7 @@ from lib import RunLog
 from lib import LogFiles
 from lib.ConsoleTitle import set_console_title
 from datetime import datetime
+from lib.ConfigPaths import resolve, resolve_all
 
 
 # Get the config information
@@ -32,7 +33,7 @@ if 'project_folder' in sim_config:
         project_folder = sim_config['project_folder']
 
 print('\nProject folder is: ', os.path.abspath(project_folder))
-sim_list_file = os.path.join(project_folder, sim_config['simulation_list'])
+sim_list_file = resolve(project_folder, sim_config['simulation_list'])
 print('\nOpening simulation list: ', sim_list_file)
 sim_df = pd.read_excel(sim_list_file, sheet_name=0)
 print(sim_df[sim_df['Include'] == 'yes'])
@@ -45,9 +46,7 @@ filepaths = sim_config['filepaths']
 folder = os.path.dirname(simulation_file)
 if not os.path.isabs(folder):
     folder = os.path.join(os.getcwd(), folder)
-for key, relpath in filepaths.items():
-    path = os.path.join(folder, relpath)
-    filepaths[key] = os.path.normpath(path)
+resolve_all(folder, filepaths)
 
 print('\nClimate change config file: ', filepaths['climate_config'])
 

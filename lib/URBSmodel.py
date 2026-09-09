@@ -10,6 +10,7 @@ from scipy import interpolate
 import sys
 import time
 from lib.FileTools import MopWarnings, remove_file, remove_tree
+from lib.ConfigPaths import resolve
 
 
 class UrbsModel:
@@ -49,7 +50,7 @@ class UrbsModel:
             # generates storms, does not need the executable at all.
             print('WARNING: The URBS executable could not be found:', self.urbs_exe)
             print('         Any simulation that runs the model will fail.')
-        self.model_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['model_folder']))
+        self.model_folder = resolve(os.path.dirname(config_file), config_data['model_folder'])
         self.vec_file = config_data['vec_file']
         self.baseflow_vec_file = '{}_baseflow.vec'.format(Path(self.vec_file).stem)
 
@@ -66,23 +67,20 @@ class UrbsModel:
             self.copy_catchment_data_file()     # Copy to output folder
         else:
             self.output_folder = self.model_folder
-        self.ratings_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['ratings_folder']))
+        self.ratings_folder = resolve(os.path.dirname(config_file), config_data['ratings_folder'])
 
         if sub_folder is not None:
-            self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file),
-                                                               config_data['storms_folder'],
-                                                               sub_folder))
+            self.storms_folder = os.path.normpath(os.path.join(
+                resolve(os.path.dirname(config_file), config_data['storms_folder']), sub_folder))
             # Create sub-folder for storm files. If sub-folder exists from previous run then delete first
             remove_tree(self.storms_folder)
             os.makedirs(self.storms_folder)
         else:
-            self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file),
-                                                               config_data['storms_folder']))
+            self.storms_folder = resolve(os.path.dirname(config_file), config_data['storms_folder'])
 
         # results_folder no longer used?
         if 'results_folder' in config_data.keys():
-            self.results_folder = os.path.normpath(os.path.join(os.path.dirname(config_file),
-                                                                config_data['results_folder']))
+            self.results_folder = resolve(os.path.dirname(config_file), config_data['results_folder'])
         else:
             self.results_folder = ''
         self.store_tuflow = config_data['store_tuflow']

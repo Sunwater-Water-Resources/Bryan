@@ -11,6 +11,7 @@ import pandas as pd
 from scipy.special import ndtri, ndtr
 from lib.InterpolationCurves import *
 import warnings
+from lib.ConfigPaths import resolve
 
 
 class ifdCurves:
@@ -93,7 +94,7 @@ class ifdCurves:
 
 
             # duration_path = os.path.join(self.config_data['folder'], duration_data['filename'])
-            duration_path = os.path.normpath(os.path.join(self.folder, duration_data['filename']))
+            duration_path = resolve(self.folder, duration_data['filename'])
             print(f'Importing {duration} hour duration: {duration_path}')
             duration_obj = DurationCurve(filepath=duration_path,
                                          duration=duration)
@@ -125,16 +126,8 @@ class ifdCurves:
         print('Getting the PMP depths')
         # pmp_files = [os.path.join(self.config_data['folder'], self.config_data['PMP_depths']),
         #              os.path.join(self.config_data['folder'], self.config_data['PMP_scaling'])]
-        pmp_files = [
-            os.path.normpath(
-                os.path.join(
-                    self.folder, 
-                    self.config_data['PMP_depths'])),
-            os.path.normpath(
-                os.path.join(
-                    self.folder, 
-                    self.config_data['PMP_scaling']))
-            ]
+        pmp_files = [resolve(self.folder, self.config_data['PMP_depths']),
+                     resolve(self.folder, self.config_data['PMP_scaling'])]
         pmp_obj = PMP(pmp_files, self.config_data["AEP_of_PMP"], self.skip_method, 
                       duration_changeover, subcatch_area)
         self.pmp = pmp_obj

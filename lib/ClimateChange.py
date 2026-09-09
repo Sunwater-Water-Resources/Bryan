@@ -7,6 +7,7 @@ import json
 import os.path
 import pandas as pd
 import numpy as np
+from lib.ConfigPaths import resolve
 
 
 class ClimateAdjustment:
@@ -40,14 +41,14 @@ class ClimateAdjustment:
 
         # set up change in rainfall losses
         self.nrm_cluster = self.config_data['NRM cluster']
-        filepath = os.path.join(self.folder, self.config_data['loss rates file'])
+        filepath = resolve(self.folder, self.config_data['loss rates file'])
         print('\nReading rainfall loss rates of change file: ', filepath)
         loss_rates_all = pd.read_csv(filepath, index_col=0)
         self.loss_rates = loss_rates_all.loc[self.nrm_cluster]
 
         # compute change in temporal pattern
         self.kg_classification = self.config_data['KG classification']
-        filepath = os.path.join(self.folder, self.config_data['temporal pattern scaling'])
+        filepath = resolve(self.folder, self.config_data['temporal pattern scaling'])
         print('\nReading temporal pattern D50 scaling file: ', filepath)
         self.tp_d50_scaling_df = pd.read_csv(filepath, index_col=0)
         self.tp_d50_scaling_df.fillna(0.0, inplace=True)
