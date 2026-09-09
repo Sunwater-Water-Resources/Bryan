@@ -7,6 +7,7 @@ import math
 from scipy import interpolate
 import numpy as np
 import pandas as pd
+from lib.ConfigPaths import resolve
 
 
 class LakeConditions:
@@ -305,7 +306,7 @@ class ExceedanceCurveLayer:
                 raise Exception('"coefficients" not given in lake config file for type: ', self.type)
         elif self.type == 'empirical':
             if 'filename' in layer_info.keys():
-                filepath = os.path.join(folder, layer_info['filename'])
+                filepath = resolve(folder, layer_info['filename'])
                 print('Opening empirical ADV curve:', filepath)
                 df = pd.read_csv(filepath)
                 print(df)

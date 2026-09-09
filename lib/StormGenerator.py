@@ -13,6 +13,7 @@ from scipy.special import ndtri, ndtr
 import scipy.interpolate
 from lib.RainfallScheme import ifdCurves
 from lib.TemporalPatterns import ArealPatterns, PointPatterns, GsdmPatterns, GtsmrPatterns, PreburstPatterns
+from lib.ConfigPaths import resolve_all
 
 
 class StormBurst:
@@ -188,10 +189,7 @@ class StormBurst:
     def set_filepaths(self, json_file):
         filepaths = self.config_data['file_paths']
         folder = os.path.dirname(json_file)
-        for key, relpath in filepaths.items():
-            path = os.path.join(folder, relpath)
-            filepaths[key] = os.path.normpath(path)
-        self.filepaths = filepaths
+        self.filepaths = resolve_all(folder, filepaths)
         
     def load_subcatchment_areas(self, filepath):
         # if filepath:

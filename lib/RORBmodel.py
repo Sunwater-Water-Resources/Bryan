@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import time
 from lib.FileTools import MopWarnings, remove_file, remove_tree
+from lib.ConfigPaths import resolve
 
 
 class RorbModel:
@@ -18,21 +19,20 @@ class RorbModel:
         f.close()
         self.full_supply_volume = config_data['full_supply_volume']
         self.rorb_exe = config_data['model_exe']
-        self.model_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['model_folder']))
+        self.model_folder = resolve(os.path.dirname(config_file), config_data['model_folder'])
         self.cat_file = config_data['cat_file']
         self.par_file = config_data['par_file']
         # self.ratings_folder = config_data['ratings_folder']
         
         # Create sub-folder for output files. If sub-folder exists from previous run then delete first
         if sub_folder is not None:
-            self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file),
-                                                               config_data['storms_folder'],
-                                                               sub_folder))
+            self.storms_folder = os.path.normpath(os.path.join(
+                resolve(os.path.dirname(config_file), config_data['storms_folder']), sub_folder))
             # Create sub-folder for storm files. If sub-folder exists from previous run then delete first
             remove_tree(self.storms_folder)
             os.makedirs(self.storms_folder)
         else:
-            self.storms_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['storms_folder']))
+            self.storms_folder = resolve(os.path.dirname(config_file), config_data['storms_folder'])
             os.makedirs(self.storms_folder, exist_ok=True)
             
         # Copy catg file to storms_folder
@@ -40,7 +40,7 @@ class RorbModel:
         shutil.copy(original_catg, self.storms_folder)
             
         if 'results_folder' in config_data.keys():
-            self.results_folder = os.path.normpath(os.path.join(os.path.dirname(config_file), config_data['results_folder']))
+            self.results_folder = resolve(os.path.dirname(config_file), config_data['results_folder'])
         # self.store_tuflow = config_data['store_tuflow']
         # self.result_prefix = config_data['result_prefix']
         # self.time_increment = config_data['time_increment']
