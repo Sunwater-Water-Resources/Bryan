@@ -25,8 +25,9 @@ def downstream_page() -> None:
         project = require_project()
         if project is None:
             return
+        folder = project.config.project_folder
 
-        selections = downstream.find_selections(project)
+        selections = downstream.find_selections(folder)
         if not selections:
             ui.label("No saved event selections under this project.").classes("text-lg")
             ui.markdown(
@@ -83,10 +84,10 @@ def downstream_page() -> None:
                 return
             argv = downstream.command(
                 state["selection"], state["config"], state["model"],
-                bryan_python=getattr(STATE, "bryan_python", None),
+                bryan_python=STATE.settings.bryan_python or None,
                 duration=state["duration"], gwl=state["gwl"], dry_run=dry_run)
             log = Path(state["selection"]).with_suffix(".downstream.log")
-            state["process"] = downstream.launch(argv, cwd=project, log_path=log)
+            state["process"] = downstream.launch(argv, cwd=folder, log_path=log)
             ui.notify(f"{'Checking' if dry_run else 'Generating'} - output in {log.name}")
 
         with ui.row().classes("gap-3"):
