@@ -507,11 +507,17 @@ class EnsembleSimulator(Simulator):
                                                      df_method=df_method)
             self.enb.df.loc[sim_id, 'storm_method'] = storm_method
 
+            # The extreme pattern the spatial interpolation heads for - a function of the AEP,
+            # not of the ARR/extreme storm method sampled above
+            spatial_method = storm.sample_spatial_method(storm_method, duration, sim_method='ensemble')
+            self.enb.df.loc[sim_id, 'spatial_method'] = spatial_method
+
             # Get the rainfall - don't apply climate change uplift at this stage
             # because we first need to do the temporal pattern filtering
             rain_depths = storm.rainfall.get_depth_z(z=rain_sample_z,
                                                      duration=duration,
-                                                     storm_method=storm_method)
+                                                     storm_method=storm_method,
+                                                     spatial_method=spatial_method)
             # ave_rain = rain_depths.mean()
             ave_rain = storm.get_average_rain(rain_depths)
 
@@ -1021,6 +1027,15 @@ class MonteCarloSimulator(Simulator):
                     storm_method = storm.sample_storm_method(rain_sample_z=rain_sample_z,
                                                              duration=duration)
                 mc.df.loc[sim_id, 'storm_method'] = storm_method
+
+                # The extreme pattern the spatial interpolation heads for - a function of the
+                # AEP, not of the ARR/extreme storm method sampled above. Replicated with the
+                # storm method where the source run recorded one.
+                if self.replicates['storm_method'] and 'spatial_method' in self.replicates_df.columns:
+                    spatial_method = self.replicates_df.loc[sim_id, 'spatial_method']
+                else:
+                    spatial_method = storm.sample_spatial_method(storm_method, duration)
+                mc.df.loc[sim_id, 'spatial_method'] = spatial_method
                 print(f'\nsim_{str(sim_id).zfill(5)} | 1 in {np.around(rain_sample_aep, 1)} AEP | {storm_method}')
                 # Get the weighting of the temporal pattern D50 shift for climate change
                 pattern_d50_info = delta_d50_info[storm_method]
@@ -1032,7 +1047,8 @@ class MonteCarloSimulator(Simulator):
                 # Get the rainfall
                 rain_depths = storm.rainfall.get_depth_z(z=rain_sample_z,
                                                          duration=duration,
-                                                         storm_method=storm_method)
+                                                         storm_method=storm_method,
+                                                         spatial_method=spatial_method)
 
                 #ave_rain = rain_depths.mean()
                 ave_rain = storm.get_average_rain(rain_depths)

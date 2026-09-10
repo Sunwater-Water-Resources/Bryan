@@ -48,8 +48,8 @@ class StubStorm:
         self.calls = {}
 
     # -- the rainfall depths
-    def get_depth_z(self, z, duration, storm_method):
-        self.calls["get_depth_z"] = (z, duration, storm_method)
+    def get_depth_z(self, z, duration, storm_method, spatial_method=None):
+        self.calls["get_depth_z"] = (z, duration, storm_method, spatial_method)
         return pd.Series([self._ave_rain], index=["sub_1"])
 
     def get_average_rain(self, depths, print_msg=True):

@@ -27,7 +27,7 @@ class SampleScheme:
         self.output_folder = output_folder
         self.df = pd.DataFrame(index=range(self.m * self.n),
                                columns=['m', 'n', 'rain_z', 'rain_aep', 'mean_rain_mm', 'tp', 'storm_method',
-                                        'tp_frequency', 'il_p', 'il_scaling', 'preburst_p', 'preburst_proportion',
+                                        'spatial_method', 'tp_frequency', 'il_p', 'il_scaling', 'preburst_p', 'preburst_proportion',
                                         'preburst_mm', 'initial_loss', 'cl_p', 'cl_scaling', 'continuing_loss',
                                         'residual_depth', 'lake_z', 'embedded_bursts', 'ADV',
                                         'inflow', 'level', 'outflow'])
