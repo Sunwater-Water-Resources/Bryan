@@ -60,7 +60,10 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - `Simulator` — base class: reads config, sets up logging, model, analysis flags.
 - `MonteCarloSimulator(Simulator)` — stratified TPT sampling across many realizations.
 - `EnsembleSimulator(Simulator)` — runs a grid of AEPs × durations from the ensemble config.
-- `lib/ReservoirRouting.py` — `ReservoirRoutingSimulator`, `FastTPT` (the third method).
+- `lib/ReservoirRouting.py` — `ReservoirRoutingSimulator` (the third method). It applies the TPT
+  through `MCScheme.TotalProbTheorem`, which is vectorised; it used to carry its own copy
+  (`FastTPT`), and that copy had drifted — a NaN peak sorted last and counted as exceeding
+  every value.
 - `lib/EnbAnalysis.py` — `analyse_ensemble(df, outputfile)`: median pattern per duration,
   box plots, critical duration per AEP. Shared by `EnsembleSimulator.analyse_results` and
   the reservoir routing method, so the two cannot drift apart.
