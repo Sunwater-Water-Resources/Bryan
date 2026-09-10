@@ -199,8 +199,19 @@ def hyetograph(storm, climate, context: StormContext, sim) -> Hyetograph:
 
     factor, per_duration = _rainfall_adjustment(storm, climate, context)
 
+    # The extreme pattern the spatial interpolation headed for is a draw of its own, so it is
+    # read from the row rather than re-sampled. A database written before it was recorded
+    # (10 September 2026) has none, and falls back to the storm method - which is what those
+    # runs used, so the rebuild still matches what they wrote down.
+    spatial_method = None
+    if 'spatial_method' in sim.index:
+        value = sim['spatial_method']
+        if isinstance(value, str) and value.strip():
+            spatial_method = value
+
     rain_depths = storm.rainfall.get_depth_z(z=rain_z, duration=duration,
-                                             storm_method=storm_method)
+                                             storm_method=storm_method,
+                                             spatial_method=spatial_method)
     ave_rain = storm.get_average_rain(rain_depths) * factor
 
     temporal_pattern = storm.get_temporal_pattern(storm_method=storm_method,

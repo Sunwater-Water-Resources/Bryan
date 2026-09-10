@@ -342,14 +342,16 @@ class StormBurst:
                 storm_method = 'ARR areal'
         return storm_method
 
-    def apply_extreme_method(self, duration, sim_method, overlap_method='GTSMR'):
+    def apply_extreme_method(self, duration, sim_method, overlap_method='GTSMR', print_msg=True):
         duration_changeover = self.storm_method_config['gsdm_gtsmr_changover_duration']
         if duration <= duration_changeover[0]:
             storm_method = 'GSDM'
-            print(f'Storm duration is short ({duration} hours) - using {storm_method}')
+            if print_msg:
+                print(f'Storm duration is short ({duration} hours) - using {storm_method}')
         elif duration >= duration_changeover[1]:
             storm_method = 'GTSMR'
-            print(f'Storm duration is long ({duration} hours) - using {storm_method}')
+            if print_msg:
+                print(f'Storm duration is long ({duration} hours) - using {storm_method}')
         else:
             if sim_method == 'ensemble':
                 if overlap_method == 'GTSMR' or overlap_method == 'GSDM':
@@ -362,8 +364,30 @@ class StormBurst:
                     storm_method = 'GSDM'
                 else:
                     storm_method = 'GTSMR'
-            print(f'Storm duration is in mixed range ({duration} hours) - using {storm_method}')
+            if print_msg:
+                print(f'Storm duration is in mixed range ({duration} hours) - using {storm_method}')
         return storm_method
+
+    def sample_spatial_method(self, storm_method, duration, sim_method='monte carlo'):
+        # The extreme spatial pattern (GSDM/GTSMR) that the 'interpolate_weights' transition
+        # heads for. The spatial transition is a function of the AEP alone, so it applies to
+        # every realisation in the changeover zone, and an ARR realisation has no method of
+        # its own to head for - the pattern is sampled here on the same duration rule as an
+        # extreme storm's. Sampled separately from the storm method precisely so that the
+        # ARR/extreme coin toss, which is about temporal patterns, does not decide it.
+        if storm_method in ['GSDM', 'GTSMR']:
+            return storm_method  # the sampled extreme method is what the weights head for
+        if self.rainfall.extreme_spatial_method != 'interpolate_weights':
+            return storm_method  # the legacy method takes no spatial pattern below 1 in 2,000
+        if self.rainfall.smoothed_weights.lower_bound_pattern is None:
+            # No extreme rainfall was set up (the run does not reach 1 in 2,000), so there are
+            # no PMP patterns to interpolate towards.
+            return storm_method
+        extreme_pattern = self.storm_method_config.get('extreme_pattern_for_ensemble', 'GTSMR')
+        spatial_method = self.apply_extreme_method(duration, sim_method, extreme_pattern,
+                                                   print_msg=False)
+        print(f'Spatial pattern interpolates towards the {spatial_method} pattern')
+        return spatial_method
 
     # apply_extreme_method_old is superseded because now sampling randomly btw 6 and 24 hr duration.
     def apply_extreme_method_old(self, duration):

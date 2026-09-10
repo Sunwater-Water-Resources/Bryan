@@ -208,7 +208,8 @@ class ifdCurves:
                     self.gtsmr_ifd_curves[duration] = gtsmr_duration_obj
                     print(gtsmr_df)
 
-    def get_depth_z(self, z, duration, storm_method, print_msg=True, for_filtering=False):
+    def get_depth_z(self, z, duration, storm_method, print_msg=True, for_filtering=False,
+                    spatial_method=None):
         if self.pmp:
             if self.pmp.z is not None:
                 if z > self.pmp.z:
@@ -225,6 +226,17 @@ class ifdCurves:
         # if aep <= 2000.0:
 
         if self.extreme_spatial_method == 'interpolate_weights':
+            # The spatial transition is a function of the AEP alone, so it applies to every
+            # realisation in the changeover zone - including those whose temporal pattern was
+            # drawn from ARR. Which extreme pattern the weights head for (GSDM/GTSMR) is
+            # sampled in its own right and passed in as spatial_method; see
+            # StormBurst.sample_spatial_method. Callers that sample no spatial method fall
+            # back to the temporal one, which leaves an ARR realisation on its gridded
+            # pattern - what every run before 10 September 2026 did.
+            # A blank (an old database read back through a Replicate file) is not a method
+            pattern_method = storm_method
+            if isinstance(spatial_method, str) and spatial_method.strip():
+                pattern_method = spatial_method
             if z <= z_2000:
                 try:
                     duration_obj = self.arr_ifd_curves[duration]
@@ -234,14 +246,14 @@ class ifdCurves:
 
                 subcatch_depth = duration_obj.get_depth_z(z)
                 if (z <= self.smoothed_weights.z_lower or
-                        storm_method in ['ARR areal', 'ARR point'] or
+                        pattern_method in ['ARR areal', 'ARR point'] or
                         for_filtering):  # The main-burst and pre-burst filtering algorithms only need depths for calculating catchment average depths
                     return np.around(subcatch_depth, 2)  # Use gridded patterns
                 else:
                     product = subcatch_depth * self.smoothed_weights.subcatch_area
                     catch_ave_depth = product.sum() / self.smoothed_weights.subcatch_area.sum()  # Catchment average rainfall
                     depth = catch_ave_depth * self.smoothed_weights.get_spatial_pattern(z, duration,
-                                                                                        storm_method)  # Multiply by interpolated weights
+                                                                                        pattern_method)  # Multiply by interpolated weights
                     return np.around(depth, 2)
             else:
                 try:
@@ -253,7 +265,7 @@ class ifdCurves:
                 catch_ave_depth = duration_obj.get_depth_z(z).array[
                     0]  # Interpolate catchment average rainfall from curve
                 depth = catch_ave_depth * self.smoothed_weights.get_spatial_pattern(z, duration,
-                                                                                    storm_method)  # Multiply by interpolated weights
+                                                                                    pattern_method)  # Multiply by interpolated weights
                 return np.around(depth, 2)
 
         # ELSE execute legacy method ('interpolate_depths')

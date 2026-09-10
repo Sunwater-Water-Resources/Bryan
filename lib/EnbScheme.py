@@ -20,7 +20,7 @@ class Ensemble:
             durations)  # number of simulations for a storm duration
         self.df = pd.DataFrame(index=range(self.m),
                                columns=['rain_z', 'rain_aep', 'mean_rain_mm', 'duration', 'tp', 'storm_method',
-                                        'tp_frequency', 'preburst_p', 'preburst_proportion',
+                                        'spatial_method', 'tp_frequency', 'preburst_p', 'preburst_proportion',
                                         'preburst_mm', 'initial_loss', 'continuing_loss', 'residual_depth',
                                         'embedded_bursts', 'ADV', 'inflow', 'level', 'outflow'])
         # set up the simulation list

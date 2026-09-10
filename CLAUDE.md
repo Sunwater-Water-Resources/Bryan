@@ -74,6 +74,19 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 
 ### Rainfall (`lib/RainfallScheme.py`)
 - `ifdCurves`, `DurationCurve`, `ExtremeDurationCurve`, `PMP`, `WeightInterpolatedSpatialPattern`.
+- **Under `interpolate_weights` the spatial transition is a function of the AEP alone, and the
+  pattern it heads for is a separate draw.** `get_depth_z` takes `spatial_method` beside
+  `storm_method`: the first says which extreme pattern (GSDM/GTSMR) the weights interpolate
+  towards, the second only which temporal patterns are drawn from. They used to be the same
+  argument, so the ARR/extreme coin toss in the `aep_changeover_to_extreme` zone decided the
+  spatial pattern too — half the Monte Carlo realisations there kept the gridded ARR pattern,
+  an ensemble with `interim_for_ensemble = "arr"` kept all of them, and the mean pattern
+  stepped at 1 in 2,000 (fixed 10 September 2026, so runs before it differ in the zone —
+  in the spatial distribution only, since the weights are area-normalised and the catchment
+  average is unchanged). `StormBurst.sample_spatial_method` makes the draw, on the same
+  duration rule `apply_extreme_method` uses, and the mcdf records it as `spatial_method`.
+  A caller that passes none falls back to `storm_method`, which is what reproduces an old
+  database — `lib/EventStorm.py` depends on that fallback.
 
 ### Temporal patterns (`lib/TemporalPatterns.py`)
 - `TemporalPatterns` base with `GtsmrPatterns`, `GsdmPatterns`, `PointPatterns` (ARR point),
