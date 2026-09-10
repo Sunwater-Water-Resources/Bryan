@@ -193,7 +193,7 @@ class UrbsModel:
         # Check that the baseflow has been applied
         for key, insertion in insertions.items():
             if insertion['used'] is not True:
-                Exception('Baseflow insertion not found:', key)
+                raise Exception('Baseflow insertion not found:', key)
 
     def insert_baseflow_into_vec_old(self, bfvf10, z):
         bfvf_f = self.baseflow_info['bfvf10_factor']
