@@ -237,7 +237,7 @@ class SampleScheme:
             try:
                 result = np.around(10 ** lower_model(z), 3)
             except:
-                result = current_lower
+                result = 0
             if np.isinf(result) or result > 1000000:
                 df.loc[aep, lower_title] = 0
             else:
@@ -247,7 +247,7 @@ class SampleScheme:
             try:
                 result = np.around(10 ** upper_model(z), 3)
             except:
-                result = current_upper
+                result = 0
             if np.isinf(result) or result > 1000000:
                 df.loc[aep, upper_title] = 0
             else:
