@@ -1,5 +1,6 @@
 import os.path
 import random
+import time
 from pathlib import Path
 
 from lib.FileTools import write_csv
@@ -340,7 +341,12 @@ class SampleScheme:
         tpt.tpt_limits = {'lower': self.lower_aep * 0.98, 'upper': self.upper_aep * 1.02}
         print('Setting limits for the TPT analysis:', tpt.tpt_limits)
         mcdf[f'{result_type}_aep'] = 0.0
-        mcdf[f'{result_type}_aep'] = mcdf[result_type].apply(tpt.assign_aep, result_type=result_type)
+        tpt_start = time.time()
+        mcdf[f'{result_type}_aep'] = pd.Series(
+            tpt.assign_aep_all(mcdf[result_type].to_numpy(dtype=float), result_type),
+            index=mcdf.index)
+        print(f'TPT for {result_type} in {time.time() - tpt_start:.2f} s '
+              f'({len(mcdf):,} realisations)')
         # mcdf.dropna(subset=[f'{result_type}_aep'], inplace=True)
         print(mcdf)
         
@@ -505,7 +511,7 @@ class SampleScheme:
 class TotalProbTheorem:
     # See Table 4.4.3 in Chapter 4 of Book 4 in ARR2019.
     # Though the ARR example does not get the pMi for the upper and lower bound correct.
-    def __init__(self, m, n, main_divisions, mcdf):
+    def __init__(self, m, n, main_divisions, mcdf, verbose=True):
         self.m = m 
         self.n = n
         self.mcdf = mcdf
@@ -526,11 +532,12 @@ class TotalProbTheorem:
         edge_df.loc[m, 'pMi'] = 1 - compute_df.loc[m-1, 'p_max']   # Exceedance probability of lower bound
 
         check_space = compute_df['pMi'].sum() + edge_df['pMi'].sum()
-        print('\nSample Space:')
-        print(compute_df)
-        print('\nEdge space:')
-        print(edge_df)
-        print(f'\nCheck on the probability space (should be 1.0):', check_space)
+        if verbose:
+            print('\nSample Space:')
+            print(compute_df)
+            print('\nEdge space:')
+            print(edge_df)
+            print(f'\nCheck on the probability space (should be 1.0):', check_space)
 
         # Removed by RGS: treating the first and last intervals as being on either side of the sampled domain.
         # compute_df.loc[0, 'pMi'] = compute_df.loc[0, 'p_max']           # Non-exceedance probability of upper bound
@@ -541,9 +548,78 @@ class TotalProbTheorem:
         self.edge_df = edge_df
 
         self.upper_factor_assumption = edge_df.loc[-1, 'pMi']
-        print('\nAn assumed factor is needed to account for the upper side of the unsampled probability space...')
-        print(f'Assuming a factor of {np.around(self.upper_factor_assumption, 3)} of the bounding interval\n')
+        if verbose:
+            print('\nAn assumed factor is needed to account for the upper side of the unsampled probability space...')
+            print(f'Assuming a factor of {np.around(self.upper_factor_assumption, 3)} of the bounding interval\n')
     
+    def assign_aep_all(self, values, result_type):
+        """The exceedance probability of every value in `values`, in one pass.
+
+        Vectorised equivalent of calling assign_aep once per value, which is how
+        the Monte Carlo path used to do it: that is one groupby over the whole
+        mcdf per realisation, so the analysis cost grows with the square of the
+        sample and a large run spent longer in the TPT than in URBS. Here each
+        division is sorted once and every value is placed into it with a binary
+        search - O((m + 1) K log n) for the lot.
+
+        The arithmetic is the same as assign_aep and the two are pinned together
+        by tests/test_tpt_vectorised.py. Two details are what make them agree,
+        and both are easy to lose:
+
+          NaN never exceeds anything. `div[result] > peak` is False for a NaN
+          result, so a realisation the model failed to produce counts towards
+          neither the exceedances nor - since the divisor is the fixed sample
+          size n - the denominator. np.sort puts NaN *last*, where searchsorted
+          would count it as exceeding every value, so the NaN are dropped from
+          each division before the search rather than sorted with it.
+
+          The weighted denominator is the whole division. Under 'tp_w' the
+          divisor is the division's total weight, including rows whose result is
+          NaN, so it is summed before the NaN are dropped.
+        """
+        values = np.asarray(values, dtype=float)
+        weighted = 'tp_w' in self.mcdf.columns
+        pH = np.empty((self.m, values.size))
+        divisions = self.mcdf.groupby('m')
+
+        for i in range(self.m):
+            if i not in divisions.groups:
+                # A stratified sample puts n realisations in every division, so an
+                # empty one means the mcdf is not the sample it claims to be. Say so:
+                # the scalar path lands here as a NaN that pandas' skipna then drops
+                # out of the sum, so the division's share of the probability space
+                # quietly goes missing and the AEPs come out low but plausible.
+                raise Exception(
+                    f'Main division {i} of {self.m} has no realisations in it, so the '
+                    'TPT has no conditional probability to attach to its share of the '
+                    'sample space. The mcdf does not match the m and n of the scheme '
+                    'config it is being analysed against.')
+            division = divisions.get_group(i)
+            result = division[result_type].to_numpy(dtype=float)
+            present = ~np.isnan(result)
+            if weighted:
+                weight = division['tp_w'].to_numpy(dtype=float)
+                total_weight = weight.sum()
+                order = np.argsort(result[present], kind='mergesort')
+                sorted_result = result[present][order]
+                sorted_weight = weight[present][order]
+                # Weight lying strictly above each position, with a 0 to land on
+                # when the value exceeds everything in the division.
+                above = np.concatenate([np.cumsum(sorted_weight[::-1])[::-1], [0.0]])
+                exceeding = above[np.searchsorted(sorted_result, values, side='right')]
+                pH[i] = exceeding / total_weight if total_weight else 0.0
+            else:
+                sorted_result = np.sort(result[present])
+                exceeding = sorted_result.size - np.searchsorted(
+                    sorted_result, values, side='right')
+                pH[i] = exceeding / self.n
+
+        pH_low = np.sqrt(self.upper_factor_assumption * pH[0] ** 2)
+        pH_high = np.sqrt(pH[self.m - 1])
+        return (pH.T @ self.compute_df['pMi'].to_numpy()
+                + pH_low * self.edge_df.loc[-1, 'pMi']
+                + pH_high * self.edge_df.loc[self.m, 'pMi'])
+
     def assign_aep(self, peak_value, result_type):
         # m = self.m
         n = self.n

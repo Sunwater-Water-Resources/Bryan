@@ -8,9 +8,9 @@ URBS run under an alternative dam rating curve (ELS / SQ), without re-running
 hydrology. It uses the Storage-Indication form of the Modified Puls method
 vectorised across all simulations on each timestep -- no scipy.optimize, no Numba.
 
-FastTPT vectorises the Total Probability Theorem (counts of exceedances per
-main-division) via one-time per-group sorts plus np.searchsorted. Math mirrors
-lib/MCScheme.py::TotalProbTheorem.
+The Total Probability Theorem is applied by lib/MCScheme.py::TotalProbTheorem,
+which is vectorised (one sort per main division, then a binary search per peak).
+This module used to carry its own copy of that arithmetic.
 
 The peak inflow, outflow and lake level are always analysed. With 'Analyse
 volumes' set in the sims list the inflow *volume* in a moving window of each
@@ -37,6 +37,7 @@ from lib.EnbAnalysis import analyse_ensemble
 from lib.Volumes import (DEFAULT_VOLUME_DURATIONS, rolling_max_volumes,
                          volume_setting)
 from lib.Simulator import Logger
+from lib.MCScheme import TotalProbTheorem
 
 
 # ---------------------------------------------------------------------------
@@ -192,52 +193,26 @@ def _route_storage_indication(inflows_arr, adv, grids, dt_hours):
 # Vectorised Total Probability Theorem
 # ---------------------------------------------------------------------------
 
-class FastTPT:
-    """Vectorised TPT -- AEP for all K peaks in O((m+1)*K log n) ops.
+def _tpt_for(m, n, main_divisions, peaks, group_ids, weights=None):
+    """One TPT pass over routed peaks, through lib/MCScheme.TotalProbTheorem.
 
-    Matches the math of lib/MCScheme.py::TotalProbTheorem (lines 459-547):
-      pH_i  = (count in group i strictly greater than peak) / n
-      pH_-1 = sqrt(upper_factor_assumption * pH_0**2)
-      pH_m  = sqrt(pH_{m-1} * 1)
-      aep   = sum_i (pH_i * pMi_i) + pH_-1 * pMi_-1 + pH_m * pMi_m
+    This used to be a local FastTPT class reimplementing the arithmetic. It has
+    gone back to the shared one now that TotalProbTheorem is vectorised, because
+    two copies of the Total Probability Theorem is exactly the kind of pair that
+    drifts - and this one had: sorting a division that contained a NaN peak put
+    the NaN last, where the binary search counted it as exceeding every value.
+    A failed realisation inflated the exceedance count of its own division, worst
+    in the top division, which is where the rare tail comes from.
     """
-
-    def __init__(self, m, n, main_divisions):
-        self.m = int(m)
-        self.n = int(n)
-        main_divisions = np.asarray(main_divisions, dtype=float)
-        z_min = main_divisions[:-1]
-        z_max = main_divisions[1:]
-        p_min = ndtr(z_min)
-        p_max = ndtr(z_max)
-        self.pMi = p_max - p_min                # (m,)
-        self.pMi_low = float(p_min[0])          # below lowest z
-        self.pMi_high = float(1.0 - p_max[-1])  # above highest z
-        self.upper_factor_assumption = self.pMi_low
-
-    def assign_aep(self, peaks, group_ids):
-        """Vectorised assign_aep equivalent to TotalProbTheorem.assign_aep applied
-        to every row in mcdf.
-
-        peaks     : (K,) array
-        group_ids : (K,) array of m-indices (0..m-1)
-        Returns   : (K,) array of exceedance probabilities.
-        """
-        peaks = np.asarray(peaks, dtype=float)
-        group_ids = np.asarray(group_ids, dtype=int)
-
-        grouped = [np.sort(peaks[group_ids == i]) for i in range(self.m)]
-        sizes = np.array([len(g) for g in grouped])
-
-        K = peaks.size
-        num = np.empty((self.m, K))
-        for i in range(self.m):
-            num[i] = sizes[i] - np.searchsorted(grouped[i], peaks, side='right')
-        pH = num / self.n                        # (m, K)
-        pH_low = np.sqrt(self.upper_factor_assumption * pH[0] ** 2)
-        pH_high = np.sqrt(pH[-1])
-        aep = pH.T @ self.pMi + pH_low * self.pMi_low + pH_high * self.pMi_high
-        return aep
+    frame = pd.DataFrame({'m': np.asarray(group_ids, dtype=int),
+                          'peak': np.asarray(peaks, dtype=float)})
+    if weights is not None:
+        frame['tp_w'] = np.asarray(weights, dtype=float)
+    # verbose=False: the sample space block belongs in the log once, and
+    # _validate_sample has already printed the m / n this was checked against.
+    tpt = TotalProbTheorem(int(m), int(n), np.asarray(main_divisions, dtype=float),
+                           frame, verbose=False)
+    return tpt.assign_aep_all(frame['peak'].to_numpy(), 'peak')
 
 
 def standard_aeps(lower_aep, upper_aep, aep_of_pmp=None):
@@ -342,7 +317,7 @@ class ReservoirRoutingSimulator:
     analysed:
 
       monte carlo - one row per realisation, with the m / n sample position.
-                    Re-analysed with the Total Probability Theorem (FastTPT).
+                    Re-analysed with the Total Probability Theorem.
       ensemble    - one row per AEP x duration x temporal pattern. Re-analysed
                     with lib/EnbAnalysis.py: the median pattern of each duration
                     and the critical duration for each AEP.
@@ -1286,7 +1261,7 @@ class ReservoirRoutingSimulator:
             z_up = ndtri(1.0 - 1.0 / upper_aep)
             main_divisions = np.linspace(z_low, z_up, m_count + 1)
             self._validate_sample(m_count, n_count, main_divisions)
-            self._tpt = (FastTPT(m_count, n_count, main_divisions),
+            self._tpt = ((m_count, n_count, main_divisions),
                          lower_aep, upper_aep, aep_of_pmp)
         return self._tpt
 
@@ -1305,7 +1280,7 @@ class ReservoirRoutingSimulator:
         change.
         """
         file_label = file_label if file_label else result_type
-        tpt, lower_aep, upper_aep, aep_of_pmp = self._tpt_setup()
+        tpt_params, lower_aep, upper_aep, aep_of_pmp = self._tpt_setup()
         group_ids = self.mcdf['m'].to_numpy(dtype=int)
         rain_aeps = self.mcdf['rain_aep'].to_numpy(dtype=float)
         suffix = self._suffix()
@@ -1313,7 +1288,7 @@ class ReservoirRoutingSimulator:
         print(f'\nVectorised TPT: {result_type}')
         t0 = time.time()
         peaks = frame[result_type].to_numpy(dtype=float)
-        aeps = tpt.assign_aep(peaks, group_ids)
+        aeps = _tpt_for(*tpt_params, peaks, group_ids)
         frame[f'{result_type}_aep'] = aeps
         std_q = compute_std_quantiles(peaks, aeps, lower_aep, upper_aep, aep_of_pmp)
         std_q = std_q.rename(columns={'value': result_type})
