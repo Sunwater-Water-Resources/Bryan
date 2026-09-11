@@ -35,8 +35,19 @@ def downstream_page() -> None:
                 "the `<group>_representative_events.json` it writes.")
             return
 
+        # The two config paths are remembered against this project (see
+        # UiSettings.downstream_for), so they survive leaving the page and reloading the
+        # project. The duration and warming level are deliberately not: blank means "read
+        # it from the database name", and a stale remembered override is worse than
+        # retyping one.
+        remembered = STATE.settings.downstream_for(project.config.config_path)
         state = {"selection": selections[0], "duration": None, "gwl": None,
-                 "config": "", "model": "", "process": None}
+                 "config": remembered["config"], "model": remembered["model"],
+                 "process": None}
+
+        def remember() -> None:
+            STATE.settings.remember_downstream(project.config.config_path,
+                                               state["config"], state["model"])
         plan_area = ui.column().classes("w-full gap-2")
 
         def refresh() -> None:
@@ -72,10 +83,12 @@ def downstream_page() -> None:
                       ).props("clearable").classes("w-32")
 
         with ui.row().classes("w-full items-end gap-4"):
-            ui.input(label="Downstream storm config",
-                     on_change=lambda e: state.update(config=e.value)).classes("grow")
-            ui.input(label="Regional model URBS config",
-                     on_change=lambda e: state.update(model=e.value)).classes("grow")
+            ui.input(label="Downstream storm config", value=state["config"],
+                     on_change=lambda e: (state.update(config=e.value), remember())
+                     ).classes("grow")
+            ui.input(label="Regional model URBS config", value=state["model"],
+                     on_change=lambda e: (state.update(model=e.value), remember())
+                     ).classes("grow")
 
         def generate(dry_run: bool) -> None:
             if not state["config"] or not state["model"]:
