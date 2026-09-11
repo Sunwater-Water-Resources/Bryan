@@ -29,6 +29,12 @@ The **Downstream** page takes five things:
 | **Downstream storm config** | the JSON described below. This is the file to get right. |
 | **Regional model URBS config** | a normal Bryan [model config](config/ModelConfig.md) for the *regional* model — the one the storm files are being written for. |
 
+The two config paths are remembered **per project**, keyed on the sims config's resolved
+path, so they survive leaving the page and reloading the project. They are kept in
+```~/.bryan_ui.json``` beside the other launcher settings. The duration and warming level are
+deliberately not kept: blank means *read it from the database name*, and a stale override is
+worse than retyping one.
+
 Everything else it needs — which realisation, which database, the sampled temporal pattern, the
 losses, the pre-burst — comes out of the selection file and the mcdf behind it. The page shows
 the storm filenames it would write before it writes any of them.

@@ -77,6 +77,12 @@ class UrbsModel:
             os.makedirs(self.storms_folder)
         else:
             self.storms_folder = resolve(os.path.dirname(config_file), config_data['storms_folder'])
+            # Make it if it is not there. The sub_folder branch above creates its own, so a
+            # simulation run always had one; a caller that passes no sub_folder did not, and
+            # every writer downstream assumed the folder existed. DownstreamStorms.py builds
+            # the model this way, so a project whose storms folder had never been created
+            # failed at the first storm file rather than at construction.
+            os.makedirs(self.storms_folder, exist_ok=True)
 
         # results_folder no longer used?
         if 'results_folder' in config_data.keys():
