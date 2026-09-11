@@ -302,7 +302,16 @@ class PreburstPatterns:
             if sample_int is None:
                 sample_proportions = df.sum(axis = 0)
                 distance = abs(sample_proportions - preburst_proportion)
-                sample_int = distance[distance.rank() <= 3].index.to_list()[np.random.randint(3)]   # Randomly select pattern from 3 nearest
+                # Randomly select a pattern from the three nearest. It is not always three:
+                # rank() averages ties, so a set of patterns whose totals are equal - or equal
+                # to floating point - can put every rank above 3 and select one, or none at
+                # all. randint(3) on that list raised IndexError; the draw is taken over what
+                # was actually found, which is the same draw off the same random stream
+                # whenever the usual three come back.
+                nearest = distance[distance.rank() <= 3].index.to_list()
+                if not nearest:
+                    nearest = [distance.idxmin()]
+                sample_int = nearest[np.random.randint(len(nearest))]
                 # if exclusion is None:
                 #     sample_int = distance[distance.rank() <= 3].index.to_list()[np.random.randint(3)]   # Randomly select pattern from 3 nearest
                 # else:

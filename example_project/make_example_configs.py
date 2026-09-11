@@ -167,6 +167,13 @@ STORMS_COLUMNS = [
     'Log file', 'Output file', 'Comment',
 ]
 
+URBS_COLUMNS = [
+    'Include', 'Method', 'Duration', 'Run models', 'Analyse results', 'Analyse volumes',
+    'Store hydrographs', 'Mop up files', 'ADV', 'Lake config', 'Focal subcatchments',
+    'Config file', 'IL', 'CL', 'Replicates', 'Replicate file', 'Exclusions', 'GWL',
+    'Log file', 'Output file', 'Comment',
+]
+
 ROUTING_COLUMNS = [
     'Include', 'Method', 'Run models', 'Analyse results', 'Analyse volumes',
     'Store hydrographs',
@@ -213,6 +220,43 @@ def storms_sims_list():
     return pd.DataFrame(rows)[STORMS_COLUMNS]
 
 
+def urbs_sims_list():
+    """A design flood study shaped the way the real ones are: Monte Carlo through URBS,
+    a grid of storm durations, and a warming level series over the top of it.
+
+    Every row is a full design flood setup - stochastic antecedent storage, pre-burst on,
+    the results and the inflow volumes analysed. The only thing holding it back is
+    'Run models', which ships as 'storms only' so the example runs for everyone: the
+    sampling and the storm files are produced, and Simulator skips the flow analysis with a
+    message. Set it to 'yes' against a real URBS model and executable and the same list is a
+    design flood run - nothing else in it needs to change.
+
+    Each warming level shares one log file, as a study does. lib/LogFiles.py renames the
+    duplicates within a batch so the runs cannot overwrite one another.
+    """
+    common = {
+        'Include': 'yes', 'Method': 'monte carlo', 'Run models': 'storms only',
+        'Analyse results': 'yes', 'Analyse volumes': 'yes',
+        'Store hydrographs': 'no', 'Mop up files': 'yes',
+        'ADV': 'varying', 'Lake config': 'sim_options/lake_conditions/lake_config.json',
+        'Focal subcatchments':
+            'sim_options/focal_locations/SYNTHETIC_dam_subcatchments.csv',
+        'Config file': 'sim_options/mc_config.json',
+        'IL': 30.0, 'CL': 2.0, 'Replicates': '', 'Replicate file': '', 'Exclusions': '',
+    }
+    rows = []
+    for gwl in [0.0, 1.3, 2.7]:
+        tag = f'gwl{gwl:g}'.replace('.', 'p')
+        for duration in [12, 24, 48]:
+            rows.append({
+                **common, 'Duration': duration, 'GWL': gwl,
+                'Log file': f'results/urbs_mc_{tag}_log.txt',
+                'Output file': f'results/urbs_mc_{duration}h_{tag}',
+                'Comment': f'{duration} h storms at GWL {gwl:g} degC',
+            })
+    return pd.DataFrame(rows)[URBS_COLUMNS]
+
+
 def routing_sims_list():
     common = {
         'Include': 'yes', 'Method': 'reservoir routing', 'Run models': 'yes',
@@ -243,6 +287,7 @@ def routing_sims_list():
 def write_launchers():
     """A .bat for Windows and a .sh companion, matching how the studies are driven."""
     for name, config in [('run_storms_only', 'sims_config_storms.json'),
+                         ('run_urbs', 'sims_config_urbs.json'),
                          ('run_routing', 'sims_config_routing.json')]:
         bat = os.path.join(HERE, f'{name}.bat')
         with open(bat, 'w', newline='\r\n') as f:
@@ -302,7 +347,18 @@ def main():
         },
     })
 
+    write_json('sims_config_urbs.json', {
+        'simulation_list': 'SimsList_urbs.xlsx',
+        'test_runs': 0,
+        'filepaths': {
+            'model_config': 'model/urbs_config.json',
+            'storm_config': 'storm_data/storm_config.json',
+            'climate_config': 'climate_change/climate_config.json',
+        },
+    })
+
     os.makedirs(os.path.join(HERE, 'results'), exist_ok=True)
+    urbs_sims_list().to_excel(os.path.join(HERE, 'SimsList_urbs.xlsx'), index=False)
     storms_sims_list().to_excel(os.path.join(HERE, 'SimsList_storms.xlsx'), index=False)
     routing_sims_list().to_excel(os.path.join(HERE, 'SimsList_routing.xlsx'), index=False)
     print('Simulation lists written')

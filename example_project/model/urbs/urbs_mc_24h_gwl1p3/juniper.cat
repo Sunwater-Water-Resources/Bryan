@@ -1,0 +1,15 @@
+Juniper Creek Dam - SYNTHETIC STUB catchment data file
+C Bryan only copies this into the working folder. URBS reads it.
+C Replace with the real catchment data file for a study.
+C 10 subcatchments, areas in km2 matching the vec
+Name,Area
+JC01,83
+JC02,65
+JC03,96
+JC04,61
+JC05,52
+JC06,76
+JC07,45
+JC08,56
+JC09,49
+JC10,37

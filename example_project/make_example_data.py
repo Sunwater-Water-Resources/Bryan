@@ -138,11 +138,17 @@ def write_preburst_patterns(path, rng):
         length = max(6, int(duration))                 # hours of pre-burst record
         index = list(range(-length, 0))
         patterns = {}
+        # Each pattern carries its own total pre-burst depth as a proportion of the burst,
+        # spread across the ten. That spread is the whole basis on which a pattern is chosen:
+        # get_preburst_pattern picks from the three whose total is nearest the sampled
+        # proportion, then rescales the winner to it. Patterns all normalised to the same
+        # total would leave that selection with nothing to go on.
+        totals = np.linspace(0.03, 0.45, 10)
         for i in range(10):
             values = rng.uniform(0.2, 1.0, length) ** 2
             values[: int(length * rng.uniform(0.0, 0.5))] = np.nan   # ragged start
-            total = np.nansum(values)
-            series = {str(t): (None if np.isnan(v) else round(float(v / total), 5))
+            values = values / np.nansum(values) * totals[i]
+            series = {str(t): (None if np.isnan(v) else round(float(v), 5))
                       for t, v in zip(index, values)}
             patterns[str(i)] = series
         out[str(duration)] = patterns
@@ -293,6 +299,19 @@ def write_model_stubs(folder):
             'PRINT JuniperDam.', 'END OF CATCHMENT DATA.']
     with open(os.path.join(urbs, 'juniper.vec'), 'w') as f:
         f.write('\n'.join(vec) + '\n')
+
+    # UrbsModel.copy_catchment_data_file reads 'CATCHMENT DATA FILE =' off the vec and copies
+    # that file into the run's working sub-folder, so it has to exist for the model to be
+    # constructed at all - even on a 'storms only' run, which never calls URBS. Bryan never
+    # parses it; URBS does.
+    cat = [f'{DAM} - SYNTHETIC STUB catchment data file',
+           'C Bryan only copies this into the working folder. URBS reads it.',
+           'C Replace with the real catchment data file for a study.',
+           f'C {len(names)} subcatchments, areas in km2 matching the vec',
+           'Name,Area']
+    cat += [f'{name},{SUBCATCHMENT_AREAS[name]:g}' for name in names]
+    with open(os.path.join(urbs, 'juniper.cat'), 'w') as f:
+        f.write('\n'.join(cat) + '\n')
 
 
 def write_focal_subcatchments(path):

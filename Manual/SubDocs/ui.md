@@ -165,6 +165,8 @@ A design flood quantile is a statistic over thousands of realisations, but the w
 
 Give it a list of loadings, either as a design AEP or as a lake level, and it ranks the realisations of the Monte Carlo database against each one. The list of chosen events is what comes out.
 
+The saved selection is also the input to the **Downstream** page, which turns each chosen event into rainfall for a regional model - see [Downstream storm generation](downstream_storms.md) for the inputs that needs.
+
 ### What it ranks on
 
 The rank is the distance from the loading, measured on two axes at once: the flood should be as rare as the loading asks, and the **rainfall that produced it should be about as rare as the flood**. An event that reaches the 1 in 2,000 lake level off 1 in 200 rainfall got there through a coincidence — a full lake, a large pre-burst, a spike in the pattern — and will not behave like a 1 in 2,000 event when anything about the dam is changed. That is *AEP neutrality*, and it is the diagonal on the plot.
