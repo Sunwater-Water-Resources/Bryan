@@ -148,6 +148,26 @@ Bryan: Sunwater's Design Flood Simulator
             print('Replicates have been found')
             print('opening replication file', replicate_file)
             self.replicates_df = pd.read_csv(replicate_file, index_col=0)
+            if self.replicates['storm_method'] and 'spatial_method' not in self.replicates_df.columns:
+                # 'stm' replicates the spatial method alongside the storm method, but only
+                # where the source run recorded one. Databases written before 10 September
+                # 2026 have no such column, and the fallback is a fresh draw - which in the
+                # gsdm_gtsmr_changover_duration band is a coin toss, so the run matches
+                # neither the file it is replicating nor another replicate of it. Say so
+                # here rather than let it happen quietly a realisation at a time.
+                print('\nWARNING: "stm" asks for the storm method sampling to be replicated, but')
+                print('         the replication file has no "spatial_method" column:')
+                print('        ', replicate_file)
+                print('         It predates the separate sampling of the extreme spatial pattern')
+                print('         (10 September 2026), so the storm methods will be replicated and')
+                print('         the spatial pattern RE-SAMPLED. Where the duration falls inside')
+                print('         the gsdm_gtsmr_changover_duration band that is a random draw, so')
+                print('         this run will not reproduce the source run and two replicates of')
+                print('         it will not match each other. Outside the band, and for any run')
+                print('         on the interpolate_depths smoothing method, the re-sample is')
+                print('         deterministic and nothing moves.')
+                print('         Re-run the source simulation to get a database that carries the')
+                print('         column if the spatial pattern needs to be held fixed.\n')
 
         # Set up the lake
         self.lake = LakeConditions(parameters)
@@ -1030,7 +1050,9 @@ class MonteCarloSimulator(Simulator):
 
                 # The extreme pattern the spatial interpolation heads for - a function of the
                 # AEP, not of the ARR/extreme storm method sampled above. Replicated with the
-                # storm method where the source run recorded one.
+                # storm method where the source run recorded one; a replication file that
+                # predates the column falls through to a fresh draw, which is warned about
+                # once when the file is opened rather than silently per realisation.
                 if self.replicates['storm_method'] and 'spatial_method' in self.replicates_df.columns:
                     spatial_method = self.replicates_df.loc[sim_id, 'spatial_method']
                 else:

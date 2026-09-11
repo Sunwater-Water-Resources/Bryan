@@ -45,7 +45,7 @@ The simulation list provides a list of simulations to be performed. Note that th
 | ----------- | ----------- |
 |```rz``` | The rainfall sampling - standard normal variate |
 |```tp``` | The temporal pattern sampling - integer from 0 to 9 |
-|```stm```| The storm method sampling: ARR point, ARR areal, GSDM, and GTSMR. Use this one with care, as these are influenced by catchment size and storm duration. |
+|```stm```| The storm method sampling: ARR point, ARR areal, GSDM, and GTSMR. Use this one with care, as these are influenced by catchment size and storm duration. It also replicates the ```spatial_method``` column - the extreme spatial pattern the ```interpolate_weights``` transition heads for - where the replication file carries one. A database written before 10 September 2026 does not, and the spatial pattern is then **re-sampled** rather than replicated: inside the ```gsdm_gtsmr_changover_duration``` band that is a random draw, so the run reproduces neither the source run nor another replicate of it. Bryan warns and names the file when this happens; re-run the source simulation if the spatial pattern has to be held fixed. |
 |```ilp```| The initial loss percentile (0-1) used for the scaling of the storm's initial loss.|
 |```clp```| The continuing loss percentile (0-1) used for the scaling of the storm's continuing loss.|
 |```pbp```| The sampling of the preburst percentile( 10% to 90%), which is then used to get the preburst proportion of the catchment average rainfall. |
