@@ -17,6 +17,8 @@
   "alpha": 0.3,
   "beta": 1.5,
   "m_exponent": 0.8,
+  "n_exponent": 0.8,
+  "X_factor": 0,
   "full_supply_volume": 190000.0,
   "simulation_periods": {
     "2": 50,
@@ -31,9 +33,9 @@
     "72": 144
   },
   "max_keys": {
-    "inflow": "JuniperDam",
-    "level": "JuniperDam",
-    "outflow": "JuniperDam"
+    "inflow": "JC_INFLOW",
+    "level": "JUNIPER",
+    "outflow": "JC_OUTFLOW"
   },
   "baseflow": {
     "apply": false

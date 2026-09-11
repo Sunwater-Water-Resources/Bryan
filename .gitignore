@@ -93,6 +93,11 @@ Manual/markdeep.min.js
 !example_project/**/*.csv
 !example_project/**/*.xlsx
 example_project/model/*/storms/
+# Simulator.initialise_model makes the run's working folder inside the model folder,
+# named for the sims-list 'Output file', and UrbsModel copies the catchment data file
+# into it. That is run output - one folder per row, recreated (rmtree first) every run.
+example_project/model/urbs/*/
+!example_project/model/urbs/ratings/
 example_project/SimsList_*_log.csv
 
 # ---------------------------
