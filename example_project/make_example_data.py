@@ -40,6 +40,7 @@ SUBCATCHMENT_AREAS = {  # km2, summing to 620
     'JC06': 76.0, 'JC07': 45.0, 'JC08': 56.0, 'JC09': 49.0, 'JC10': 37.0,
 }
 CATCHMENT_AREA = sum(SUBCATCHMENT_AREAS.values())
+CAT_FILE = 'juniper.dat'   # URBS convention; named on the vec's CATCHMENT DATA FILE line
 AREA_BIN = 500           # both the ARR areal and GTSMR pattern bins for 350-750 km2,
                          # which is why the catchment is this size: real pattern files exist for it
 AEP_OF_PMP = 1600000     # 10 ** (log10(620) - 9) inverted, rounded
@@ -282,35 +283,67 @@ def write_model_stubs(folder):
     with open(os.path.join(rorb, 'juniper.par'), 'w') as f:
         f.write('\n'.join(par) + '\n')
 
+    # The vec follows the conventions of the real Sunwater URBS models: the subcatchment
+    # areas live in the catchment data file, not here, so the vec carries reach parameters
+    # against a subcatchment index and nothing else. A 'SUB AREA #n = <area>' line - which
+    # an earlier version of this stub invented - is not something URBS reads.
     vec = [f'{DAM} - SYNTHETIC STUB, not a working URBS model',
-           'C This file exists so the URBS config in this example has something to point at.',
            'C It will not run in URBS. Replace with a calibrated vec file for a real study.',
-           'CATCHMENT DATA FILE = juniper.cat',
+           'C The structure is real: areas come from the catchment data file, the routing',
+           'C is a SPLIT model, and the dam uses the level-based DAM ROUTE form Bryan',
+           'C detects from FSL= (rather than the volume-based VBF= form).',
            'MODEL: SPLIT',
-           'USES: L, Sc, I',
-           'DEFAULT PARAMETERS: alpha = 0.30 m = 0.80 beta = 1.50',
-           '*']
-    for name in names:
-        vec += [f'RAIN #{names.index(name) + 1}', f'SUB AREA #{names.index(name) + 1} = '
-                f'{SUBCATCHMENT_AREAS[name]:g}', 'ROUTE THRU L = 5.0 Sc = 1.0']
-    # The level-based dam routing form: Bryan reads FSL= and DATAFILE= off this line
-    vec += [f'DAM ROUTE FSL={FSL} DATAFILE=SYNTHETIC_juniper.els il=190000.0 '
-            f'PRINT JuniperDam.',
-            'PRINT JuniperDam.', 'END OF CATCHMENT DATA.']
+           'USES: L, I',
+           # Stated here and in the model config. Bryan always writes Alpha, M and Beta to
+           # the URBS command line and writes N and XF only when the config gives them, so
+           # both places carry them and neither is the silent authority.
+           'DEFAULT PARAMETERS: alpha = 0.30 m = 0.80 beta = 1.50 n = 0.80 x = 0',
+           f'CATCHMENT DATA FILE = {CAT_FILE}',
+           '']
+    # A plausible SPLIT structure: two headwater branches stored and combined, then routed
+    # down the main stem picking up the remaining subcatchments, then through the dam.
+    vec += ['C ---- western headwater ----',
+            'RAIN #1 L = 5.10 Sc = 0.0180',
+            'STORE.',
+            '\tRAIN #2 L = 4.35 Sc = 0.0210',
+            '\tGET.',
+            'ROUTE THRU #3 L = 6.20 Sc = 0.0120',
+            'ADD RAIN #3 L = 6.20 Sc = 0.0120',
+            'PRINT.JC_WEST',
+            '',
+            'C ---- eastern headwater ----',
+            'STORE.',
+            '\tRAIN #4 L = 4.80 Sc = 0.0195',
+            '\tROUTE THRU #5 L = 5.55 Sc = 0.0145',
+            '\tADD RAIN #5 L = 5.55 Sc = 0.0145',
+            '\tPRINT.JC_EAST',
+            '\tGET.',
+            '',
+            'C ---- main stem to the dam ----']
+    for index in range(6, len(names) + 1):
+        vec += [f'ROUTE THRU #{index} L = 5.00 Sc = 0.0100',
+                f'ADD RAIN #{index} L = 5.00 Sc = 0.0100']
+    vec += ['PRINT.JC_INFLOW',
+            '',
+            # Bryan reads FSL= (the level method), datafile= (the elevation/storage curve)
+            # and location= (matched against max_keys['level']) off this line, and rewrites
+            # the value after ' il=' per realisation. 'initial_lake_level' is the token the
+            # real models carry: set_initial_lake_level writes 'set initial_lake_level=<m>'
+            # into the storm file header and URBS resolves it. It must not be the last thing
+            # on the line - adjust_initial_lake_level replaces up to the next space.
+            f'DAM ROUTE FSL={FSL} datafile=SYNTHETIC_juniper.els il=initial_lake_level '
+            f'location=JUNIPER FILE=SYNTHETIC_juniper.sq',
+            'PRINT.JC_OUTFLOW',
+            'END OF CATCHMENT DATA.']
     with open(os.path.join(urbs, 'juniper.vec'), 'w') as f:
         f.write('\n'.join(vec) + '\n')
 
-    # UrbsModel.copy_catchment_data_file reads 'CATCHMENT DATA FILE =' off the vec and copies
-    # that file into the run's working sub-folder, so it has to exist for the model to be
-    # constructed at all - even on a 'storms only' run, which never calls URBS. Bryan never
-    # parses it; URBS does.
-    cat = [f'{DAM} - SYNTHETIC STUB catchment data file',
-           'C Bryan only copies this into the working folder. URBS reads it.',
-           'C Replace with the real catchment data file for a study.',
-           f'C {len(names)} subcatchments, areas in km2 matching the vec',
-           'Name,Area']
-    cat += [f'{name},{SUBCATCHMENT_AREAS[name]:g}' for name in names]
-    with open(os.path.join(urbs, 'juniper.cat'), 'w') as f:
+    # The catchment data file URBS reads and Bryan copies into the working folder. The real
+    # ones are a plain CSV of index, area in km2, and a third per-subcatchment column named
+    # for what the vec's 'USES:' line declares - 'I' for impervious fraction here.
+    cat = ['"Index","Area","I"']
+    cat += [f'{i},{SUBCATCHMENT_AREAS[name]:g},0' for i, name in enumerate(names, start=1)]
+    with open(os.path.join(urbs, CAT_FILE), 'w') as f:
         f.write('\n'.join(cat) + '\n')
 
 

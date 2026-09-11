@@ -1,41 +1,43 @@
 Juniper Creek Dam - SYNTHETIC STUB, not a working URBS model
-C This file exists so the URBS config in this example has something to point at.
 C It will not run in URBS. Replace with a calibrated vec file for a real study.
-CATCHMENT DATA FILE = juniper.cat
+C The structure is real: areas come from the catchment data file, the routing
+C is a SPLIT model, and the dam uses the level-based DAM ROUTE form Bryan
+C detects from FSL= (rather than the volume-based VBF= form).
 MODEL: SPLIT
-USES: L, Sc, I
-DEFAULT PARAMETERS: alpha = 0.30 m = 0.80 beta = 1.50
-*
-RAIN #1
-SUB AREA #1 = 83
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #2
-SUB AREA #2 = 65
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #3
-SUB AREA #3 = 96
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #4
-SUB AREA #4 = 61
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #5
-SUB AREA #5 = 52
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #6
-SUB AREA #6 = 76
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #7
-SUB AREA #7 = 45
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #8
-SUB AREA #8 = 56
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #9
-SUB AREA #9 = 49
-ROUTE THRU L = 5.0 Sc = 1.0
-RAIN #10
-SUB AREA #10 = 37
-ROUTE THRU L = 5.0 Sc = 1.0
-DAM ROUTE FSL=210.0 DATAFILE=SYNTHETIC_juniper.els il=190000.0 PRINT JuniperDam.
-PRINT JuniperDam.
+USES: L, I
+DEFAULT PARAMETERS: alpha = 0.30 m = 0.80 beta = 1.50 n = 0.80 x = 0
+CATCHMENT DATA FILE = juniper.dat
+
+C ---- western headwater ----
+RAIN #1 L = 5.10 Sc = 0.0180
+STORE.
+	RAIN #2 L = 4.35 Sc = 0.0210
+	GET.
+ROUTE THRU #3 L = 6.20 Sc = 0.0120
+ADD RAIN #3 L = 6.20 Sc = 0.0120
+PRINT.JC_WEST
+
+C ---- eastern headwater ----
+STORE.
+	RAIN #4 L = 4.80 Sc = 0.0195
+	ROUTE THRU #5 L = 5.55 Sc = 0.0145
+	ADD RAIN #5 L = 5.55 Sc = 0.0145
+	PRINT.JC_EAST
+	GET.
+
+C ---- main stem to the dam ----
+ROUTE THRU #6 L = 5.00 Sc = 0.0100
+ADD RAIN #6 L = 5.00 Sc = 0.0100
+ROUTE THRU #7 L = 5.00 Sc = 0.0100
+ADD RAIN #7 L = 5.00 Sc = 0.0100
+ROUTE THRU #8 L = 5.00 Sc = 0.0100
+ADD RAIN #8 L = 5.00 Sc = 0.0100
+ROUTE THRU #9 L = 5.00 Sc = 0.0100
+ADD RAIN #9 L = 5.00 Sc = 0.0100
+ROUTE THRU #10 L = 5.00 Sc = 0.0100
+ADD RAIN #10 L = 5.00 Sc = 0.0100
+PRINT.JC_INFLOW
+
+DAM ROUTE FSL=210.0 datafile=SYNTHETIC_juniper.els il=initial_lake_level location=JUNIPER FILE=SYNTHETIC_juniper.sq
+PRINT.JC_OUTFLOW
 END OF CATCHMENT DATA.

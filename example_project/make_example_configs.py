@@ -128,12 +128,22 @@ def urbs_config():
         'store_tuflow': False,
         'time_increment': 0.25,
         'time_increment_override': {'2': 0.05, '3': 0.05, '6': 0.25, '9': 0.25},
+        # Stated here and on the vec's DEFAULT PARAMETERS line. Bryan always writes Alpha,
+        # M and Beta to the URBS command line but writes N and XF only when n_exponent and
+        # X_factor are given, so both places carry all five and the vec is not left as the
+        # silent authority on the last two.
         'alpha': 0.30,
         'beta': 1.5,
         'm_exponent': 0.8,
+        'n_exponent': 0.8,
+        'X_factor': 0,
         'full_supply_volume': 190000.0,
         'simulation_periods': {str(d): max(2 * d, d + 48) for d in DURATIONS},
-        'max_keys': {'inflow': 'JuniperDam', 'level': 'JuniperDam', 'outflow': 'JuniperDam'},
+        # The PRINT names in the vec, one per result type, as a real model has them - the
+        # inflow above the dam, the level at it, the outflow below. 'level' is also what
+        # find_dam_routing_line matches against the DAM ROUTE line, which carries
+        # location=JUNIPER.
+        'max_keys': {'inflow': 'JC_INFLOW', 'level': 'JUNIPER', 'outflow': 'JC_OUTFLOW'},
         'baseflow': {'apply': False},
     }
 
