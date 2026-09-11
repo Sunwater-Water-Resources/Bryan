@@ -2,7 +2,7 @@
 
     python DownstreamStorms.py --config downstream_storm_config_CLD_01.json ^
         --selection sims_mc\\results\\GWL1p3_representative_events.json ^
-        --model runs\\E010\\Downstream\\Regional\\rev_2\\urbs_config_rev2.json
+        --model runs\\Regional_E001\\urbs_config_rev2.json
 
 The launcher's Events page picks one realisation per design loading and saves
 the list as ``<group>_representative_events.json``. This turns that list into a
@@ -73,7 +73,14 @@ def main():
     ap.add_argument('--gwl', type=float, help='override the warming level read from the name')
     ap.add_argument('--rain-lag', type=float, default=0.0, help='hours to shift the rain')
     ap.add_argument('--suffix', default='')
-    ap.add_argument('--dry-run', action='store_true', help='report without writing')
+    ap.add_argument('--dry-run', action='store_true',
+                    help='report what would be written, and write nothing')
+    ap.add_argument('--run-urbs', action='store_true',
+                    help='run URBS on each storm as it is written. Without this the batch '
+                         'file is still written and can be run by hand or in a batch later')
+    ap.add_argument('--lake-config',
+                    help="the main dam's lake config, used only where a realisation has no "
+                         "ADV column of its own")
     args = ap.parse_args()
 
     with open(args.config) as handle:
@@ -93,9 +100,16 @@ def main():
     if not chosen:
         raise SystemExit('nothing to do - no loading has an event picked')
 
+    if args.dry_run and args.run_urbs:
+        raise SystemExit('--dry-run writes nothing, so there is no storm for --run-urbs '
+                         'to run. Choose one.')
+
     rainfall = DownstreamRainfall(args.config)
+    lake_config = args.lake_config or cfg['file_paths'].get('lake_config')
+    if lake_config and not os.path.isabs(lake_config):
+        lake_config = resolve(folder, lake_config)
     writer = None if args.dry_run else DownstreamStormWriter(
-        rainfall, storm_config, args.model, climate)
+        rainfall, storm_config, args.model, climate, main_lake_config=lake_config)
 
     records = []
     for target in chosen:
@@ -114,6 +128,11 @@ def main():
         records.append(writer.write(event, duration, name, gwl=gwl,
                                     rain_lag_hours=args.rain_lag))
         print(f'  wrote {name}')
+        # The batch file carries every dam's antecedent level beside the URBS command
+        # line, so it is always written: it is the record of what the run was, whether
+        # URBS is run now or by hand afterwards.
+        result_name = os.path.splitext(name)[0]
+        writer.run(event, name, result_name, execute=args.run_urbs)
 
     table = pd.DataFrame(records)
     out = os.path.splitext(args.selection)[0] + '_downstream_storms.csv'

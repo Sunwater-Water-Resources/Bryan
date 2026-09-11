@@ -291,7 +291,7 @@ class DownstreamStormWriter:
                      'initial_loss', 'continuing_loss', 'preburst_mm', 'embedded_bursts')
 
     def __init__(self, rainfall, storm_config, model_config, climate_config=None,
-                 driver_area_km2=None):
+                 driver_area_km2=None, main_lake_config=None):
         from lib.StormGenerator import StormBurst
         from lib.URBSmodel import UrbsModel
         self.rainfall = rainfall
@@ -305,6 +305,9 @@ class DownstreamStormWriter:
         # stranger.
         self.storm.area = driver_area_km2 or rainfall.driver_area_km2
         self.model = UrbsModel(model_config)
+        # Only used when a realisation has no ADV column of its own; the additional dams
+        # always come from their own lake config, because nothing sampled them.
+        self.main_lake_config = main_lake_config
         self.climate_config = climate_config
         self._imported = set()
 
@@ -362,6 +365,110 @@ class DownstreamStormWriter:
         here = self.rainfall.conditional_aep(duration, driver_aep)
         under = self.rainfall.conditional_aep(below, driver_aep)
         return sorted(t for t in here.index if here[t] < under[t] - 1e-9)
+
+    # -- the run ------------------------------------------------------------
+    def antecedent_levels(self, event):
+        """The starting lake level for every dam in the model, from this event's lake_z.
+
+        A representative event carries one ``lake_z`` - the standardised variate the
+        upstream run sampled its antecedent storage at. Each dam maps that same variate
+        through **its own** volume-exceedance curve, so one regional wetness gives a
+        Callide storage and a Kroombit storage that are different volumes and different
+        levels. Treating them as a single sample is an assumption: the defensible version
+        is a joint probability analysis of the two storages, and if that is ever done this
+        is the method to replace.
+
+        Returns {variable name: level}, which is what goes into the batch file.
+        """
+        if 'lake_z' not in event.index:
+            raise Exception(
+                'This realisation has no "lake_z" column, so there is no antecedent '
+                'storage to set. The run that produced it sampled a fixed ADV rather '
+                'than a varying one.')
+        lake_z = float(event['lake_z'])
+        levels = {}
+
+        # The main dam. Its ADV comes from the run that produced the event, where there
+        # is one - that is the storage this realisation actually had - and from the lake
+        # config only when the column is absent.
+        if self.model.dam_routing_method == 'level':
+            if 'ADV' in event.index and pd.notna(event['ADV']):
+                volume = float(event['ADV'])
+                source = 'the event ADV'
+            else:
+                volume = self._volume_from_lake_z(self.main_lake_config, lake_z)
+                source = 'the lake config'
+            below = self.model.full_supply_volume - volume
+            self.model.set_volume_below_fsl(below)
+            levels[self.model.lake_level_variable] = self.model.header[-1].split('=')[-1]
+            print(f'  {self.model.lake_level_variable}: {volume:,.0f} ML from {source} '
+                  f'({below:,.0f} ML below FSL)')
+
+        # Every other dam: the same lake_z through its own curve.
+        for dam in self.model.extra_dams:
+            if not dam['lake_config']:
+                raise Exception(
+                    f'The dam at "{dam["location"]}" has no lake_config in the model '
+                    'config, so its antecedent storage cannot be resolved from lake_z.')
+            volume = self._volume_from_lake_z(dam['lake_config'], lake_z)
+            # The curve and the dam have to be the same dam. A lake config fitted to
+            # another storage gives a volume on the wrong scale, and the level that comes
+            # back is simply somewhere else on the els - plausible-looking and wrong.
+            if volume > dam['full_supply_volume']:
+                raise Exception(
+                    f'The lake config for "{dam["location"]}" gives {volume:,.0f} ML at '
+                    f'lake_z {lake_z:+.3f}, which is above the dam\'s full supply volume '
+                    f'of {dam["full_supply_volume"]:,.0f} ML (from {dam["els_file"]}). '
+                    'Check that the lake config belongs to this dam.')
+            below = dam['full_supply_volume'] - volume
+            level = self.model.set_additional_dam_volume(dam['location'], below)
+            levels[dam['variable']] = level
+            print(f'  {dam["variable"]}: {volume:,.0f} ML at lake_z {lake_z:+.3f} '
+                  f'({below:,.0f} ML below FSL) -> {level} m AHD')
+        return levels
+
+    @staticmethod
+    def _volume_from_lake_z(lake_config, lake_z):
+        from lib.Lake import ExceedanceCurveLayer
+        with open(lake_config) as handle:
+            info = json.load(handle)
+        layers = info['exceedance_layer_info']
+        layers = layers if isinstance(layers, list) else [layers]
+        folder = os.path.dirname(lake_config)
+        cap = info.get('volume_cap', 'none')
+        for entry in layers:
+            layer = ExceedanceCurveLayer(entry, folder)
+            if layer.lower_z <= lake_z <= layer.upper_z:
+                return float(layer.get_lake_volume(lake_z, cap))
+        raise Exception(f'No exceedance curve layer in {lake_config} covers '
+                        f'lake_z of {lake_z}.')
+
+    def run(self, event, storm_filename, result_name, execute=False):
+        """Write the batch file for one event's storm, and optionally run URBS.
+
+        The batch file is always written: it records the antecedent level of every dam
+        alongside the URBS command line, so a run done by hand later is the run that was
+        described here. `execute` is what makes it a long job - URBS on a regional model
+        is minutes per event, so the default writes and stops.
+        """
+        if not self.model.store_tuflow:
+            print('  WARNING: store_tuflow is not set in the model config, so URBS will '
+                  'not write the\n           subcatchment runoff and print-location flows '
+                  'to csv. Those are the\n           upstream boundaries this run exists '
+                  'to produce - set it to true.')
+        print(f'  antecedent storage for {result_name}:')
+        self.antecedent_levels(event)
+        if execute:
+            self.model.run_storm(storm_name=storm_filename, result_name=result_name)
+            return None
+        batch_path = os.path.join(self.model.output_folder, f'_run_{result_name}.bat')
+        self.model.write_batch_file(
+            batch_path, self.model.header, self.model.urbs_exe,
+            os.path.join(self.model.model_folder, self.model.vec_file),
+            os.path.join(self.model.storms_folder, storm_filename),
+            result_name, self.model.paramter_string)
+        print(f'  batch file: {batch_path}')
+        return batch_path
 
     def write(self, event, duration, filename, gwl=0.0, rain_lag_hours=0.0,
               il_scaling=1.0, cl_scaling=1.0, cl_floor=0.0, report=True):
