@@ -1120,15 +1120,31 @@ class StormBurst:
                 if temppat_filter_curve.iloc[-1] < normalised_full_storm_burst:
                     # get a slice of the depths (relative to main burst) with durations longer than the main burst duration
                     curve = temppat_filter_curve.loc[main_burst_duration:]              # Part of curve exceeding main_burst_duration
-                    slope = (np.log(curve) - np.log(100)) / (np.log(curve.index.to_numpy()) - np.log(main_burst_duration))
-                    min_slope = slope.idxmin()
-                    
-                    new_curve = scipy.interpolate.interp1d(np.log([main_burst_duration, min_slope]),
-                                                           np.log([100, temppat_filter_curve[min_slope]]), fill_value='extrapolate')
-                    nonstd_durations = new_curve
-                    test = np.around(np.exp(new_curve(np.log(curve.index.to_series()))),4) > np.around(curve,4)
-                    if test.all():
-                        print('WARNING: Enveloping bursts may exceed design burst AEP')
+                    # Strictly longer: the slope of the main burst duration to itself divides
+                    # by log(d) - log(d) = 0. That is -inf whenever the point sits below 100,
+                    # so idxmin picked the main burst duration every time, and the two-point
+                    # interpolation below became one point repeated - which extrapolates to
+                    # exp(-inf) = 0 at every duration. prepend_excess_preburst then compares
+                    # 0 against its target forever and the run hangs, with no error and no
+                    # last log line to say where.
+                    longer = curve.loc[curve.index > main_burst_duration]
+                    if longer.empty:
+                        # Nothing beyond the main burst to anchor against; leave the filter
+                        # curve as the interpolation over the durations actually tabulated.
+                        print('CHECK:   no burst durations longer than the main burst '
+                              f'({main_burst_duration} h) in the filter curve - the enveloping '
+                              'burst check is left on the tabulated durations')
+                    else:
+                        slope = ((np.log(longer) - np.log(100))
+                                 / (np.log(longer.index.to_numpy()) - np.log(main_burst_duration)))
+                        min_slope = slope.idxmin()
+
+                        new_curve = scipy.interpolate.interp1d(np.log([main_burst_duration, min_slope]),
+                                                               np.log([100, temppat_filter_curve[min_slope]]), fill_value='extrapolate')
+                        nonstd_durations = new_curve
+                        test = np.around(np.exp(new_curve(np.log(curve.index.to_series()))),4) > np.around(curve,4)
+                        if test.all():
+                            print('WARNING: Enveloping bursts may exceed design burst AEP')
         
         overall_tally = 0
         counter = 0
@@ -1399,16 +1415,30 @@ class StormBurst:
         storm_dur = len(preburst_pattern) * self.timesteps + main_burst_duration
 
         prepend = {idx: normalised}
+        # The loop walks the storm backwards until the enveloping-burst curve reaches the
+        # target depth. A curve that is flat, falling, or degenerate never gets there, so it
+        # is bounded: an unbounded version hung the run outright, growing this dict a
+        # timestep at a time with nothing in the log to say what it was doing.
+        max_storm_dur = max(10 * (storm_dur + main_burst_duration), 1e5)
         while True:
             idx -= self.timesteps
             storm_dur += self.timesteps
             normalised = np.exp(nonstd_durations(np.log(storm_dur)).item()) * buffer
-            
+
             if normalised < target:
                 prepend[idx] = normalised
             else:
                 prepend[idx] = target
                 break
+
+            if storm_dur > max_storm_dur:
+                raise Exception(
+                    'The pre-burst extension is not converging. Extending the storm to '
+                    f'{storm_dur:g} hours puts the enveloping burst at {normalised:g}% of the '
+                    f'main burst, still short of the {target:g}% needed, and the curve is not '
+                    'rising fast enough to get there.\nThis usually means the enveloping burst '
+                    'curve is flat or falling with duration - check the filter curve for the '
+                    f'{main_burst_duration} h main burst.')
         
         prepend = pd.Series(prepend)            # Convert to series
         prepend = prepend.diff().iloc[1:]       # Convert to incremental and drop first value (NaN)

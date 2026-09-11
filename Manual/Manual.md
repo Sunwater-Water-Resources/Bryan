@@ -17,6 +17,7 @@ Why Bryan? For a similar reason that Python is called Python - in reference to M
 - [The config files](SubDocs/config_files.md)
 - [Analysing the model results](SubDocs/analyse_results.md)
 - [The run launcher](SubDocs/ui.md) - a browser interface for choosing and running simulations
+- [Downstream storm generation](SubDocs/downstream_storms.md) - turning a chosen representative event into rainfall for a regional model
 
 There are also a few Python scripts that can be used for post-processing. For more info on this [click here](SubDocs/utilities.md).
 

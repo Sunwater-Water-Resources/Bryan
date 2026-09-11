@@ -112,6 +112,28 @@ cross-tabulation, and it is worth running if you are changing anything near
 written, but no hydrologic model is called. Each log opens with the PMP embedded burst screen
 and, for rows 1 and 2, the sub-burst neutrality analysis follows.
 
+### The URBS demo
+
+`SimsList_urbs.xlsx` is shaped the way a real design flood study is: Monte Carlo through URBS,
+a grid of three storm durations against three warming levels, stochastic antecedent storage,
+pre-burst on, and the results and inflow volumes analysed. Each warming level shares one log
+file, as a study does — `lib/LogFiles.py` renames the duplicates so the runs cannot overwrite
+one another, which is why nine rows leave more than three logs.
+
+**It ships as `Run models: storms only`, and it is not a working URBS flood run.** The model
+object is still constructed — the vec is read, the working folders are made, the catchment data
+file is copied — but the loop `continue`s before `create_storm_file` and `run_storm`, so nothing
+invokes the executable and no hydrograph, peak or frequency curve is produced. `Analyse results`
+and `Analyse volumes` are set to `yes` regardless, and are skipped with a message; flip
+`Run models` to `yes` against a real URBS model and executable and the same list is a design
+flood run with nothing else changed.
+
+The vec and the catchment data file under `model/urbs/` are **stubs**, and say so in their own
+header lines. They carry the right shape — a SPLIT model, the level-based
+`DAM ROUTE ... FSL= datafile=` form Bryan detects, and a catchment data file in the
+`"Index","Area","I"` layout URBS reads — but they have never been run through URBS and are not
+expected to survive it. Point the config at a real model to go further than the storm files.
+
 ### The routing demo
 
 `inflows/` holds a synthetic Monte Carlo results database and matching inflow hydrographs, in
