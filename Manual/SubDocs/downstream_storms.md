@@ -50,6 +50,55 @@ python DownstreamStorms.py --config <downstream config> --selection <selection j
 
 `--dry-run` reports without writing, and is the quickest way to see whether the config resolves.
 
+### Running URBS
+
+Each storm file is written with a **batch file** beside it, carrying the URBS command line
+and a ```set``` statement for every dam's starting lake level. That file is always written,
+because it is the record of what the run was: a run done by hand a week later is then the
+run that was described here.
+
+```--run-urbs``` runs URBS on each storm as it is written. Without it, nothing is executed
+and the batch files are left to be run by hand or collected into a batch of your own - which
+is usually what you want, because URBS on a regional model is minutes per event.
+```--dry-run``` and ```--run-urbs``` together are refused: the first writes no storm for the
+second to run.
+
+**```store_tuflow``` must be ```true``` in the model config.** It is what puts
+```set URBS_TFLW=TRUE``` in the batch file, and so what makes URBS write the subcatchment
+runoff and the flows at every print location to csv - the upstream boundaries this run exists
+to produce. The run warns if it is off rather than leaving you to find the missing files.
+
+### More than one dam
+
+A regional model can route through several dams, and each needs its own antecedent storage.
+Everything about a dam is read off its ```DAM ROUTE``` line in the vec - the full supply
+level, the storage curve, and the ```il=``` token naming the variable URBS takes the starting
+level from - so the [model config](config/ModelConfig.md) only names the extra dams and their
+lake configs:
+
+```json
+"additional_dams": [
+  {"location": "KROOMBIT", "lake_config": "model/kroombit_lake_config.json"}
+]
+```
+
+**Each ```DAM ROUTE``` line needs its own ```il=``` name.** Two dams sharing one means a
+single ```set``` statement drives both, and the second starts every event at the first one's
+level - the model runs and nothing in the output says so. Bryan refuses that arrangement by
+name. The regional Callide model shipped with ```il=initial_lake_level``` on both lines.
+
+**Every dam takes its antecedent storage from the same ```lake_z```.** A representative event
+carries one - the standardised variate the upstream run sampled its storage at - and each dam
+maps it through *its own* volume exceedance curve, so one regional wetness gives a different
+volume, and a different level, at each dam. That is an assumption: the defensible treatment is
+a joint probability analysis of the two storages. The main dam is the exception - where the
+realisation recorded an ```ADV```, that is the storage it actually had, and it is used in
+preference to re-reading the curve.
+
+A lake config whose ceiling does not match the dam's full supply volume is refused. A curve
+fitted to another storage returns a volume on the wrong scale, and the level that comes back
+is just somewhere else on the ```.els``` - plausible, and wrong.
+
 ## The downstream storm config
 
 All paths are relative to **this config file**, and are resolved through the same helper the
