@@ -131,8 +131,12 @@ flood run with nothing else changed.
 The vec and the catchment data file under `model/urbs/` are **stubs**, and say so in their own
 header lines. They carry the right shape — a SPLIT model, the level-based
 `DAM ROUTE ... FSL= datafile=` form Bryan detects, and a catchment data file in the
-`"Index","Area","I"` layout URBS reads — but they have never been run through URBS and are not
-expected to survive it. Point the config at a real model to go further than the storm files.
+`"Index","Area","I"` layout URBS reads — but they are not a working model. Tried against real
+URBS on 11 September 2026 with `Run models` set to `yes`: it exits with code 1 and does not say
+why, and `urbserr.log` carries nothing useful. Bryan gets that far correctly — the storm files
+are written first and are worth inspecting in `model/urbs/storms/<Output file>/` — but the
+model itself does not run. Point the config at a real URBS model to go further than the storm
+files, rather than trying to repair the stub.
 
 ### The routing demo
 
