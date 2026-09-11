@@ -89,14 +89,24 @@ Both write to `results/`. The launchers assume Bryan is the parent folder; overr
 
 ### The storms-only demo
 
-`SimsList_storms.xlsx` holds four rows, three of them included:
+`SimsList_storms.xlsx` holds five rows, four of them included:
 
 1. 24 hour storms at present climate
 2. the same with the embedded burst filter switched off (`ebf` exclusion), so the two can be
    compared
 3. 24 hour storms at GWL 2.7 °C
-4. a 6 hour duration, excluded by default — set `Include` to `yes` to see GSDM patterns
+4. a 12 hour duration, inside the 9–18 hour GSDM/GTSMR changeover band
+5. a 6 hour duration, excluded by default — set `Include` to `yes` to see GSDM patterns
    sampled instead of GTSMR
+
+Row 4 is the one that exercises the sampling the other durations decide by rule. Outside the
+changeover band the extreme method follows from the duration alone: 24 hours is always GTSMR
+and 6 hours always GSDM. Inside it both the storm method and the *spatial* method are drawn
+per realisation, and they are drawn separately — the `spatial_method` column of its mcdf shows
+an even GSDM/GTSMR split across the realisations whose storm method came out ARR, while those
+that sampled an extreme method keep it. That is the whole of the 10 September 2026 fix in one
+cross-tabulation, and it is worth running if you are changing anything near
+`StormBurst.sample_spatial_method`.
 
 `Run models` is `storms only`, so the sampling and storm generation run and the mcdf is
 written, but no hydrologic model is called. Each log opens with the PMP embedded burst screen

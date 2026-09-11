@@ -199,6 +199,11 @@ def storms_sims_list():
          'GWL': 2.7, 'Log file': 'results/storms_24h_gwl27_log.txt',
          'Output file': 'results/storms_24h_gwl27',
          'Comment': '24 h storms at GWL 2.7 degC'},
+        {**common, 'Duration': 12, 'Analyse sub-bursts': 'no', 'Exclusions': 'pb',
+         'GWL': 0.0, 'Log file': 'results/storms_12h_gwl0_log.txt',
+         'Output file': 'results/storms_12h_gwl0',
+         'Comment': 'Inside the 9-18 h GSDM/GTSMR changeover band, so both the storm '
+                    'method and the spatial method are sampled per realisation'},
         {**common, 'Include': 'no', 'Duration': 6, 'Analyse sub-bursts': 'yes',
          'Exclusions': 'pb', 'GWL': 0.0,
          'Log file': 'results/storms_6h_gwl0_log.txt',
