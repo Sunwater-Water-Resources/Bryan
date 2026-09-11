@@ -132,6 +132,11 @@ class UrbsModel:
         self.full_supply_level = None
         self.els_file = None
         self.storage_curve = None
+        # The variable the *main* dam's starting level is written to. Read off the vec's
+        # il= token where there is one, so a model that names it something else still works;
+        # 'initial_lake_level' is what the Sunwater models use and stays the default.
+        self.lake_level_variable = 'initial_lake_level'
+        self.extra_dams = []
         if dam_location:
             self.dam_routing_line = self.find_dam_routing_line(dam_location)
             if self.dam_routing_line['line'] is not None:
@@ -139,9 +144,13 @@ class UrbsModel:
             else:
                 self.dam_routing_method = None
             if self.dam_routing_method == 'level':
+                named = self.parse_dam_routing_line(self.dam_routing_line['line'])['variable']
+                if named:
+                    self.lake_level_variable = named
                 self.storage_curve = self.get_els_data()
                 self.full_supply_volume = self.get_volume_from_level(self.full_supply_level)
                 print(f'Found the FSV of {self.full_supply_volume} ML from the FSL of {self.full_supply_level} m AHD')
+                print(f'The starting lake level is written to "{self.lake_level_variable}"')
             elif self.dam_routing_method is None:
                 self.storage_curve = None
                 self.full_supply_volume = None
@@ -149,6 +158,10 @@ class UrbsModel:
             else:
                 if self.full_supply_volume is None:
                     raise Exception('It looks like the FSV has not been provided in the model config file?')
+        # Any other dam in the model that needs its own antecedent storage. Set up after
+        # the main dam, because the check that the two do not share an il= variable needs
+        # the main dam's name to compare against.
+        self.setup_additional_dams(config_data, config_file)
         if 'time_increment_override' in config_data.keys():
             self.time_increment_override = config_data['time_increment_override']
             print('Found time increment overrides:')
@@ -236,21 +249,27 @@ class UrbsModel:
         if self.dam_routing_method == 'level':
             self.set_initial_lake_level()
         else:
-            last_element = self.header[-1]
-            if 'set ADV_below=' in last_element:
-                del self.header[-1]
-            self.header.append(f'set ADV_below={self.volume_below_fsl}')
+            self.set_header_variable('ADV_below', self.volume_below_fsl)
+
+    def set_header_variable(self, name, value):
+        """``set <name>=<value>`` in the batch file header, replacing any line already
+        setting that name.
+
+        The old code only looked at ``header[-1]``, which is enough for one dam and wrong
+        for two: the second dam's line is appended after the first, so re-setting the first
+        appended a duplicate instead of replacing it, and cmd.exe takes the last one.
+        """
+        prefix = f'set {name}='
+        self.header = [line for line in self.header if not line.startswith(prefix)]
+        self.header.append(f'{prefix}{value}')
 
     def set_initial_lake_level(self):
         search_vol = self.full_supply_volume - self.volume_below_fsl
         search_level = self.get_level_from_volume(search_vol)
-        last_element = self.header[-1]
-        if 'set initial_lake_level=' in last_element:
-            del self.header[-1]
-        self.header.append(f'set initial_lake_level={search_level}')
+        self.set_header_variable(self.lake_level_variable, search_level)
 
-    def get_level_from_volume(self, search_vol):
-        els = self.storage_curve.copy()
+    def get_level_from_volume(self, search_vol, storage_curve=None):
+        els = (self.storage_curve if storage_curve is None else storage_curve).copy()
         els.set_index('V', inplace=True)
 
         if search_vol in els.index:
@@ -262,8 +281,8 @@ class UrbsModel:
             search_level = np.around(els.loc[search_vol, 'EL'], 3)
         return search_level
 
-    def get_volume_from_level(self, search_level):
-        els = self.storage_curve.copy()
+    def get_volume_from_level(self, search_level, storage_curve=None):
+        els = (self.storage_curve if storage_curve is None else storage_curve).copy()
         els.set_index('EL', inplace=True)
         if search_level in els.index:
             search_volume = els.loc[search_level, 'V']
@@ -274,8 +293,9 @@ class UrbsModel:
             search_volume = np.around(els.loc[search_level, 'V'], 3)
         return search_volume
 
-    def get_els_data(self):
-        filepath = os.path.join(self.ratings_folder, self.els_file)
+    def get_els_data(self, els_file=None):
+        # els_file names a curve other than the main dam's - an additional dam has its own.
+        filepath = os.path.join(self.ratings_folder, els_file or self.els_file)
         print('Opening the URBS els file:', filepath)
         els = pd.read_csv(filepath)
         els.drop_duplicates(subset=['V'], keep='last', inplace=True)
@@ -304,11 +324,84 @@ class UrbsModel:
             print(f'Using twice the storm duration: {simulation_period} hours.')
         return simulation_period
 
+    def setup_additional_dams(self, config_data, config_file):
+        """Every other dam in the model that needs its starting storage set.
+
+        A regional model can route through more than one dam, and each needs its own
+        antecedent storage. Everything about a dam is already on its DAM ROUTE line -
+        the full supply level, the storage curve, and the name of the variable URBS
+        takes the starting level from - so the config only says which dams to set and
+        where each one's lake config is:
+
+            "additional_dams": [
+              {"location": "KROOMBIT",
+               "lake_config": "../sim_options/lake_conditions/kroombit.json"}
+            ]
+
+        The variable name is NOT taken from the config. It comes off the vec, which is
+        the only place it can be right: if two dams share one name, setting one sets
+        both, and reading it here is what makes that visible rather than silent.
+        """
+        entries = config_data.get('additional_dams') or []
+        for entry in entries:
+            location = entry['location']
+            found = self.find_dam_routing_line(location)
+            if found['line'] is None:
+                raise Exception(
+                    f'No DAM ROUTE line for "{location}" in {self.vec_file}. '
+                    'An additional dam is named by the location= on its routing line.')
+            parsed = self.parse_dam_routing_line(found['line'])
+            if parsed['method'] != 'level':
+                raise Exception(
+                    f'The dam at "{location}" is not routed by level (no FSL= on its '
+                    'DAM ROUTE line), so it has no starting lake level to set.')
+            if not parsed['variable']:
+                raise Exception(
+                    f'The DAM ROUTE line for "{location}" has no il=<variable> to write '
+                    'the starting level to. A hard-coded level cannot be set per event.')
+            if parsed['variable'] == self.lake_level_variable:
+                raise Exception(
+                    f'The dam at "{location}" writes its starting level to '
+                    f'"{parsed["variable"]}", which is the same variable the main dam '
+                    'uses. Setting one would set both, and the second dam would start '
+                    'every event at the first one\'s level. Give each DAM ROUTE line its '
+                    'own il= name in the vec file.')
+            curve = self.get_els_data(parsed['els_file'])
+            dam = {
+                'location': location,
+                'variable': parsed['variable'],
+                'full_supply_level': parsed['full_supply_level'],
+                'els_file': parsed['els_file'],
+                'storage_curve': curve,
+                'lake_config': resolve(os.path.dirname(config_file), entry['lake_config'])
+                               if entry.get('lake_config') else None,
+            }
+            dam['full_supply_volume'] = self.get_volume_from_level(
+                dam['full_supply_level'], curve)
+            print(f'Additional dam "{location}": FSL {dam["full_supply_level"]} m AHD, '
+                  f'FSV {dam["full_supply_volume"]} ML, level written to '
+                  f'"{dam["variable"]}"')
+            self.extra_dams.append(dam)
+        return self.extra_dams
+
+    def set_additional_dam_volume(self, location, volume_below_fsl):
+        """Start this dam at its full supply volume less `volume_below_fsl` (ML)."""
+        for dam in self.extra_dams:
+            if dam['location'] == location:
+                level = self.get_level_from_volume(
+                    dam['full_supply_volume'] - volume_below_fsl, dam['storage_curve'])
+                self.set_header_variable(dam['variable'], level)
+                return level
+        raise Exception(f'No additional dam called "{location}" has been set up.')
+
     def find_dam_routing_line(self, dam_location):
         filepath = os.path.join(self.model_folder, self.vec_file)
         with open(filepath) as f:
             for i, line in enumerate(f):
-                if line.startswith('DAM ROUTE'):
+                # strip() first: a dam nested inside a STORE./GET. block is indented, and
+                # a startswith on the raw line cannot see it. The regional Callide model
+                # routes Kroombit that way, so its DAM ROUTE line was never found.
+                if line.strip().upper().startswith('DAM ROUTE'):
                     if dam_location in line:
                         line_number = i
                         routing_line = line
@@ -327,6 +420,34 @@ class UrbsModel:
                         f.writelines(self.dam_routing_line['line'])
                     else:
                         f.writelines(line)
+
+    def parse_dam_routing_line(self, line):
+        """The four things a DAM ROUTE line says, without touching self.
+
+        ``il=`` names the environment variable URBS resolves the starting level from, and
+        it is per dam: a model with two dams needs two names, or setting one sets both.
+        The regional Callide model shipped with ``il=initial_lake_level`` on *both* lines,
+        so Kroombit started every event at Callide's level.
+        """
+        found = {'method': None, 'full_supply_level': None, 'els_file': None,
+                 'variable': None}
+        for part in line.split():
+            key = part.lower()
+            if key.startswith('fsl='):
+                found['method'] = 'level'
+                found['full_supply_level'] = float(part.split('=')[1])
+            elif key.startswith('datafile='):
+                found['els_file'] = part.split('=')[1]
+            elif key.startswith('vbf='):
+                found['method'] = 'volume'
+            elif key.startswith('il='):
+                token = part.split('=')[1]
+                # A number here is a hard-coded level, not a variable to set.
+                try:
+                    float(token)
+                except ValueError:
+                    found['variable'] = token
+        return found
 
     def get_dam_routing_method(self):
         line = self.dam_routing_line['line']
