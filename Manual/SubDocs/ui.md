@@ -252,6 +252,43 @@ Run it with **Bryan's** interpreter rather than the launcher's — it rebuilds t
 
 A **monte carlo** or **reservoir routing** row that has been analysed, because the page reads the mcdf and the ```<type>_aep``` columns the analysis adds to it. This is the only page that reads a database rather than the quantile tables; there is no way around it, since a representative event *is* a realisation. Ensemble rows do not appear: an ensemble run has no realisations to choose between, having run every combination by design.
 
+## Lake level frequency
+
+The **Lake levels** page puts the dam's recorded annual maximum lake levels on a frequency axis beside the Monte Carlo design floods, and exports the report figure and the series.
+
+### The record
+
+Name the headwater level exports one per line, **earliest gauge first**. Both layouts work: Hydstra's own export, and the WMIP web export with its quality column. Where a gauge was replaced, each file owns the record from its first reading to the next file's first reading, and a jump of more than 50 mm at the handover is reported. A Hydstra export has **no quality code against any value** - the list of codes in its third column is only a legend - so nothing can be screened out of one, and the page says so.
+
+For a dam whose full supply level or operation changed during the record, the recorded maxima are not one population. Homogenise them first and give the page the resulting **annual maximum CSV** instead; it reads the columns this page writes, and the ```WaterYear```/```Level_max```/```Level_max_at``` style (with or without ```New_```).
+
+### Annual maxima
+
+Water years are labelled by the year they end in and **start in the month you choose** (October by default). A maximum within the **carry-over window** of the start of its water year is the level the year opened at - left from the wet season before - and is drawn hollow, unless the lake fell away from it and came back to it after the window. Water years covered for less than the **minimum coverage** are flagged and can be left out. The **Annual maxima** table shows each year's maximum, when it fell, its day of the year and the interval between readings around it: a maximum read off once-a-day readings can miss the peak, and the page warns when any were.
+
+### The curves
+
+**Fit curves** runs ```util/LakeLevelFrequency.py``` with Bryan's interpreter - of the order of a minute for 400 resamples - and the curves appear when it finishes. Two forms are offered:
+
+- **Shouldered plateau**: a polynomial shoulder up to full supply, a plateau at full supply over the extent the record gives, and a straight line through the maxima above it. The plateau starts at the most frequent maximum within the **plateau tolerance** of full supply and extends through steps smaller than the **plateau gap**. It cannot be fitted without maxima sitting on full supply and at least three above it, and the page says which is missing.
+- **Logistic**, with its ceiling free - the fallback for a record without a plateau.
+
+Each is fitted to all the maxima and, separately, to the storm-driven ones placed on the whole record's probability scale. The 90% bands resample whole years and refit the same form. The shouldered curve and its band stop at the rarest maximum they were fitted to, because the upper limb is a straight line.
+
+With **Compare with the Monte Carlo results** on, the level curves of the chosen durations of one group are drawn with their envelope. Use the present-day warming level and the lake configuration the record was measured under.
+
+### Exports
+
+**Export figure** writes ```<name>_validation.png``` (with the design floods) or ```<name>_record.png``` (without): 6.3 x 4.0 in at 300 dpi, for an A4 page, reading EY at the frequent end and "1 in X" past 50% AEP. **Export AMS CSV** writes ```<name>_ams.csv```, with the source files, water year and carry-over rule in ```#``` lines above the table.
+
+### Choosing the water year
+
+**Water year options** scores all twelve start months on the level record alone: the carried-over maxima (in all, and above a level you give), how close any storm-driven maximum comes to a year boundary, boundaries cutting through a rise or with the lake above full supply, maxima that are one only because of where the year was cut, and the empirical level at 50, 20 and 10% AEP. The month in use is highlighted. Below it, the median daily level by calendar month does not depend on the choice at all, and is the evidence for where the dry season bottoms out.
+
+### What it keeps
+
+Everything on the page is saved to ```lake_frequency.json``` beside the sims_config.json as it changes, with paths inside the project stored relative to it, so the analysis can be handed on with the project. Fitted results go to ```_lake_frequency/``` and are reused whenever the settings and the input files are unchanged.
+
 ## Things worth knowing
 
 ### Formulas without cached values

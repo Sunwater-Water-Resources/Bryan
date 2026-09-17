@@ -68,8 +68,10 @@ def test_ui_imports_bryan_only_through_the_allow_list():
 
 
 def test_the_allow_list_is_actually_importable():
-    from core.bryan import log_files, representative_events, run_log
+    from core.bryan import (lake_level_record, log_files, representative_events,
+                            run_log)
 
+    assert hasattr(lake_level_record(), "annual_maxima")
     assert hasattr(run_log(), "COLUMNS")
     assert hasattr(log_files(), "resolve_duplicates")
     assert hasattr(representative_events(), "rank")
