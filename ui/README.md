@@ -187,6 +187,25 @@ is unavoidable: a representative event is a realisation. Ensemble rows do not
 appear — an ensemble run ran every combination, so it has no realisations to
 choose between.
 
+**Lake levels** — the recorded annual maximum lake levels against the design
+floods.
+
+Point it at the headwater level record — one or more Hydstra or WMIP exports,
+earliest gauge first — or at an annual maximum CSV for a record that had to be
+homogenised first. It shows the annual maxima on the frequency axis, storm-driven
+ones filled and carried-over ones (the level the water year opened at) hollow.
+**Fit curves** runs `util/LakeLevelFrequency.py` with Bryan's interpreter: the
+shouldered-plateau curve (or a logistic) through all the maxima and through the
+storm-driven ones, each with its resampled 90% band, and the Monte Carlo level
+curves and envelope of one group. **Export figure** writes the A4 report figure
+with or without the design floods; **Export AMS CSV** writes the series with
+what produced it in `#` lines above it. **Water year options** scores all
+twelve start months on the level record alone.
+
+Settings are saved as they change to `lake_frequency.json` beside the
+sims_config.json, and fitted results are kept in `_lake_frequency/` so the curves
+come back without resampling.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 
@@ -262,6 +281,12 @@ columns `lib/MCScheme.py` writes — including the mixed units, `rain_aep` in
 "1 in X" and the TPT columns as probabilities, which is the failure that module
 is most exposed to and would not look wrong on a plot.
 
+`tests/test_lake_level_record.py`, `test_lakefreq.py` and
+`test_lakefreq_page.py` cover the Lake levels page against synthetic records
+written in the Hydstra layout by `tests/lake_fixtures.py`; the page test fits
+and exports for real where Bryan's interpreter is available. The curve fits
+themselves are tested in Bryan's own `tests/test_lake_level_frequency.py`.
+
 `tests/test_real_bryan.py` runs **real Bryan** on a miniature reservoir-routing
 model built by `tests/make_rr_fixture.py` — an `.els`, two `.sq` curves, a small
 ensemble database and its inflows. It is the only test that proves the run
@@ -290,6 +315,10 @@ The tests cover the machinery; this is what shows the UI runs Bryan correctly.
    loading against what `util/GetRepresentativeEvents.py` picks for the same
    one: the two rank on different measures, so they need not agree, but a large
    disagreement is worth understanding before trusting either.
+
+8. Open **Lake levels** on a project with its headwater record, fit, and export
+   the figure. The exported PNG is the one to check against the report; the
+   on-screen chart is drawn separately from the same numbers.
 
 Reservoir routing makes steps 2–5 cheap — seconds per simulation, and no model
 executable in the loop for step 4's comparison to be muddied by.

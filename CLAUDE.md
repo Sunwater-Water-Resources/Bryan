@@ -240,6 +240,39 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Needs scipy and matplotlib, so it is **not** UI-importable and does not try to be — the split
   from `lib/RepresentativeEvents.py` is the whole reason that one stays cheap.
 
+### Lake level frequency (`lib/LakeLevelRecord.py`, `lib/LakeLevelFrequency.py`)
+- The launcher's **Lake levels** page: the recorded annual maximum lake levels on a frequency axis,
+  fitted, resampled and laid against the Monte Carlo design floods, with an A4 report figure and the
+  series as CSV. Developed on Callide (`curve_review_validation_shouldered_a4.png` in the
+  callide-fsl-reinstate project) and made general for Kroombit and the rest.
+- **Split on dependencies, like representative events.** `LakeLevelRecord` is pandas-only and
+  allow-listed: reading Hydstra/WMIP exports, water years, the annual maxima, Cunnane plotting
+  positions, the water year scores. `LakeLevelFrequency` needs scipy: the curve forms, their bands,
+  the design envelope. `util/LakeLevelFrequency.py` runs the second half for the page and draws the
+  figure. Both halves read one **job** (`LakeLevelRecord.JOB_DEFAULTS`), so the page, the CSV and the
+  figure cannot disagree about the maxima.
+- **A Hydstra export carries no quality code against any value** - the code list in its third column
+  is a legend - so nothing can be screened out of one, and the page says so. WMIP exports have the
+  column and codes 151/255 are dropped. Several files are joined in gauge order, each owning the record
+  from its first reading to the next file's.
+- **Carried-over maxima**: a maximum within `carryover_days` of the start of its water year is the
+  level the year opened at, unless the lake **falls away and comes back** to within 1 mm of it after the
+  window. Both halves matter: a gated lake held on the plateau from 1 October has not been put back there
+  by anything, and a millimetre of ripple in the first hours is not a flood. Read to 1 mm, the Callide
+  record otherwise flips 1978-79 on a rounding tie. This rule reproduces Callide's 19 (RFSL) and
+  21 (FSL) carried-over years from the record read to 0.1 mm and to 1 mm alike.
+- **The shouldered plateau's extent is read off the maxima, never fitted** (`plateau_span`), and it fails
+  with a reason - no maximum within the tolerance of full supply, fewer than three above the plateau -
+  which the page shows while still drawing the points. The logistic (ceiling free) is the fallback.
+- **The resampling uses scipy's `ndtri` for the plotting positions, not `NormalDist`.** They differ in
+  the sixteenth figure, and that is enough for the constrained shoulder fit to converge on a different
+  handful of resamples: 335 of 400 against the published 338. `tests/test_lake_level_frequency.py`
+  reproduces the Callide RMSEs (0.400, 0.559 m) and draw counts (338, 378) exactly when the
+  callide-fsl-reinstate checkout sits beside this one.
+- Settings are `lake_frequency.json` **beside the sims_config.json**, not in `~/.bryan_ui.json`: they are
+  analysis inputs and travel with the project. Fitted results are cached in `_lake_frequency/<fingerprint>.json`,
+  where the fingerprint covers the job and the size and mtime of every input file.
+
 ### Curve fitting (`lib/InterpolationCurves.py`)
 - `Curve`, `CoercedQuadratic`, `GEV` — used to extrapolate rainfall to rare/extreme AEPs.
 
@@ -253,8 +286,8 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   it — Bryan's entry point is untouched.
 - **Three binding rules, pinned by `ui/tests/test_dependency_direction.py`:** nothing in
   `lib/` may reference `ui`; nothing in `ui/core/` may import `nicegui`; and `ui/` imports
-  Bryan only through `ui/core/bryan.py`, whose allow-list is `lib.RunLog`, `lib.LogFiles` and
-  `lib.RepresentativeEvents`. All three import only pandas, which is what keeps the UI
+  Bryan only through `ui/core/bryan.py`, whose allow-list is `lib.RunLog`, `lib.LogFiles`,
+  `lib.RepresentativeEvents` and `lib.LakeLevelRecord`. All four import only pandas, which is what keeps the UI
   environment free of scipy and matplotlib — and that, not the list itself, is the test for
   membership: `test_the_allow_list_stays_cheap` imports every entry and fails if scipy or
   matplotlib arrives with it. Do not widen the allow-list to pull in a simulator.
