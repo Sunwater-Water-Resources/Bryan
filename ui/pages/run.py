@@ -17,9 +17,9 @@ STATUS_COLOUR = {
     progress.FAILED: "negative",
     progress.FAILED_MISSING_INPUT: "negative",
     progress.RUNNING: "primary",
-    progress.CANCELLED: "grey-7",
-    progress.PENDING: "grey-5",
-    progress.UNKNOWN: "grey-5",
+    progress.CANCELLED: "body",
+    progress.PENDING: "muted",
+    progress.UNKNOWN: "muted",
 }
 
 
@@ -65,8 +65,8 @@ def run_page() -> None:
 
 def _empty_state() -> None:
     with ui.card().classes("w-full items-center p-8"):
-        ui.icon("play_circle_outline").classes("text-5xl text-gray-400")
-        ui.label("Nothing running.").classes("text-gray-500")
+        ui.icon("play_circle_outline").classes("text-5xl text-muted")
+        ui.label("Nothing running.").classes("text-muted")
         ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
 
 
@@ -75,7 +75,7 @@ def _header(record) -> None:
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-0"):
                 ui.label(f"Run {record.run_id}").classes("text-lg font-bold")
-                ui.label(str(record.folder)).classes("text-xs text-gray-500")
+                ui.label(str(record.folder)).classes("text-xs text-muted")
             with ui.row().classes("gap-2"):
                 ui.button("Stop after the current chunk",
                           on_click=lambda: _request_stop(record)).props("flat")
@@ -132,17 +132,17 @@ def _chunk_card(record, chunk, console_open: set[int]) -> None:
                 if chunk.started:
                     ended = chunk.ended or time.time()
                     ui.label(progress.elapsed_text(ended - chunk.started)
-                             ).classes("text-sm text-gray-600")
+                             ).classes("text-sm text-body")
                 ui.chip(chunk.status).props(
                     f"color={_chunk_colour(chunk.status)} text-color=white dense square")
 
         ui.linear_progress(value=result.fraction, show_value=False).props("rounded")
 
         if chunk.note:
-            ui.label(chunk.note).classes("text-sm text-gray-600")
+            ui.label(chunk.note).classes("text-sm text-body")
         if chunk.returncode is not None:
             ui.label(progress.explain_returncode(chunk.returncode)
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
 
         current = result.current
         if current is not None:
@@ -171,11 +171,11 @@ def _chunk_colour(status) -> str:
     return {
         runstate.COMPLETED: "positive",
         runstate.RUNNING: "primary",
-        runstate.QUEUED: "grey-6",
-        runstate.CANCELLED: "grey-7",
+        runstate.QUEUED: "muted",
+        runstate.CANCELLED: "body",
         runstate.FAILED: "negative",
         runstate.DIED: "negative",
-    }.get(status, "grey-5")
+    }.get(status, "muted")
 
 
 def _sim_table(result) -> None:

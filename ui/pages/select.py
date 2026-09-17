@@ -93,7 +93,7 @@ class _SelectView:
                     f"{report.group_count} group(s)"
                     + ("" if report.from_column
                        else " - derived from the output names, no Group column")
-                ).classes("text-xs text-gray-500")
+                ).classes("text-xs text-muted")
 
     def _table(self) -> None:
         frame = self.project.frame
@@ -288,7 +288,7 @@ class _SelectView:
                 "blocked": audit.affects(index),
                 "status": state.state if state else "-",
                 "status_colour": STATE_COLOUR.get(
-                    state.state if state else "", "grey-5")[0],
+                    state.state if state else "", ("muted",))[0],
                 "status_detail": state.detail if state else "",
                 "group": self.groups.get(index, ""),
             }

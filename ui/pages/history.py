@@ -28,7 +28,7 @@ def _runs_card(project) -> None:
     with ui.card().classes("w-full"):
         ui.label("Runs launched from here").classes("text-lg font-bold")
         if not records:
-            ui.label("None yet.").classes("text-gray-500 text-sm")
+            ui.label("None yet.").classes("text-muted text-sm")
             return
 
         columns = [
@@ -58,7 +58,7 @@ def _runs_card(project) -> None:
         table.on("rowClick", open_run)
         ui.label("Every run folder holds the exact sims list and config that "
                  "ran, plus launch.bat and launch.sh to repeat it without the "
-                 "UI.").classes("text-xs text-gray-500")
+                 "UI.").classes("text-xs text-muted")
 
 
 def _log_card(project) -> None:
@@ -72,9 +72,9 @@ def _log_card(project) -> None:
     with ui.card().classes("w-full"):
         ui.label("From the run logs").classes("text-lg font-bold")
         ui.label("The last recorded run of each output name, across the "
-                 "master log and every run folder.").classes("text-sm text-gray-600")
+                 "master log and every run folder.").classes("text-sm text-body")
         if not history:
-            ui.label("No run logs found yet.").classes("text-gray-500 text-sm")
+            ui.label("No run logs found yet.").classes("text-muted text-sm")
             return
 
         columns = [
@@ -90,7 +90,7 @@ def _log_card(project) -> None:
                  ).classes("w-full").props("dense flat bordered")
         ui.label("A name here is not proof a particular row ran - several rows "
                  "can share one output name. The Select page decides from the "
-                 "result files on disk.").classes("text-xs text-gray-500")
+                 "result files on disk.").classes("text-xs text-muted")
 
 
 def _maintenance_card(project) -> None:
@@ -99,7 +99,7 @@ def _maintenance_card(project) -> None:
         ui.label("Each launch leaves a folder under _ui_runs. Delete the "
                  "finished ones once they are no longer interesting - the "
                  "results themselves live elsewhere and are untouched."
-                 ).classes("text-sm text-gray-600")
+                 ).classes("text-sm text-body")
         with ui.row().classes("items-center gap-3"):
             days = ui.number("Older than (days)", value=30, min=1, max=3650
                              ).classes("w-40")

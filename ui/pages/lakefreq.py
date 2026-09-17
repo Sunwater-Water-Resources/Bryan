@@ -22,6 +22,7 @@ from nicegui import app, run, ui
 
 from core import events, lakefreq
 from layout import page_frame, require_project, severity_banner
+from theme import house_echart
 from state import STATE
 
 MONTHS = {index + 1: name for index, name in enumerate(lakefreq.RECORD.MONTH_NAMES)}
@@ -104,7 +105,7 @@ class _LakeLevelsView:
 
     def build(self) -> None:
         ui.label(f"Settings are kept in {lakefreq.settings_path(self.config_path)}"
-                 ).classes("text-xs text-gray-500")
+                 ).classes("text-xs text-muted")
         with ui.row().classes("w-full items-start gap-4 no-wrap"):
             with ui.column().classes("w-96 shrink-0 gap-2"):
                 self._inputs()
@@ -125,7 +126,7 @@ class _LakeLevelsView:
                               on_change=lambda e: (setattr(self, "whole_record", e.value),
                                                    self.redraw()))
                 self.messages = ui.column().classes("w-full gap-1")
-                self.chart = ui.echart({"series": []}).classes("w-full h-[34rem]") \
+                self.chart = house_echart({"series": []}).classes("w-full h-[34rem]") \
                     .mark("lake-chart")
                 with ui.expansion("Annual maxima", icon="list").classes("w-full"):
                     self.table_area = ui.column().classes("w-full")
@@ -151,7 +152,7 @@ class _LakeLevelsView:
                                                   reread=True)
                      ).classes("w-full").props("dense")
             ui.label("Relative paths are read from the sims_config.json folder."
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
 
         with ui.card().classes("w-full").props("flat bordered"):
             ui.label("Annual maxima").classes("font-bold")
@@ -224,7 +225,7 @@ class _LakeLevelsView:
                       label="Curve above FSL starts",
                       on_change=lambda e: self.set("fit", "upper_join", e.value)
                       ).classes("w-full").props("dense")
-            ui.label(lakefreq.CURVE_HELP).classes("text-xs text-gray-500")
+            ui.label(lakefreq.CURVE_HELP).classes("text-xs text-muted")
             ui.number("Resamples", value=fit["draws"], min=50, step=50, format="%d",
                       on_change=lambda e: self.set("fit", "draws",
                                                    int(_number(e.value) or 400))
@@ -239,7 +240,7 @@ class _LakeLevelsView:
             ui.label("Design floods").classes("font-bold")
             if not self.groups:
                 ui.label("No Monte Carlo database found in this project's sims list."
-                         ).classes("text-xs text-gray-500")
+                         ).classes("text-xs text-muted")
             else:
                 ui.checkbox("Compare with the Monte Carlo results",
                             value=bool(design["include"]),
@@ -344,7 +345,7 @@ class _LakeLevelsView:
             if plan.can_fit and self.results is None \
                     and plan.job["fit"]["form"] != "none":
                 ui.label("The curves have not been fitted for these settings - "
-                         "press Fit curves.").classes("text-sm text-gray-600")
+                         "press Fit curves.").classes("text-sm text-body")
             for name, block in ((self.results or {}).get("fits") or {}).items():
                 for problem in (block.get("error"), block.get("warning")):
                     if problem:
@@ -422,7 +423,7 @@ class _LakeLevelsView:
             ui.label("Runs util/LakeLevelFrequency.py with Bryan's own interpreter. "
                      "6.3 x 4.0 in at 300 dpi, for an A4 page. Uses the fitted "
                      "curves when they are current, and fits them first when not."
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
             folder_input = ui.input("Output folder", value=str(folder)
                                     ).classes("w-full").props("dense")
             name_input = ui.input("Base name", value=name).classes("w-full").props("dense")
@@ -444,7 +445,7 @@ class _LakeLevelsView:
                     if built.png:
                         exists = " - exists, will be overwritten" if built.png.is_file() else ""
                         ui.label(f"{built.png}{exists}").classes(
-                            "text-xs " + ("text-orange-700" if exists else "text-gray-500"))
+                            "text-xs " + ("text-attention" if exists else "text-muted"))
 
             async def export() -> None:
                 built = paths()
@@ -467,7 +468,7 @@ class _LakeLevelsView:
                     png=built.png, without_design=not with_design.value)
                 run_button.set_enabled(False)
                 with report:
-                    ui.label("Exporting...").classes("text-xs text-gray-500")
+                    ui.label("Exporting...").classes("text-xs text-muted")
                 done = await _off_thread(lakefreq.run, argv, (built.png,))
                 run_button.set_enabled(True)
                 report.clear()
@@ -507,7 +508,7 @@ class _LakeLevelsView:
     # -- water year options --------------------------------------------------
 
     def _water_year_panel(self) -> None:
-        ui.label(lakefreq.SCORE_HELP).classes("text-xs text-gray-500")
+        ui.label(lakefreq.SCORE_HELP).classes("text-xs text-muted")
         with ui.row().classes("items-end gap-2"):
             fsl = self.settings["fsl"]
             self.high_level = ui.number(
@@ -552,7 +553,7 @@ class _LakeLevelsView:
                 rows=rows, row_key="start_month").classes("w-full").props("dense flat") \
                 .mark("water-year-scores")
             table.add_slot("body", r'''
-                <q-tr :props="props" :class="props.row.adopted ? 'bg-blue-1 text-weight-bold' : ''">
+                <q-tr :props="props" :class="props.row.adopted ? 'bg-water-soft text-weight-bold' : ''">
                   <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     {{ col.value === null ? '-' : col.value }}
                   </q-td>
@@ -560,5 +561,5 @@ class _LakeLevelsView:
             ui.label("Highlighted: the start month in use. The bars count the storm-"
                      "driven maxima under that start, so they describe the choice "
                      "rather than justify it; the level by month does not depend on it."
-                     ).classes("text-xs text-gray-500")
-            ui.echart(lakefreq.seasonal_chart(monthly, counts)).classes("w-full h-72")
+                     ).classes("text-xs text-muted")
+            house_echart(lakefreq.seasonal_chart(monthly, counts)).classes("w-full h-72")

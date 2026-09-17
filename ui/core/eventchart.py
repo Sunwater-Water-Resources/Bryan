@@ -18,6 +18,7 @@ this borrows its AEP axis from.
 from __future__ import annotations
 
 from .results import normal_variate
+from .palette import MUTED
 from .resultchart import PALETTE, aep_axis, numeric
 
 # Enough of the standard set to label either axis over any range Bryan runs.
@@ -28,7 +29,7 @@ STANDARD_AEPS = (2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000,
 CLEAN = PALETTE[0]
 FLAGGED = PALETTE[3]
 CHOSEN = PALETTE[2]
-NEUTRAL_LINE = "#888888"
+NEUTRAL_LINE = MUTED
 
 
 def _ticks(values, pad=0.4) -> tuple:
@@ -123,14 +124,20 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
         "silent": True,
         "z": 1,
         "lineStyle": {"color": NEUTRAL_LINE, "type": "dashed", "width": 1.5},
+        # Every series names its colour, points and all, so the legend shows the
+        # mark the plot draws rather than the next colour in the theme.
+        "itemStyle": {"color": NEUTRAL_LINE},
         "data": [[horizontal["min"], horizontal["min"]],
                  [horizontal["max"], horizontal["max"]]],
     }]
     if clean:
         series.append({"name": "candidates", "type": "scatter", "symbolSize": 11,
+                       "itemStyle": {"color": CLEAN},
                        "data": clean, "tooltip": {":formatter": _TOOLTIP}})
     if flagged:
         series.append({"name": "flagged", "type": "scatter", "symbolSize": 11,
+                       "itemStyle": {"color": "transparent", "borderColor": FLAGGED,
+                                     "borderWidth": 2},
                        "data": flagged, "tooltip": {":formatter": _TOOLTIP}})
 
     picked = outcome.picked
@@ -141,6 +148,7 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
             "symbolSize": 20,
             "symbol": "diamond",
             "z": 5,
+            "itemStyle": {"color": CHOSEN},
             "data": [_point(picked, picked.name, CHOSEN)],
             "tooltip": {":formatter": _TOOLTIP},
         })
@@ -153,6 +161,7 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
             "silent": True,
             "z": 2,
             "lineStyle": {"color": CHOSEN, "type": "dotted", "width": 1.5},
+            "itemStyle": {"color": CHOSEN},
             "data": [[z_data, vertical["min"]], [z_data, vertical["max"]]],
         })
 
@@ -168,8 +177,8 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
     return {
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "item"},
-        "legend": {"type": "scroll", "top": 24},
-        "grid": {"left": 70, "right": 30, "top": 60, "bottom": 60},
+        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
+        "grid": {"left": 70, "right": 30, "top": 72, "bottom": 60},
         "xAxis": horizontal,
         "yAxis": vertical,
         "series": series,
@@ -217,8 +226,8 @@ def hydrograph_chart(series, sim_id, title="") -> dict:
         "title": {"text": title or f"sim {int(sim_id)}", "left": "center",
                   "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "axis"},
-        "legend": {"type": "scroll", "top": 24},
-        "grid": {"left": 70, "right": 70, "top": 60, "bottom": 50},
+        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
+        "grid": {"left": 70, "right": 70, "top": 72, "bottom": 50},
         "xAxis": {"type": "value", "name": "Time (hours)", "nameLocation": "middle",
                   "nameGap": 30, "splitLine": {"show": True,
                                                "lineStyle": {"opacity": 0.25}}},
