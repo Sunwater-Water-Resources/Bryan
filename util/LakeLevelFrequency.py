@@ -41,7 +41,7 @@ import numpy as np  # noqa: E402
 from lib import LakeLevelFrequency as frequency  # noqa: E402
 from lib import LakeLevelRecord as record  # noqa: E402
 
-RESULTS_VERSION = 1
+RESULTS_VERSION = 2
 
 
 # -- the analysis ----------------------------------------------------------------
@@ -75,6 +75,7 @@ def run_analysis(job, progress=print):
     analysis = frequency.analyse(
         positions, fsl=job["fsl"], form=fit["form"], degree=fit["degree"],
         plateau_tolerance=fit["plateau_tolerance"], plateau_gap=fit["plateau_gap"],
+        upper_degree=fit["upper_degree"], upper_join=fit["upper_join"],
         storm_driven=fit["storm_driven"], draws=int(fit["draws"]),
         seed=int(fit["seed"]), design_sources=sources,
         rare_aep=min(rare, float(positions["aep"].min())), progress=progress)
@@ -322,6 +323,39 @@ def figure(results, path, with_design=True):
     return path
 
 
+def write_settings(results, png, with_design):
+    """What a figure was drawn from, beside it: ``<figure>.json``.
+
+    The curve form, tolerances, degrees and join are choices, and two people
+    drawing the same record can make them differently. The figure cannot say
+    which were made; this file does, with the fit statistics they produced.
+    """
+    fits = {}
+    for name, block in (results.get("fits") or {}).items():
+        fits[name] = {key: block.get(key) for key in
+                      ("form", "rmse", "params", "draws_used", "draws", "error", "warning")}
+    design = results.get("design") or {}
+    job = results["job"]
+    record_ = {
+        "figure": os.path.basename(png),
+        "with_design_floods": bool(with_design and design),
+        "fingerprint": results.get("fingerprint"),
+        "site": results.get("site"),
+        "annual_maxima": len(results.get("ams") or []),
+        "carried_over": sum(1 for row in results.get("ams") or [] if row["carried_over"]),
+        "job": {key: job[key] for key in job if key != "design"},
+        "design_floods": {"group": job["design"].get("label"),
+                          "durations": sorted(float(s["duration"]) for s in
+                                              job["design"].get("sources") or [])}
+        if with_design and design else None,
+        "fits": fits,
+    }
+    path = os.path.splitext(png)[0] + ".json"
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(record_, stream, indent=2)
+    return path
+
+
 # -- entry point ----------------------------------------------------------------------
 
 def parse_args(argv=None):
@@ -375,11 +409,14 @@ def main(argv=None):
             print(f"ERROR: {exc}")
             return 1
         for name, block in (results.get("fits") or {}).items():
-            if block.get("error"):
-                print(f"WARNING: {name} maxima: {block['error']}")
+            for problem in (block.get("error"), block.get("warning")):
+                if problem:
+                    print(f"WARNING: {name} maxima: {problem}")
         if args.png:
             figure(results, args.png, with_design=not args.without_design)
             print(f"Wrote {args.png}")
+            settings = write_settings(results, args.png, not args.without_design)
+            print(f"Wrote {settings}")
     return 0
 
 

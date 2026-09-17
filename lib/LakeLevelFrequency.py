@@ -18,10 +18,17 @@ forms are offered:
 ``shouldered``
     Three pieces, each fitted to the maxima that belong to it: a polynomial
     *shoulder* below full supply, pinned to reach it; the *plateau*, at full
-    supply over the extent the record itself gives; and a straight *upper limb*
-    through the maxima above the plateau. Nothing about the plateau's extent is
-    fitted - it is read off the record (:func:`plateau_span`). Developed on the
-    Callide record; the tolerances are parameters for that reason.
+    supply over the extent the record itself gives; and an *upper limb* through
+    the maxima above the plateau. Nothing about the plateau's extent is fitted -
+    it is read off the record (:func:`plateau_span`). A plateau tolerance of zero
+    drops the plateau, and the shoulder and upper limb then meet at full supply
+    between the last maximum at or below it and the first above. The upper limb
+    is a straight line by default; a dam that spills in most years has the
+    maxima above full supply to carry a higher degree, and the degree is refused
+    where it does not (:data:`MAXIMA_PER_UPPER_TERM`). It either starts free,
+    leaving the step a gated dam shows where the gates stop holding the lake, or
+    starts at full supply, continuous, as an uncontrolled spillway would give.
+    Developed on the Callide record; the tolerances are parameters for that reason.
 ``logistic``
     A four-parameter logistic with the ceiling free. It drives straight through
     a plateau, but it needs no full supply level and nothing sitting on it, so it
@@ -59,7 +66,7 @@ FORMS = (SHOULDERED, LOGISTIC, NO_FIT)
 SHOULDER_DEGREE = 4
 
 # Maxima this close to full supply are taken to be sitting on it: the lake held
-# at its operating level rather than driven by a flood.
+# at its operating level rather than driven by a flood. Zero means no plateau.
 PLATEAU_TOLERANCE = 0.025
 
 # The plateau does not end where that tolerance does. Past the maxima sitting
@@ -68,6 +75,26 @@ PLATEAU_TOLERANCE = 0.025
 # held. The plateau is extended through steps smaller than this and ended at the
 # first one larger.
 PLATEAU_GAP = 0.100
+
+# The upper limb, and where it starts.
+UPPER_DEGREE = 1
+FREE = "free"            # its own intercept: a step up from the plateau is allowed
+AT_FSL = "fsl"           # starts at full supply where the plateau ends: continuous
+UPPER_JOINS = (FREE, AT_FSL)
+
+# A curved upper limb needs this many maxima above the plateau per coefficient.
+# The straight line keeps the bare minimum of one more maximum than it has
+# coefficients, which is what the Callide figures were drawn with. Callide and
+# Kroombit carry 6 and 4-7 maxima above full supply, and a quadratic through
+# them left the rmse unchanged to the millimetre while halving the resamples it
+# could be fitted to - flexibility the record cannot pay for. A dam that spills
+# most years can.
+MAXIMA_PER_UPPER_TERM = 4
+
+# Below this share of resamples fitted, the band is drawn from an unrepresentative
+# subset - the resamples that happened to keep the maxima the form depends on -
+# and is narrower than the record justifies.
+LOW_FIT_SHARE = 0.7
 
 # Fixed so a figure is reproducible byte for byte. 400 draws place a 5th and 95th
 # percentile to well inside the width of the line they are drawn with.
@@ -103,27 +130,85 @@ def plateau_span(z, level, fsl, tol=PLATEAU_TOLERANCE, gap=PLATEAU_GAP):
     return float(zs[first]), float(zs[last])
 
 
+def _monotone_fit(evaluate_with, start, zz, yy, grid, bounds, what):
+    """Least squares under a non-decreasing constraint, from an unconstrained start."""
+    from scipy.optimize import minimize
+
+    def rmse(c):
+        try:
+            return float(np.sqrt(np.mean((evaluate_with(zz, c) - yy) ** 2)))
+        except Exception:
+            return 1e9
+
+    got = minimize(rmse, list(start), bounds=bounds, method="SLSQP",
+                   constraints=[{"type": "ineq",
+                                 "fun": lambda c: np.diff(evaluate_with(grid, c)).min()}],
+                   options={"maxiter": 800, "ftol": 1e-13})
+    if not got.success:
+        raise RuntimeError(f"the {what} fit did not converge")
+    return got.x
+
+
+def _upper(z, z2, fsl, coef, join):
+    """The upper limb: a polynomial in (z - z2), its constant fixed at full supply
+    when it starts there."""
+    d = np.asarray(z, float) - z2
+    if join == AT_FSL:
+        return fsl + sum(c * d ** (i + 1) for i, c in enumerate(coef))
+    return sum(c * d ** i for i, c in enumerate(coef))
+
+
 def fit_shouldered_plateau(z, level, fsl, degree=SHOULDER_DEGREE,
-                           tol=PLATEAU_TOLERANCE, gap=PLATEAU_GAP):
+                           tol=PLATEAU_TOLERANCE, gap=PLATEAU_GAP,
+                           upper_degree=UPPER_DEGREE, upper_join=FREE):
     """Fit shoulder, plateau and upper limb, each to its own maxima.
 
     The plateau ends at the last maximum actually sitting on it, which matches
-    the record's own extent and leaves a small step up to the upper limb.
+    the record's own extent; with ``upper_join="free"`` that leaves a step up to
+    the upper limb. ``tol=0`` fits no plateau at all. Both pieces are held
+    non-decreasing.
 
     Returns ``(params, rmse)``: ``rmse`` is over every maximum given, and
     ``params`` is the dict :func:`shouldered_plateau` evaluates.
     """
-    from scipy.optimize import minimize
-
+    if upper_join not in UPPER_JOINS:
+        raise ValueError(f"upper_join must be one of {UPPER_JOINS}, not {upper_join!r}")
+    upper_degree = int(upper_degree)
+    if upper_degree < 1:
+        raise ValueError("the upper limb needs a degree of at least 1")
     z, level = np.asarray(z, float), np.asarray(level, float)
-    z1, z2 = plateau_span(z, level, fsl, tol, gap)
+    if tol > 0:
+        z1, z2 = plateau_span(z, level, fsl, tol, gap)
+    else:
+        at_or_below, over = z[level <= fsl], z[level > fsl]
+        if not len(at_or_below) or not len(over):
+            raise ValueError("with no plateau the maxima have to lie on both sides of "
+                             "full supply")
+        z1 = z2 = float((at_or_below.max() + over.min()) / 2)
     above = z > z2
     below = z < z1
-    if above.sum() < 3:
-        raise ValueError("fewer than three annual maxima above the plateau, so "
-                         "the upper limb cannot be fitted")
 
-    slope, intercept = np.polyfit(z[above], level[above], 1)
+    terms = upper_degree + (1 if upper_join == FREE else 0)
+    needed = terms + 1 if upper_degree == 1 else MAXIMA_PER_UPPER_TERM * terms
+    if above.sum() < needed:
+        raise ValueError(f"{int(above.sum())} annual maxima above the plateau; a degree "
+                         f"{upper_degree} upper limb "
+                         f"{'starting at full supply ' if upper_join == AT_FSL else ''}"
+                         f"needs at least {needed}")
+
+    # The upper limb: one linear least squares, constrained only if it turns back.
+    za, ya = z[above], level[above]
+    da = za - z2
+    if upper_join == AT_FSL:
+        columns, target = [da ** (i + 1) for i in range(upper_degree)], ya - fsl
+    else:
+        columns, target = [da ** i for i in range(upper_degree + 1)], ya
+    upper_coef, *_ = np.linalg.lstsq(np.vstack(columns).T, target, rcond=None)
+    upper_grid = np.linspace(z2, float(za.max()), 400)
+    if np.diff(_upper(upper_grid, z2, fsl, upper_coef, upper_join)).min() < -1e-9:
+        upper_coef = _monotone_fit(
+            lambda zz, c: _upper(zz, z2, fsl, c, upper_join), upper_coef, za, ya,
+            upper_grid, [(None, None)] * len(upper_coef), "upper limb")
 
     # Pinned to reach full supply at z1, the shoulder is full supply plus a
     # polynomial in (z - z1) with no constant term - one linear least squares
@@ -139,27 +224,14 @@ def fit_shouldered_plateau(z, level, fsl, degree=SHOULDER_DEGREE,
     d = zb - z1
     design = np.vstack([d ** (i + 1) for i in range(degree)]).T
     coef, *_ = np.linalg.lstsq(design, yb - fsl, rcond=None)
-
     if np.diff(shoulder(grid, coef)).min() < -1e-9:
-        def rmse(c):
-            try:
-                return float(np.sqrt(np.mean((shoulder(zb, c) - yb) ** 2)))
-            except Exception:
-                return 1e9
-
-        cons = [{"type": "ineq",
-                 "fun": lambda c: np.diff(shoulder(grid, c)).min()}]
-        got = minimize(rmse, list(coef), bounds=[(-80, 80)] * degree,
-                       constraints=cons, method="SLSQP",
-                       options={"maxiter": 800, "ftol": 1e-13})
-        if not got.success:
-            raise RuntimeError("the shoulder fit did not converge")
-        coef = got.x
+        coef = _monotone_fit(shoulder, coef, zb, yb, grid, [(-80, 80)] * degree,
+                             "shoulder")
 
     params = {"coef": [float(c) for c in coef], "z1": z1, "z2": z2,
-              "slope": float(slope), "intercept": float(intercept),
-              "fsl": float(fsl),
-              "step": float(slope * z2 + intercept - fsl)}
+              "upper_coef": [float(c) for c in upper_coef],
+              "upper_join": upper_join, "fsl": float(fsl),
+              "step": float(_upper(z2, z2, fsl, upper_coef, upper_join) - fsl)}
     resid = shouldered_plateau(z, params) - level
     return params, float(np.sqrt(np.mean(resid ** 2)))
 
@@ -170,7 +242,7 @@ def shouldered_plateau(z, params):
     fsl, z1, z2 = params["fsl"], params["z1"], params["z2"]
     d = z - z1
     low = fsl + sum(c * d ** (i + 1) for i, c in enumerate(params["coef"]))
-    high = params["slope"] * z + params["intercept"]
+    high = _upper(z, z2, fsl, params["upper_coef"], params["upper_join"])
     return np.where(z < z1, low, np.where(z <= z2, fsl, high))
 
 
@@ -202,11 +274,12 @@ def fit_logistic(z, level):
 # -- either form ------------------------------------------------------------------
 
 def fit(form, z, level, fsl=None, degree=SHOULDER_DEGREE, tol=PLATEAU_TOLERANCE,
-        gap=PLATEAU_GAP):
+        gap=PLATEAU_GAP, upper_degree=UPPER_DEGREE, upper_join=FREE):
     if form == SHOULDERED:
         if fsl is None:
             raise ValueError("the shouldered form needs the full supply level")
-        return fit_shouldered_plateau(z, level, fsl, degree, tol, gap)
+        return fit_shouldered_plateau(z, level, fsl, degree, tol, gap,
+                                      upper_degree, upper_join)
     if form == LOGISTIC:
         return fit_logistic(z, level)
     raise ValueError(f"unknown curve form {form!r}")
@@ -336,12 +409,13 @@ def _band(draws):
     return lo, hi
 
 
-def _fit_block(form, z, level, grid_z, fsl, options, draws_of):
+def _fit_block(form, z, level, grid_z, fsl, options, draws_of, draws):
     """One curve, its rmse and its band, as plain lists, or the reason it failed."""
     block = {"form": form, "rmse": None, "params": None, "curve": None,
-             "band_lo": None, "band_hi": None, "draws_used": 0,
+             "band_lo": None, "band_hi": None, "draws_used": 0, "draws": int(draws),
              "z_min": float(np.min(z)) if len(z) else None,
-             "z_max": float(np.max(z)) if len(z) else None, "error": None}
+             "z_max": float(np.max(z)) if len(z) else None, "error": None,
+             "warning": None}
     try:
         params, rmse = fit(form, z, level, fsl, **options)
     except _SKIPPED as exc:
@@ -350,18 +424,25 @@ def _fit_block(form, z, level, grid_z, fsl, options, draws_of):
     block.update(params=params, rmse=rmse,
                  curve=evaluate(form, grid_z, params).tolist())
     try:
-        draws = draws_of()
+        draws_drawn = draws_of()
     except _SKIPPED as exc:
         block["error"] = f"band: {exc}"
         return block
-    lo, hi = _band(draws)
-    block.update(band_lo=lo.tolist(), band_hi=hi.tolist(), draws_used=int(len(draws)))
+    lo, hi = _band(draws_drawn)
+    block.update(band_lo=lo.tolist(), band_hi=hi.tolist(), draws_used=int(len(draws_drawn)))
+    if len(draws_drawn) < LOW_FIT_SHARE * block["draws"]:
+        block["warning"] = (
+            f"only {len(draws_drawn)} of {block['draws']} resamples could be fitted, so "
+            f"the band comes from the resamples that kept what this form depends on and "
+            f"is likely too narrow - try a wider plateau tolerance, no plateau, or "
+            f"fewer terms")
     return block
 
 
 def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
             degree=SHOULDER_DEGREE, plateau_tolerance=PLATEAU_TOLERANCE,
-            plateau_gap=PLATEAU_GAP, storm_driven=True, draws=BOOTSTRAP_DRAWS,
+            plateau_gap=PLATEAU_GAP, upper_degree=UPPER_DEGREE, upper_join=FREE,
+            storm_driven=True, draws=BOOTSTRAP_DRAWS,
             seed=BOOTSTRAP_SEED, design_sources=(), frequent_aep=EY1_AEP,
             rare_aep=5e-4, progress=print) -> dict:
     """Fit, resample and read the design floods, into a JSON-ready dict.
@@ -376,7 +457,9 @@ def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
     carried = ams["carried_over"].to_numpy(bool)
     options = {} if form == LOGISTIC else {"degree": int(degree),
                                            "tol": float(plateau_tolerance),
-                                           "gap": float(plateau_gap)}
+                                           "gap": float(plateau_gap),
+                                           "upper_degree": int(upper_degree),
+                                           "upper_join": upper_join}
     out = {"grid": {"aep": grid_aep.tolist(), "z": grid_z.tolist()},
            "fits": {}, "design": None}
 
@@ -385,7 +468,8 @@ def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
                  f"resampling {draws} times")
         out["fits"]["all"] = _fit_block(
             form, z, level, grid_z, fsl, options,
-            lambda: bootstrap_curves(level, grid_z, form, fsl, draws, seed, **options))
+            lambda: bootstrap_curves(level, grid_z, form, fsl, draws, seed, **options),
+            draws)
         if storm_driven and carried.any():
             storm = ~carried
             storm_z, storm_level = record.censored_positions(level[storm], len(level))
@@ -393,7 +477,8 @@ def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
             out["fits"]["storm"] = _fit_block(
                 form, storm_z, storm_level, grid_z, fsl, options,
                 lambda: bootstrap_censored_curves(level, carried, grid_z, form, fsl,
-                                                  draws, seed, **options))
+                                                  draws, seed, **options),
+                draws)
 
     if design_sources:
         curves, drawn = {}, {}

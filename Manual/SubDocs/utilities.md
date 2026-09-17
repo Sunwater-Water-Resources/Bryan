@@ -65,11 +65,12 @@ The job is JSON; every key has a default (```JOB_DEFAULTS``` in ```lib/LakeLevel
 {"record": {"files": ["C:\\data\\130314C.csv"]},
  "water_year_start": 10, "fsl": 215.5, "fsl_label": "RFSL",
  "reference_levels": [{"label": "gates fully open", "level": 217.23}],
- "fit": {"form": "shouldered", "draws": 400},
+ "fit": {"form": "shouldered", "plateau_tolerance": 0.025, "degree": 4,
+         "upper_degree": 1, "upper_join": "free", "draws": 400},
  "design": {"include": true, "sources": [{"duration": 24, "path": "C:\\runs\\CLD_mc_24h__mcdf.csv"}]}}
 ```
 
-```--results``` is reused when it was written for the same job and the same input files, so drawing the figure a second time - ```--without-design``` for the record-only version - does not resample again. Run it with **Bryan's** interpreter: it needs scipy and matplotlib.
+A ```plateau_tolerance``` of 0 fits no plateau; ```upper_join``` is ```free``` (a step up from the plateau is allowed) or ```fsl``` (continuous). A ```--png``` also writes ```<figure>.json``` beside it with the settings and fit statistics. ```--results``` is reused when it was written for the same job and the same input files, so drawing the figure a second time - ```--without-design``` for the record-only version - does not resample again. Run it with **Bryan's** interpreter: it needs scipy and matplotlib.
 
 ## Calibrating temporal pattern weights
 Use the ```CalibrateTpWeights.py``` script to calibrate temporal pattern probability weights so that the Monte Carlo ensemble satisfies the sub-burst AEP-neutrality condition - see [the sub-burst check](sub_burst_check.md) for the background. The script works entirely from the mcdf file (ideally from an unfiltered simulation run with ```Run models``` set to *storms only*): trial weights are evaluated by re-weighting the recorded realisations in the TPT, so no model reruns are needed. Patterns whose sub-bursts exceed the same-z IFD are progressively down-weighted until the weighted sub-burst frequency curves sit at or below the IFD. Outputs are the calibrated weights, the neutrality margins before and after calibration, and (if flow results are present in the mcdf) the weighted flood quantiles as a preview of the effect on the flood frequency curve. If the weights land on the floor without achieving neutrality, weighting alone is not enough for that simulation - consider the embedded burst filter, or review the offending patterns. For a production run, the calibrated weights file can be applied to the pattern sampling itself using the ```TP weights``` key in the [simulation list](sim_list.md). Note that the calibration is against **main-burst** sub-burst depths only - the pre-burst is not scanned, so weights that achieve neutrality say nothing about the pre-burst-inclusive storm. The only part of the script that should need editing is shown below:

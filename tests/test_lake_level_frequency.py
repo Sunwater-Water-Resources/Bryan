@@ -56,16 +56,61 @@ def test_the_plateau_runs_from_the_first_maximum_on_it_to_the_first_real_jump():
 
 
 def test_a_curve_built_from_the_form_is_recovered_exactly():
-    params = {"coef": [2.0, -0.5, 0.0, 0.0], "z1": 0.0, "z2": 0.6, "slope": 0.9,
-              "intercept": 215.2, "fsl": 215.0}
+    params = {"coef": [2.0, -0.5, 0.0, 0.0], "z1": 0.0, "z2": 0.6,
+              "upper_coef": [215.74, 0.9], "upper_join": "free", "fsl": 215.0}
     # The grid has to hold z1 and z2 themselves: the plateau's extent is read off
     # the maxima, never fitted.
     z = np.round(np.arange(-2.0, 2.55, 0.1), 10)
     level = frequency.shouldered_plateau(z, params)
     got, rmse = frequency.fit_shouldered_plateau(z, level, 215.0, degree=2)
     assert rmse < 1e-6
-    assert got["slope"] == pytest.approx(0.9)
+    assert got["upper_coef"] == pytest.approx([215.74, 0.9])
+    assert got["step"] == pytest.approx(0.74)
     assert got["coef"][:2] == pytest.approx([2.0, -0.5], abs=1e-6)
+
+
+def wet_dam(years=45, spilling_from=-0.9, fsl=215.0):
+    """A dam that spills in most years: a steep shoulder below full supply, and
+    above it a curve that flattens as the spillway takes over."""
+    _, z = record.plotting_positions(np.arange(years, dtype=float))
+    z = np.sort(z)
+    d = z - spilling_from
+    level = np.where(d < 0, fsl + 4.0 * d, fsl + 1.6 * d - 0.25 * d ** 2)
+    return z, level
+
+
+def test_no_plateau_meets_at_full_supply_between_the_maxima_either_side():
+    z, level = wet_dam()
+    params, rmse = frequency.fit_shouldered_plateau(
+        z, level, 215.0, degree=1, tol=0, upper_degree=2, upper_join="fsl")
+    assert params["z1"] == params["z2"]
+    assert z[level <= 215.0].max() < params["z1"] < z[level > 215.0].min()
+    assert rmse < 0.03
+    with pytest.raises(ValueError, match="both sides"):
+        frequency.fit_shouldered_plateau(z, level + 10, 215.0, tol=0)
+
+
+def test_a_curved_upper_limb_is_only_allowed_where_enough_years_spill():
+    z, level = wet_dam()
+    linear = frequency.fit_shouldered_plateau(z, level, 215.0, degree=1, tol=0)[1]
+    curved = frequency.fit_shouldered_plateau(z, level, 215.0, degree=1, tol=0,
+                                              upper_degree=2)[1]
+    assert curved < linear / 3
+
+    # A dry-belt record: a handful above full supply.
+    z, level = wet_dam(spilling_from=1.2)
+    assert frequency.fit_shouldered_plateau(z, level, 215.0, degree=1, tol=0)[1] < 0.1
+    with pytest.raises(ValueError, match="needs at least 12"):
+        frequency.fit_shouldered_plateau(z, level, 215.0, degree=1, tol=0, upper_degree=2)
+
+
+def test_the_upper_limb_can_start_at_full_supply_and_never_turns_back():
+    z, level = wet_dam()
+    params, _ = frequency.fit_shouldered_plateau(
+        z, level, 215.0, degree=1, tol=0, upper_degree=3, upper_join="fsl")
+    assert params["step"] == pytest.approx(0.0)
+    grid = np.linspace(params["z2"], z.max(), 200)
+    assert np.diff(frequency.shouldered_plateau(grid, params)).min() >= -1e-9
 
 
 def test_too_few_maxima_above_the_plateau_is_a_reason_not_a_crash():
@@ -94,6 +139,15 @@ def test_resampling_is_reproducible_and_says_how_many_draws_it_kept():
     storm = frequency.bootstrap_censored_curves(
         table["level"], table["carried_over"], grid, "logistic", draws=30)
     assert storm.shape[1] == len(grid)
+
+
+def test_a_band_from_too_few_fitted_resamples_is_flagged():
+    table = positions()
+    out = frequency.analyse(table, fsl=FSL, form="shouldered", draws=40,
+                            storm_driven=False, progress=lambda *_: None)
+    block = out["fits"]["all"]
+    assert block["draws"] == 40
+    assert (block["warning"] is not None) == (block["draws_used"] < 28)
 
 
 def test_the_analysis_records_a_form_it_could_not_fit_instead_of_failing():
@@ -143,6 +197,10 @@ def test_the_script_writes_results_a_figure_either_way_and_the_series(tmp_path, 
     assert set(saved["design"]["durations"]) == {"12", "48"}
     assert len(saved["design"]["envelope"]) == len(saved["grid"]["z"])
     assert (tmp_path / "with.png").stat().st_size > 10_000
+    settings = json.loads((tmp_path / "with.json").read_text())
+    assert settings["job"]["fit"]["upper_join"] == "free"
+    assert settings["design_floods"]["durations"] == [12.0, 48.0]
+    assert settings["fits"]["all"]["rmse"] == saved["fits"]["all"]["rmse"]
     csv = (tmp_path / "ams.csv").read_text()
     assert csv.startswith("# source: ") and "water_year,period,level" in csv
 

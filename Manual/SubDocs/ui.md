@@ -273,13 +273,22 @@ Water years are labelled by the year they end in and **start in the month you ch
 - **Shouldered plateau**: a polynomial shoulder up to full supply, a plateau at full supply over the extent the record gives, and a straight line through the maxima above it. The plateau starts at the most frequent maximum within the **plateau tolerance** of full supply and extends through steps smaller than the **plateau gap**. It cannot be fitted without maxima sitting on full supply and at least three above it, and the page says which is missing.
 - **Logistic**, with its ceiling free - the fallback for a record without a plateau.
 
+The shouldered form has four choices, and they should be made from how the dam works rather than from the rmse, which more terms always lower:
+
+- **Plateau tolerance, 0 = none.** A plateau resting on one or two years is fragile: every resample that happens to leave those years out cannot be fitted. At Kroombit the 25 mm plateau rests on a single year and fewer than half the resamples fit; 100 mm, or no plateau, fits far more with the curve barely moved.
+- **Degree below FSL** - the shoulder. Callide needs 4; 2 doubles the rmse.
+- **Degree above FSL.** A straight line unless the dam spills in most years. A higher degree needs 4 maxima above the plateau per coefficient and is refused with a message otherwise - which a dry-belt dam like Callide or Kroombit will be, and a tropical one like Tinaroo need not.
+- **Curve above FSL starts** free, leaving a step up from the plateau - right for a gated dam, where the step is the gates ceasing to hold the lake (0.57 m at Callide) - or at full supply, continuous, as an uncontrolled spillway gives.
+
+When fewer than 70% of the resamples can be fitted the page warns that the band is likely too narrow.
+
 Each is fitted to all the maxima and, separately, to the storm-driven ones placed on the whole record's probability scale. The 90% bands resample whole years and refit the same form. The shouldered curve and its band stop at the rarest maximum they were fitted to, because the upper limb is a straight line.
 
 With **Compare with the Monte Carlo results** on, the level curves of the chosen durations of one group are drawn with their envelope. Use the present-day warming level and the lake configuration the record was measured under.
 
 ### Exports
 
-**Export figure** writes ```<name>_validation.png``` (with the design floods) or ```<name>_record.png``` (without): 6.3 x 4.0 in at 300 dpi, for an A4 page, reading EY at the frequent end and "1 in X" past 50% AEP. **Export AMS CSV** writes ```<name>_ams.csv```, with the source files, water year and carry-over rule in ```#``` lines above the table.
+**Export figure** writes ```<name>_validation.png``` (with the design floods) or ```<name>_record.png``` (without), each with a ```.json``` beside it recording the curve settings and the fit statistics they gave: 6.3 x 4.0 in at 300 dpi, for an A4 page, reading EY at the frequent end and "1 in X" past 50% AEP. **Export AMS CSV** writes ```<name>_ams.csv```, with the source files, water year and carry-over rule in ```#``` lines above the table.
 
 ### Choosing the water year
 
