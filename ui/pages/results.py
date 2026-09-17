@@ -32,6 +32,7 @@ from nicegui import ui
 from core import critexport, grouping, overlay, results, resultchart
 from core.paths import cell_text
 from layout import page_frame, require_project, severity_banner
+from theme import house_echart
 from state import STATE
 
 # The order the result types are offered in; volume windows follow.
@@ -84,13 +85,13 @@ def scan(project) -> dict:
 
 def _empty_state() -> None:
     with ui.card().classes("w-full items-center p-8"):
-        ui.icon("insights").classes("text-5xl text-gray-400")
+        ui.icon("insights").classes("text-5xl text-muted")
         ui.label("No analysed results found for this sims list."
-                 ).classes("text-gray-500")
+                 ).classes("text-muted")
         ui.label("Rows write their quantile files when 'Analyse results' "
                  "is yes. The ensemble method does its own critical "
                  "duration analysis instead, so it does not appear here."
-                 ).classes("text-xs text-gray-500 max-w-lg text-center")
+                 ).classes("text-xs text-muted max-w-lg text-center")
         ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
 
 
@@ -164,7 +165,7 @@ class _ResultsView:
                           on_click=self._export_dialog).props("outline dense")
             self.type_box = ui.row().classes("items-center gap-4 flex-wrap")
             ui.separator()
-            ui.label("Durations").classes("text-xs text-gray-500")
+            ui.label("Durations").classes("text-xs text-muted")
             self.curve_box = ui.row().classes("items-center gap-x-4 gap-y-1 flex-wrap")
             with ui.row().classes("items-center gap-2"):
                 ui.button("All", on_click=lambda: self._all(True)).props("flat dense")
@@ -180,7 +181,7 @@ class _ResultsView:
 
     def _chart_card(self) -> None:
         with ui.card().classes("w-full"):
-            self.chart = ui.echart({"series": []}).classes("w-full h-96") \
+            self.chart = house_echart({"series": []}).classes("w-full h-96") \
                 .mark("duration-chart")
             with ui.expansion("Critical duration against AEP").classes("w-full"):
                 ui.label(
@@ -189,8 +190,8 @@ class _ResultsView:
                     "ones on the rare tail once the dam is acting as a "
                     "conveyance. Peak inflow follows the catchment, not the "
                     "storage, so it does not do this."
-                ).classes("text-xs text-gray-500")
-                self.critical_chart = ui.echart({"series": []}) \
+                ).classes("text-xs text-muted")
+                self.critical_chart = house_echart({"series": []}) \
                     .classes("w-full h-64").mark("critical-duration-chart")
             # Built once, not per refresh: rebuilding an expansion closes it,
             # which is what the Run page's console output had to be taught.
@@ -205,7 +206,7 @@ class _ResultsView:
             ui.label("Critical durations").classes("font-bold")
             ui.label("'margin %' is how far the critical duration beat the "
                      "runner-up. A few tenths of a percent is sampling noise, "
-                     "not a crossover.").classes("text-xs text-gray-500")
+                     "not a crossover.").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
 
     # -- state ------------------------------------------------------------
@@ -240,7 +241,7 @@ class _ResultsView:
         self.curve_box.clear()
         with self.curve_box:
             if not sources:
-                ui.label("nothing to plot").classes("text-gray-500 text-sm")
+                ui.label("nothing to plot").classes("text-muted text-sm")
             for source in sources:
                 checkbox = ui.checkbox(source.label,
                                        value=source.label in self.selected)
@@ -321,14 +322,14 @@ class _ResultsView:
             ui.label("Runs util/CriticalDurationAnalysis.py with Bryan's own "
                      "interpreter, so the files match the ones the study "
                      "post-processing already produces."
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
 
             folder_input = ui.input("Output folder", value=str(folder or "")
                                     ).classes("w-full").props("dense")
             name_input = ui.input("Base name", value=base
                                   ).classes("w-full").props("dense")
 
-            ui.label("Result types").classes("text-xs text-gray-500 mt-2")
+            ui.label("Result types").classes("text-xs text-muted mt-2")
             with ui.row().classes("gap-x-4 flex-wrap"):
                 for key in _ordered_keys(sources_by_key):
                     box = ui.checkbox(key, value=key in chosen)
@@ -361,8 +362,8 @@ class _ResultsView:
                         for path in job.outputs:
                             exists = " - exists, will be overwritten" if path.is_file() else ""
                             ui.label(f"{path}{exists}").classes(
-                                "text-xs " + ("text-orange-700" if exists
-                                              else "text-gray-500"))
+                                "text-xs " + ("text-attention" if exists
+                                              else "text-muted"))
                 run_button.set_enabled(built.can_run)
                 return built
 
@@ -378,7 +379,7 @@ class _ResultsView:
                 report.clear()
                 for job in built.jobs:
                     with report:
-                        ui.label(f"{job.key}...").classes("text-xs text-gray-500")
+                        ui.label(f"{job.key}...").classes("text-xs text-muted")
                     result = await nicerun.io_bound(critexport.run, job)
                     report.clear()
                     with report:
@@ -494,7 +495,7 @@ class _ResultsView:
         table = results.table(comparison, analysis)
         with self.table_box:
             if table.empty:
-                ui.label("nothing selected").classes("text-gray-500 text-sm")
+                ui.label("nothing selected").classes("text-muted text-sm")
                 return
             columns = [{"name": "aep", "label": "AEP (1 in X)", "field": "aep",
                         "align": "left"}]
@@ -518,7 +519,7 @@ class _ResultsView:
         with self.files_box:
             for source in sources:
                 ui.label(f"{source.label}: {source.path}"
-                         ).classes("text-xs text-gray-500")
+                         ).classes("text-xs text-muted")
 
 
 
@@ -605,13 +606,13 @@ class _GroupView:
             with ui.row().classes("items-center gap-4 flex-wrap"):
                 ui.label("One line per group: the maximum over that group's "
                          "storm durations, which is the design quantile."
-                         ).classes("text-xs text-gray-500")
+                         ).classes("text-xs text-muted")
                 ui.button("Reload", icon="refresh", on_click=_reload
                           ).props("flat dense")
             self.type_box = ui.row().classes("items-center gap-4 flex-wrap")
             ui.separator()
             with ui.row().classes("items-center gap-2 flex-wrap"):
-                ui.label("Groups to overlay").classes("text-xs text-gray-500")
+                ui.label("Groups to overlay").classes("text-xs text-muted")
                 ui.input(placeholder="filter", on_change=self._on_filter
                          ).props("dense clearable").classes("w-64")
                 ui.button("All", on_click=lambda: self._all(True)).props("flat dense")
@@ -624,7 +625,7 @@ class _GroupView:
 
     def _chart_card(self) -> None:
         with ui.card().classes("w-full"):
-            self.chart = ui.echart({"series": []}).classes("w-full h-96") \
+            self.chart = house_echart({"series": []}).classes("w-full h-96") \
                 .mark("overlay-chart")
             self.delta_box = ui.column().classes("w-full gap-0")
             with self.delta_box:
@@ -632,8 +633,8 @@ class _GroupView:
                     "Change from the baseline. Level is compared in metres and "
                     "flows and volumes in percent - a percentage of a level on "
                     "an arbitrary datum says nothing."
-                ).classes("text-xs text-gray-500")
-                self.delta_chart = ui.echart({"series": []}) \
+                ).classes("text-xs text-muted")
+                self.delta_chart = house_echart({"series": []}) \
                     .classes("w-full h-64").mark("delta-chart")
             # nothing to compare until a baseline and a second group exist
             self.delta_box.set_visibility(False)
@@ -642,8 +643,8 @@ class _GroupView:
                     "Whether the critical duration itself moves between groups "
                     "- a warmer climate or a raised full supply level can shift "
                     "it, and the single-group view cannot show that."
-                ).classes("text-xs text-gray-500")
-                self.critical_chart = ui.echart({"series": []}) \
+                ).classes("text-xs text-muted")
+                self.critical_chart = house_echart({"series": []}) \
                     .classes("w-full h-64").mark("critical-overlay-chart")
             with ui.expansion("Files read").classes("w-full"):
                 self.files_box = ui.column().classes("w-full gap-0")
@@ -655,7 +656,7 @@ class _GroupView:
         with ui.card().classes("w-full"):
             ui.label("Envelopes by group").classes("font-bold")
             ui.label("The design quantile each group produced, and the change "
-                     "from the baseline.").classes("text-xs text-gray-500")
+                     "from the baseline.").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
 
     # -- state ------------------------------------------------------------
@@ -688,13 +689,13 @@ class _GroupView:
         with self.group_box:
             if not offered:
                 ui.label("no group has this result type"
-                         ).classes("text-gray-500 text-sm")
+                         ).classes("text-muted text-sm")
                 return
             shown = [group for group in offered
                      if needle in f"{labels[group]} {group}".lower()]
             if not shown:
                 ui.label(f"nothing matches '{self._filter}'"
-                         ).classes("text-gray-500 text-sm")
+                         ).classes("text-muted text-sm")
             for group in shown:
                 count = len(self.available[group][self.key])
                 with ui.row().classes("items-center gap-2"):
@@ -705,15 +706,15 @@ class _GroupView:
                     with box:
                         ui.tooltip(group)
                     ui.label(f"{count} duration{'' if count == 1 else 's'}"
-                             ).classes("text-xs text-gray-500")
+                             ).classes("text-xs text-muted")
             hidden = len(offered) - len(shown)
             if hidden:
                 ui.label(f"{hidden} group(s) hidden by the filter"
-                         ).classes("text-xs text-gray-500")
+                         ).classes("text-xs text-muted")
             if len(offered) == 1:
                 ui.label("Only one group has results of this type, so there is "
                          "nothing to overlay it against yet."
-                         ).classes("text-xs text-gray-500")
+                         ).classes("text-xs text-muted")
 
     def _draw_baseline(self) -> None:
         """Only rebuilt when the option set changes - see ``_draw_range``."""
@@ -858,7 +859,7 @@ class _GroupView:
         table = overlay.table(built, change)
         with self.table_box:
             if table.empty:
-                ui.label("nothing selected").classes("text-gray-500 text-sm")
+                ui.label("nothing selected").classes("text-muted text-sm")
                 return
             changed = set() if change.is_empty else {
                 f"{column} {change.label}" for column in change.frame.columns}
@@ -883,7 +884,7 @@ class _GroupView:
                 ui.label(curve.key).classes("text-xs font-medium")
                 for source in curve.sources:
                     ui.label(f"    {curve.label} {source.label}: {source.path}"
-                             ).classes("text-xs text-gray-500")
+                             ).classes("text-xs text-muted")
 
 
 def _cell(name, value) -> str:

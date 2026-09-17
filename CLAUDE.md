@@ -292,6 +292,13 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 A NiceGUI browser app for choosing which sims-list rows to run, checking them, launching
 Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
 
+- **It wears Judith's house style, pinned light.** The colours are `ui/core/palette.py`,
+  copied from the dam failure model's window (`damfailure/ui/app.py` in
+  dam-failure-hydraulics) because the two are read side by side — change one, change
+  both. `ui/theme.py` applies them to every page and `main.py` runs with `dark=False`.
+  Draw a chart with `theme.house_echart`, name colours by token (`text-muted`,
+  `color=muted`) rather than as Tailwind or Quasar greys, and measure any new text
+  colour: `ui/tests/test_house_style.py` checks AA contrast and fails on a stray grey.
 - **It never imports Bryan's simulators.** The simulators do all their work in `__init__`
   and reassign `sys.stdout` globally, so the UI runs `Main.py` as a **subprocess** and reads
   files for progress. It writes a filtered copy of the sims list plus a config pointing at

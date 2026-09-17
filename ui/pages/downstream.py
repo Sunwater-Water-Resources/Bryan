@@ -68,7 +68,7 @@ def downstream_page() -> None:
                 ready, problems = len(plan.ready), len(plan.problems)
                 if problems:
                     ui.label(f"{problems} of {len(plan.storms)} cannot be written yet - "
-                             f"give the duration or warming level below.").classes("text-orange-700")
+                             f"give the duration or warming level below.").classes("text-attention")
                 ui.label(f"{ready} storm file{'s' if ready != 1 else ''} would be written.")
 
         with ui.row().classes("w-full items-end gap-4"):

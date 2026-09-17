@@ -81,7 +81,9 @@ def main() -> None:
         window_size=(1500, 950) if args.native else None,
         show=not args.no_show and not args.native,
         reload=False,
-        dark=None,          # follow the OS theme
+        # Pinned to the light house palette, as Judith's window is: the two are read
+        # side by side. Every colour is named in theme.py rather than left to Quasar.
+        dark=False,
     )
 
 

@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .bryan import BRYAN_ROOT, lake_level_record
+from .palette import BODY, MUTED, PALETTE, SURFACE
 from .paths import atomic_write_json, normalise_sep, read_json
 
 RECORD = lake_level_record()
@@ -423,9 +424,8 @@ def write_ams_csv(view: RecordView, job, path) -> Path:
 
 # -- the chart ------------------------------------------------------------------------
 
-RECORD_COLOUR = "#2a78d6"
-DESIGN_COLOUR = "#eb6834"
-MUTED = "#8a8985"
+RECORD_COLOUR = PALETTE[2]      # the house blue
+DESIGN_COLOUR = PALETTE[9]      # and its burnt orange: the same pairing as before
 
 EY_TICKS = (4, 3, 2, 1)
 AEP_TICKS = (0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 5e-3, 2e-3, 1e-3, 5e-4, 1e-4, 1e-5, 1e-6)
@@ -536,7 +536,7 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
                    "data": [point(row) for row in storm], "z": 5})
     series.append({"name": "Carried over the water year", "type": "scatter",
                    "symbolSize": 8,
-                   "itemStyle": {"color": "#ffffff", "borderColor": RECORD_COLOUR,
+                   "itemStyle": {"color": SURFACE, "borderColor": RECORD_COLOUR,
                                  "borderWidth": 1.5},
                    "data": [point(row) for row in carried], "z": 5})
 
@@ -574,7 +574,7 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
         anchor = next(item for item in series if item["name"] == "Storm-driven maxima")
         anchor["markLine"] = {
                 "silent": True, "symbol": "none",
-                "lineStyle": {"color": "#52514e", "type": "dotted", "width": 1},
+                "lineStyle": {"color": BODY, "type": "dotted", "width": 1},
                 "label": {"position": "insideStartTop", "formatter": "{b}",
                           "color": "#333", "fontSize": 11},
                 "data": [{"name": f"{label} {level:g} m", "yAxis": level}

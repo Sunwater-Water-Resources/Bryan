@@ -23,7 +23,7 @@ def _open_card() -> None:
     with ui.card().classes("w-full"):
         ui.label("Open a project").classes("text-lg font-bold")
         ui.label("Point at the sims_config.json a batch file would pass to "
-                 "Main.py.").classes("text-sm text-gray-600")
+                 "Main.py.").classes("text-sm text-body")
 
         path_input = ui.input("sims_config.json",
                               value=str(STATE.project.config.config_path)
@@ -70,7 +70,7 @@ def _bryan_card() -> None:
         ui.label("The UI shells out to Bryan rather than importing it, so the "
                  "environment that reproduces study results is left alone. "
                  "These are the two values the per-model .bat files set as "
-                 "VENV_PY and PYFILE.").classes("text-sm text-gray-600")
+                 "VENV_PY and PYFILE.").classes("text-sm text-body")
 
         python_input = ui.input("Python interpreter",
                                 value=settings.bryan_python).classes("w-full")
@@ -91,7 +91,7 @@ def _bryan_card() -> None:
                  "thousands of model runs one after another. More processes "
                  "mostly multiply memory and storm files. The per-chunk time "
                  "estimate on the Run page is the thing to judge it by."
-                 ).classes("text-xs text-gray-500")
+                 ).classes("text-xs text-muted")
 
         def save() -> None:
             settings.bryan_python = python_input.value.strip()
@@ -135,7 +135,7 @@ def _summary_card() -> None:
         if sims.other_sheets:
             ui.label(f"Other sheets, not read by Bryan and not copied into run "
                      f"folders: {', '.join(sims.other_sheets)}"
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
 
         for issue in project.issues:
             severity_banner("warn", issue)

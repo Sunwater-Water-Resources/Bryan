@@ -20,14 +20,11 @@ from __future__ import annotations
 import json
 import math
 
+from .palette import MUTED, PALETTE
 from .results import ABSOLUTE, format_aep, normal_variate, y_axis
 
-# Chosen to stay distinguishable on both the light and dark themes the UI
-# follows, and to survive being printed in greyscale in a report.
-PALETTE = ("#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#B07AA1",
-           "#76B7B2", "#EDC948", "#9C755F", "#FF9DA7", "#8CD17D")
-
-ENVELOPE_COLOUR = "#888888"
+# The house ramp, shared with Judith; see core/palette.py for how it was validated.
+ENVELOPE_COLOUR = MUTED
 
 # Abramowitz & Stegun 26.2.17 for the upper tail, so a tick anywhere on the
 # axis can be labelled '1 in X' even when it is not one of ours.
@@ -136,8 +133,8 @@ def duration_chart(comparison, analysis, key, *, show_envelope=True,
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"},
                     ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(5)"},
-        "legend": {"type": "scroll", "top": 24},
-        "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
+        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
+        "grid": {"left": 60, "right": 30, "top": 72, "bottom": 60},
         "xAxis": horizontal,
         "yAxis": {
             "type": "log" if logarithmic else "value",
@@ -242,8 +239,8 @@ def overlay_chart(overlay, *, title="") -> dict:
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"},
                     ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(5)"},
-        "legend": {"type": "scroll", "top": 24},
-        "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
+        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
+        "grid": {"left": 60, "right": 30, "top": 72, "bottom": 60},
         "xAxis": horizontal,
         "yAxis": {
             "type": "log" if logarithmic else "value",
@@ -308,8 +305,8 @@ def delta_chart(overlay, deltas, *, title="") -> dict:
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"},
                     ":valueFormatter": "(v) => v == null ? '-' : Number(v).toPrecision(4)"},
-        "legend": {"type": "scroll", "top": 24},
-        "grid": {"left": 60, "right": 30, "top": 60, "bottom": 60},
+        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
+        "grid": {"left": 60, "right": 30, "top": 72, "bottom": 60},
         "xAxis": horizontal,
         "yAxis": {"type": "value", "name": f"Change from {deltas.baseline} ({unit})",
                   "nameLocation": "middle", "nameGap": 45, "scale": True,

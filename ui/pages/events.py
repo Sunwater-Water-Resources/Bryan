@@ -28,6 +28,7 @@ from nicegui import app, run
 
 from core import events, eventchart, hydrographs, results
 from layout import page_frame, require_project, severity_banner
+from theme import house_echart
 from state import STATE
 
 TYPE_LABELS = {"level": "Lake level", "inflow": "Peak inflow",
@@ -94,15 +95,15 @@ def events_page() -> None:
 
 def _empty_state() -> None:
     with ui.card().classes("w-full items-center p-8 gap-2"):
-        ui.icon("scatter_plot", size="3rem").classes("text-gray-400")
+        ui.icon("scatter_plot", size="3rem").classes("text-muted")
         ui.label("No Monte Carlo database found for this sims list."
-                 ).classes("text-gray-500")
+                 ).classes("text-muted")
         ui.label(
             "A representative event is one realisation, so this page needs the "
             "mcdf a monte carlo or reservoir routing row writes - not just the "
             "quantile tables. An ensemble run has no realisations to choose "
             "between: it ran every combination by design."
-        ).classes("text-xs text-gray-500 max-w-lg text-center")
+        ).classes("text-xs text-muted max-w-lg text-center")
         ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
 
 
@@ -187,7 +188,7 @@ class _EventsView:
                              "the sort is decided by noise.")
                 self.band_units = ui.label(
                     events.band_units(self.result_type)[0]
-                ).classes("text-xs text-gray-500")
+                ).classes("text-xs text-muted")
                 self.rounding_input = ui.number(
                     "Round differences to",
                     value=self.roundings[self.result_type],
@@ -202,7 +203,7 @@ class _EventsView:
                              "neutrality rather than by noise.")
                 self.rounding_units = ui.label(
                     events.band_units(self.result_type)[0]
-                ).classes("text-xs text-gray-500")
+                ).classes("text-xs text-muted")
                 ui.button("Reload", icon="refresh", on_click=self._reload
                           ).props("flat dense")
             ui.separator()
@@ -228,7 +229,7 @@ class _EventsView:
                             value=self.filters.exclude_flagged,
                             on_change=lambda e: self._on_filter("exclude_flagged",
                                                                 e.value))
-            self.status = ui.label().classes("text-xs text-gray-500")
+            self.status = ui.label().classes("text-xs text-muted")
 
     def _targets_card(self) -> None:
         with ui.card().classes("w-full"):
@@ -250,7 +251,7 @@ class _EventsView:
             ui.label("Representative events").classes("font-bold")
             ui.label("'hydrograph' is the column to pull out of the stored "
                      "inflow, level and outflow files."
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
             self.summary_box = ui.column().classes("w-full")
             with ui.expansion("Extract the hydrographs and plot them").classes("w-full"):
                 ui.label(
@@ -258,7 +259,7 @@ class _EventsView:
                     "writes a three-panel plot per event - the rebuilt "
                     "hyetograph, the inflow and outflow, and the lake level - "
                     "and a workbook of the series."
-                ).classes("text-xs text-gray-500")
+                ).classes("text-xs text-muted")
                 self.command_box = ui.column().classes("w-full")
 
     # -- state ------------------------------------------------------------
@@ -344,7 +345,7 @@ class _EventsView:
         labels = [source.label for source in self._sources()]
         with self.target_box:
             if not self.targets:
-                ui.label("No loadings yet - add one.").classes("text-gray-500 text-sm")
+                ui.label("No loadings yet - add one.").classes("text-muted text-sm")
             for position, target in enumerate(self.targets):
                 with ui.row().classes("items-center gap-2 flex-wrap"):
                     ui.toggle(KIND_LABELS, value=target.kind,
@@ -393,7 +394,7 @@ class _EventsView:
                               self._card_toggled(i, e.value)).classes("w-full") \
                 .mark(f"target-{position}"):
             for note in outcome.notes:
-                ui.label(note).classes("text-xs text-gray-500")
+                ui.label(note).classes("text-xs text-muted")
             if outcome.problem:
                 severity_banner("warn", outcome.problem)
                 return
@@ -401,7 +402,7 @@ class _EventsView:
                 ui.label("Left out: " + ", ".join(
                     f"{count} {reason}"
                     for reason, count in outcome.ranking.excluded.items())
-                ).classes("text-xs text-gray-500")
+                ).classes("text-xs text-muted")
 
             shapes = self.shapes.get(self._source_key(outcome), {})
             rows = events.candidate_rows(outcome, shapes)
@@ -410,7 +411,7 @@ class _EventsView:
                 return
             self._candidate_table(position, rows)
             self._preview_panel(position, outcome)
-            chart = ui.echart(eventchart.neutrality_chart(
+            chart = house_echart(eventchart.neutrality_chart(
                 outcome, self.result_type)).classes("w-full h-96")
             chart.mark(f"neutrality-{position}")
 
@@ -455,13 +456,13 @@ class _EventsView:
                          "candidate, and draws the chosen event. Click any row "
                          "afterwards to draw that one.")
             if sim_id is not None:
-                ui.label(f"showing sim {int(sim_id)}").classes("text-xs text-gray-500")
+                ui.label(f"showing sim {int(sim_id)}").classes("text-xs text-muted")
         for note in self.preview_notes.get(position, ()):
-            ui.label(note).classes("text-xs text-gray-500")
+            ui.label(note).classes("text-xs text-muted")
 
         series = self.preview_series.get(position)
         if series:
-            ui.echart(eventchart.hydrograph_chart(series, sim_id)) \
+            house_echart(eventchart.hydrograph_chart(series, sim_id)) \
                 .classes("w-full h-80").mark(f"hydrograph-{position}")
 
     def _source_key(self, outcome) -> str:
@@ -544,7 +545,7 @@ class _EventsView:
         rows = events.summary_rows(self.outcomes)
         with self.summary_box:
             if not rows:
-                ui.label("Nothing chosen yet.").classes("text-gray-500 text-sm")
+                ui.label("Nothing chosen yet.").classes("text-muted text-sm")
                 return
             columns = [{"name": name, "label": name, "field": name}
                        for name in rows[0]]

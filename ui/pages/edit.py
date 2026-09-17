@@ -51,7 +51,7 @@ class _EditView:
             ui.label("'Include' is what Bryan reads from the file. Which rows "
                      "the UI will run is a separate thing, set on the Select "
                      "page - a run copy always writes Include = yes."
-                     ).classes("text-xs text-gray-500")
+                     ).classes("text-xs text-muted")
 
     def _grid(self) -> None:
         columns = [
@@ -142,7 +142,7 @@ class _EditView:
         added = len(self.edited) - len(self.project.frame)
         with self.changes_box:
             if not changes and added <= 0:
-                ui.label("Nothing changed.").classes("text-gray-500 text-sm")
+                ui.label("Nothing changed.").classes("text-muted text-sm")
                 return
             if added > 0:
                 ui.label(f"{added} row(s) added").classes("text-sm font-bold")
@@ -157,7 +157,7 @@ class _EditView:
         master = self.project.sims.path
         with ui.dialog() as dialog, ui.card().classes("min-w-[32rem]"):
             ui.label("Save a copy").classes("text-lg font-bold")
-            ui.label(f"Beside {master.parent}").classes("text-xs text-gray-500")
+            ui.label(f"Beside {master.parent}").classes("text-xs text-muted")
             name = ui.input("Filename",
                             value=editing.default_save_name(master)).classes("w-full")
             replace = ui.checkbox("Replace it if it already exists")

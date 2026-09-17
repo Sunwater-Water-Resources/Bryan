@@ -126,11 +126,15 @@ async def test_the_figure_export_writes_the_report_png(user, opened, monkeypatch
     user.find("Base name").clear().type("DAM")
     user.find("Include the design floods").click()          # off: the record figure
     user.find(marker="export-run").click()
+    figure = tmp_path / "figures" / "DAM_record.png"
+    # Wait for the file to be written, not just created: the export runs in Bryan's
+    # own interpreter, and a check the moment the name appeared read a size of 0
+    # about one run in three.
     for _ in range(900):
-        if (tmp_path / "figures" / "DAM_record.png").is_file():
+        if figure.is_file() and figure.stat().st_size > 10_000:
             break
         await asyncio.sleep(0.1)
-    assert (tmp_path / "figures" / "DAM_record.png").stat().st_size > 10_000
+    assert figure.stat().st_size > 10_000
     saved = json.loads((opened.parent / "lake_frequency.json").read_text())
     assert saved["export"]["name"] == "DAM"
 
