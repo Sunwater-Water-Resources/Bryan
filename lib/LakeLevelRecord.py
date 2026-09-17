@@ -658,8 +658,8 @@ JOB_DEFAULTS = {
     "fsl_label": "FSL",
     "reference_levels": [],          # [{"label": ..., "level": ...}]
     "fit": {"form": "shouldered", "degree": 4, "plateau_tolerance": 0.025,
-            "plateau_gap": 0.100, "storm_driven": True, "draws": 400,
-            "seed": 20260826},
+            "plateau_gap": 0.100, "upper_degree": 1, "upper_join": "free",
+            "storm_driven": True, "draws": 400, "seed": 20260826},
     "design": {"include": False, "label": "", "sources": []},   # [{"duration", "path"}]
     "axes": {"rare_aep_1_in_x": 2000, "level_min": None, "level_max": None},
 }

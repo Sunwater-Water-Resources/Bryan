@@ -133,3 +133,26 @@ async def test_the_figure_export_writes_the_report_png(user, opened, monkeypatch
     assert (tmp_path / "figures" / "DAM_record.png").stat().st_size > 10_000
     saved = json.loads((opened.parent / "lake_frequency.json").read_text())
     assert saved["export"]["name"] == "DAM"
+
+
+@pytest.mark.asyncio
+async def test_a_band_from_too_few_resamples_is_warned_about(user, opened):
+    from core import events, lakefreq
+    from state import STATE
+    from test_lakefreq import results_for
+
+    project = STATE.project
+    groups = events.sources_by_group(project)
+    settings = lakefreq.load_settings(opened)
+    settings["design"]["group"] = next(iter(groups))     # as the page picks it
+    job = lakefreq.build_job(opened, settings, groups).job
+    results = results_for(None)
+    results["fingerprint"] = lakefreq.RECORD.fingerprint(job)
+    results["fits"]["all"]["warning"] = "only 100 of 400 resamples could be fitted"
+    path = lakefreq.results_path(opened, job)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(results))
+
+    await user.open("/lake-levels")
+    await series_names(user, "Fit to all maxima")
+    await user.should_see("only 100 of 400 resamples could be fitted")

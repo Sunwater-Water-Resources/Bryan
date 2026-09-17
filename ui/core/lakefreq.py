@@ -50,6 +50,17 @@ UNSAFE_NAME = re.compile(r"[\\/:*?\"<>|]")
 FORM_LABELS = {"shouldered": "Shouldered plateau", "logistic": "Logistic",
                "none": "No curve"}
 
+UPPER_JOIN_LABELS = {"free": "Free - a step up from the plateau is allowed",
+                     "fsl": "At full supply - continuous"}
+
+CURVE_HELP = (
+    "A gated dam steps up where the gates stop holding the lake, so leave the curve "
+    "above FSL free; an uncontrolled spillway is continuous. A plateau resting on one "
+    "or two years is fragile - widen the tolerance, or set it to 0. A degree above 1 "
+    "above FSL needs 4 maxima above the plateau per coefficient, which a dam that "
+    "spills most years has and a dry-belt dam does not. Choose on how the dam works, "
+    "not on the rmse: more terms always lower it.")
+
 # What the page adds to a job to make it a settings file: which design floods by
 # group and duration rather than by path, since the paths follow from the sims
 # list, and where exports go.

@@ -262,8 +262,20 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   record otherwise flips 1978-79 on a rounding tie. This rule reproduces Callide's 19 (RFSL) and
   21 (FSL) carried-over years from the record read to 0.1 mm and to 1 mm alike.
 - **The shouldered plateau's extent is read off the maxima, never fitted** (`plateau_span`), and it fails
-  with a reason - no maximum within the tolerance of full supply, fewer than three above the plateau -
-  which the page shows while still drawing the points. The logistic (ceiling free) is the fallback.
+  with a reason - no maximum within the tolerance of full supply, too few above the plateau - which the
+  page shows while still drawing the points. The logistic (ceiling free) is the fallback. A tolerance of
+  **0 is no plateau**: shoulder and upper limb meet at full supply midway between the last maximum at or
+  below it and the first above. The upper limb has a degree (default 1) and a join: `free` keeps its own
+  intercept and the step a gated dam shows where the gates stop holding (Callide, 0.57 m); `fsl` starts
+  it at full supply, continuous, as an uncontrolled spillway gives. Both pieces are held non-decreasing.
+- **Degrees above 1 above FSL are for dams that spill most years** (Tinaroo), and need
+  `MAXIMA_PER_UPPER_TERM` (4) maxima above the plateau per coefficient. Callide and Kroombit carry 4-8,
+  and a quadratic there left the rmse unchanged while halving the resamples that could be fitted. The
+  linear upper limb keeps the bare one-more-than-its-coefficients minimum, which is what reproduces the
+  Callide figure. A fit block whose resamples fell below `LOW_FIT_SHARE` (70%) carries a `warning`: the
+  band then comes from the resamples that kept what the form depends on - Kroombit's 25 mm plateau rests
+  on one year, and 45% fitted - and is too narrow. Every exported figure gets a `<figure>.json` beside it
+  recording the curve settings and fit statistics, because two analysts can choose them differently.
 - **The resampling uses scipy's `ndtri` for the plotting positions, not `NormalDist`.** They differ in
   the sixteenth figure, and that is enough for the constrained shoulder fit to converge on a different
   handful of resamples: 335 of 400 against the published 338. `tests/test_lake_level_frequency.py`

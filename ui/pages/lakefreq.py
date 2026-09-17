@@ -198,7 +198,8 @@ class _LakeLevelsView:
                       on_change=lambda e: self.set("fit", "form", e.value)
                       ).classes("w-full").props("dense")
             with ui.row().classes("w-full no-wrap gap-2"):
-                ui.number("Plateau tolerance (mm)", value=fit["plateau_tolerance"] * 1000,
+                ui.number("Plateau tolerance (mm, 0 = none)",
+                          value=fit["plateau_tolerance"] * 1000,
                           min=0, format="%g",
                           on_change=lambda e: self.set("fit", "plateau_tolerance",
                                                        (_number(e.value) or 0) / 1000)
@@ -209,15 +210,25 @@ class _LakeLevelsView:
                                                        (_number(e.value) or 0) / 1000)
                           ).classes("grow").props("dense")
             with ui.row().classes("w-full no-wrap gap-2"):
-                ui.number("Shoulder degree", value=fit["degree"], min=1, max=6, step=1,
+                ui.number("Degree below FSL", value=fit["degree"], min=1, max=6, step=1,
                           format="%d",
                           on_change=lambda e: self.set("fit", "degree",
                                                        int(_number(e.value) or 4))
                           ).classes("grow").props("dense")
-                ui.number("Resamples", value=fit["draws"], min=50, step=50, format="%d",
-                          on_change=lambda e: self.set("fit", "draws",
-                                                       int(_number(e.value) or 400))
+                ui.number("Degree above FSL", value=fit["upper_degree"], min=1, max=4,
+                          step=1, format="%d",
+                          on_change=lambda e: self.set("fit", "upper_degree",
+                                                       int(_number(e.value) or 1))
                           ).classes("grow").props("dense")
+            ui.select(lakefreq.UPPER_JOIN_LABELS, value=fit["upper_join"],
+                      label="Curve above FSL starts",
+                      on_change=lambda e: self.set("fit", "upper_join", e.value)
+                      ).classes("w-full").props("dense")
+            ui.label(lakefreq.CURVE_HELP).classes("text-xs text-gray-500")
+            ui.number("Resamples", value=fit["draws"], min=50, step=50, format="%d",
+                      on_change=lambda e: self.set("fit", "draws",
+                                                   int(_number(e.value) or 400))
+                      ).classes("w-full").props("dense")
             ui.checkbox("Fit the storm-driven maxima as well",
                         value=bool(fit["storm_driven"]),
                         on_change=lambda e: self.set("fit", "storm_driven", e.value)
@@ -335,9 +346,11 @@ class _LakeLevelsView:
                 ui.label("The curves have not been fitted for these settings - "
                          "press Fit curves.").classes("text-sm text-gray-600")
             for name, block in ((self.results or {}).get("fits") or {}).items():
-                if block.get("error"):
-                    severity_banner("warn", f"{'Storm-driven' if name == 'storm' else 'All'}"
-                                            f" maxima: {block['error']}")
+                for problem in (block.get("error"), block.get("warning")):
+                    if problem:
+                        severity_banner(
+                            "warn", f"{'Storm-driven' if name == 'storm' else 'All'}"
+                                    f" maxima: {problem}")
         options = lakefreq.chart_options(self.view.positions, self.results, self.settings,
                                          show_design=self.show_design,
                                          whole_record=self.whole_record)

@@ -204,3 +204,18 @@ def test_the_adopted_start_month_is_marked_in_the_scores(project):
     chart = lakefreq.seasonal_chart(lakefreq.RECORD.monthly_levels(view.level),
                                     lakefreq.RECORD.maxima_by_month(view.ams))
     assert len(chart["series"][-1]["data"]) == 12
+
+
+def test_the_curve_options_reach_the_job_and_old_settings_get_the_defaults(project):
+    config = project.config.config_path
+    old = settings_for(project)
+    del old["fit"]["upper_degree"], old["fit"]["upper_join"]
+    lakefreq.save_settings(config, old)
+    loaded = lakefreq.load_settings(config)
+    assert (loaded["fit"]["upper_degree"], loaded["fit"]["upper_join"]) == (1, "free")
+
+    loaded["fit"].update(plateau_tolerance=0.0, upper_degree=2, upper_join="fsl")
+    job = lakefreq.build_job(config, loaded).job
+    assert job["fit"]["upper_join"] == "fsl" and job["fit"]["plateau_tolerance"] == 0.0
+    assert set(lakefreq.UPPER_JOIN_LABELS) == {"free", "fsl"}
+
