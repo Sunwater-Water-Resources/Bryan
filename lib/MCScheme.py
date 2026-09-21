@@ -568,19 +568,25 @@ class TotalProbTheorem:
 
           NaN never exceeds anything. `div[result] > peak` is False for a NaN
           result, so a realisation the model failed to produce counts towards
-          neither the exceedances nor - since the divisor is the fixed sample
-          size n - the denominator. np.sort puts NaN *last*, where searchsorted
-          would count it as exceeding every value, so the NaN are dropped from
-          each division before the search rather than sorted with it.
+          the exceedances of no value. np.sort puts NaN *last*, where
+          searchsorted would count it as exceeding every value, so the NaN are
+          dropped from each division before the search rather than sorted with
+          it.
 
-          The weighted denominator is the whole division. Under 'tp_w' the
-          divisor is the division's total weight, including rows whose result is
-          NaN, so it is summed before the NaN are dropped.
+          **The divisor is what the division returned**, not how many
+          realisations it was given - the count of non-NaN results, or under
+          'tp_w' their total weight. A realisation that produced no result says
+          nothing about whether the quantile would have been exceeded, so it
+          belongs in neither the numerator nor the denominator; dividing by the
+          full sub-division count instead reads every failed realisation as a
+          non-exceedance and biases the whole curve low, in proportion to how
+          many were lost. See Manual/change_log.md, 21 September 2026.
         """
         values = np.asarray(values, dtype=float)
         weighted = 'tp_w' in self.mcdf.columns
         pH = np.empty((self.m, values.size))
         divisions = self.mcdf.groupby('m')
+        silent = []
 
         for i in range(self.m):
             if i not in divisions.groups:
@@ -597,9 +603,18 @@ class TotalProbTheorem:
             division = divisions.get_group(i)
             result = division[result_type].to_numpy(dtype=float)
             present = ~np.isnan(result)
+            if not present.any():
+                # Nothing came back from this division at all, so there is no
+                # conditional probability to attach to its share of the sample
+                # space. Treated as never exceeding, which is what a division of
+                # frequent rainfalls would have done anyway - but say so, because
+                # for a division that could have flooded it understates the AEP.
+                pH[i] = 0.0
+                silent.append(i)
+                continue
             if weighted:
                 weight = division['tp_w'].to_numpy(dtype=float)
-                total_weight = weight.sum()
+                total_weight = weight[present].sum()
                 order = np.argsort(result[present], kind='mergesort')
                 sorted_result = result[present][order]
                 sorted_weight = weight[present][order]
@@ -612,7 +627,13 @@ class TotalProbTheorem:
                 sorted_result = np.sort(result[present])
                 exceeding = sorted_result.size - np.searchsorted(
                     sorted_result, values, side='right')
-                pH[i] = exceeding / self.n
+                pH[i] = exceeding / sorted_result.size
+
+        if silent:
+            mass = self.compute_df['pMi'].to_numpy()[silent].sum()
+            print(f'  NOTE: {len(silent)} of {self.m} main divisions returned no '
+                  f'{result_type} at all, carrying {mass:.1%} of the probability\n'
+                  f'        space. They are taken as never exceeding.')
 
         pH_low = np.sqrt(self.upper_factor_assumption * pH[0] ** 2)
         pH_high = np.sqrt(pH[self.m - 1])
@@ -625,14 +646,23 @@ class TotalProbTheorem:
         n = self.n
         compute_df = self.compute_df
         edge_df = self.edge_df
+        # The divisor is what the division returned, not how many realisations it
+        # was given - see assign_aep_all, which this has to agree with value for
+        # value (tests/test_tpt_vectorised.py). A division that returned nothing
+        # divides 0 by 0; it is taken as never exceeding, which is also what the
+        # missing groupby row used to come to once pandas' skipna had dropped it.
         if 'tp_w' in self.mcdf.columns:
             # Weighted pattern probabilities (e.g. calibrated temporal pattern weights):
             # pH is the weighted exceedance fraction within each main division
             compute_df['pH'] = self.mcdf.groupby('m').apply(
-                lambda div: (div['tp_w'] * (div[result_type] > peak_value)).sum() / div['tp_w'].sum())
+                lambda div: (div['tp_w'] * (div[result_type] > peak_value)).sum()
+                / div.loc[div[result_type].notna(), 'tp_w'].sum())
         else:
-            compute_df['num'] = self.mcdf.groupby('m').apply(lambda div: sum(div[result_type] > peak_value))
-            compute_df['pH'] = compute_df['num'] / self.n
+            grouped = self.mcdf.groupby('m')
+            compute_df['num'] = grouped.apply(lambda div: sum(div[result_type] > peak_value))
+            compute_df['den'] = grouped.apply(lambda div: div[result_type].notna().sum())
+            compute_df['pH'] = compute_df['num'] / compute_df['den']
+        compute_df['pH'] = compute_df['pH'].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
         # # Special treatment for first and last intervals as per Nathan and Weinmann 2013
         # pQr0 = compute_df.loc[0, 'pH']
