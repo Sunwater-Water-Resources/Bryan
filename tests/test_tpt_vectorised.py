@@ -101,3 +101,80 @@ def test_an_empty_division_is_reported_rather_than_dropped():
         tpt.assign_aep_all(np.array([1.5]), 'inflow')
     # What it does today: the middle division's 0.42 of the sample space vanishes.
     assert tpt.assign_aep(1.5, 'inflow') == pytest.approx(0.3902260193782334)
+
+
+def _aep_from_ph(tpt, ph):
+    """The AEP the TPT gives for a hand-written pH per main division."""
+    ph = np.asarray(ph, dtype=float)
+    return (ph @ tpt.compute_df['pMi'].to_numpy()
+            + np.sqrt(tpt.upper_factor_assumption * ph[0] ** 2) * tpt.edge_df.loc[-1, 'pMi']
+            + np.sqrt(ph[-1]) * tpt.edge_df.loc[tpt.m, 'pMi'])
+
+
+def test_the_divisor_is_what_the_division_returned():
+    """A realisation that produced no result says nothing about whether the
+    quantile would have been exceeded, so it is in neither the numerator nor the
+    denominator. Dividing by the sub-division count instead reads every failed
+    realisation as a non-exceedance and biases the curve low.
+    """
+    frame = pd.DataFrame({
+        'm': [0, 0, 0, 0, 1, 1, 1, 1],
+        'inflow': [10.0, 20.0, np.nan, np.nan, 30.0, 40.0, 50.0, 60.0],
+    })
+    tpt = TotalProbTheorem(2, 4, divisions(2), frame, verbose=False)
+
+    # Division 0 returned two of its four; one of the two exceeds 15.
+    expected = _aep_from_ph(tpt, [1 / 2, 4 / 4])
+    was = _aep_from_ph(tpt, [1 / 4, 4 / 4])          # divided by n, as it used to be
+
+    assert tpt.assign_aep_all(np.array([15.0]), 'inflow')[0] == pytest.approx(expected)
+    assert tpt.assign_aep(15.0, 'inflow') == pytest.approx(expected)
+    assert expected > was                             # the old divisor understated it
+
+
+def test_a_division_that_returned_nothing_is_taken_as_never_exceeding(capsys):
+    """Nothing came back, so there is no conditional probability to attach to
+    that division's share of the sample space. Taken as zero - which is right for
+    a division of frequent rainfalls, and reported because for one that could
+    have flooded it understates the AEP.
+    """
+    frame = pd.DataFrame({
+        'm': [0, 0, 1, 1],
+        'inflow': [np.nan, np.nan, 30.0, 40.0],
+    })
+    tpt = TotalProbTheorem(2, 2, divisions(2), frame, verbose=False)
+
+    expected = _aep_from_ph(tpt, [0.0, 2 / 2])
+    assert tpt.assign_aep_all(np.array([15.0]), 'inflow')[0] == pytest.approx(expected)
+    assert tpt.assign_aep(15.0, 'inflow') == pytest.approx(expected)
+    assert 'returned no inflow at all' in capsys.readouterr().out
+
+
+def test_a_division_that_lost_runs_still_matches_the_scalar_path():
+    """The two paths have to agree on the new divisor as well as the old."""
+    frame = sample(nan_frac=0.4)
+    assert frame.groupby('m')['inflow'].apply(lambda s: s.isna().sum()).gt(0).all()
+    fast, slow = compare(frame)
+    np.testing.assert_allclose(fast, slow, rtol=1e-12, atol=0)
+
+
+def test_no_exclusions_leaves_the_answer_unchanged():
+    """The safety property: where nothing failed, the retained count *is* the
+    sub-division count, so a study with no exclusions is unaffected."""
+    frame = sample(nan_frac=0.0)
+    tpt = TotalProbTheorem(6, 200, divisions(6), frame, verbose=False)
+    values = frame['inflow'].to_numpy(dtype=float)
+
+    counts = frame.groupby('m')['inflow'].count().to_numpy()
+    assert (counts == 200).all()
+
+    by_retained = tpt.assign_aep_all(values, 'inflow')
+    # The same values recomputed the old way, dividing by n. Ten of them is
+    # plenty: the point is that the two divisors coincide, not how they scale.
+    probe = values[:10]
+    by_n = np.array([
+        _aep_from_ph(tpt, [(frame.loc[frame.m == i, 'inflow'] > v).sum() / 200
+                           for i in range(6)])
+        for v in probe
+    ])
+    np.testing.assert_allclose(by_retained[:10], by_n, rtol=1e-12, atol=0)
