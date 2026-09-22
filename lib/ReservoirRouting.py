@@ -69,7 +69,37 @@ def _read_sq(sq_path, fsv):
             line = f.readline()
     s_abs = np.array(storages, dtype=float) + fsv
     o = np.array(flows, dtype=float)
+    _check_routable(s_abs - fsv, o, sq_path)
     return s_abs, o
+
+
+def _check_routable(storage, flow, sq_path):
+    """Refuse a rating the storage-indication solve cannot route.
+
+    ``_route_storage_indication`` inverts psi(S) = 2000*S/dt + O(S) with
+    np.interp, which needs psi to increase with storage.  A flat run of outflow
+    keeps psi increasing -- the storage term does it -- so it routes correctly
+    and is accepted (the gates held shut above full supply is one).  An outflow
+    that FALLS as storage rises can make psi fall, and np.interp does not raise
+    on that: it returns wrong storages, silently.  So a fall is refused here, as
+    is a storage column that does not rise.  ``storage`` is ML above FSV.
+    """
+    if len(storage) < 2:
+        raise ValueError(f"{sq_path}: a rating needs at least two pairs")
+    rise = np.diff(storage)
+    if np.any(rise <= 0):
+        i = int(np.argmax(rise <= 0))
+        raise ValueError(
+            f"{sq_path}: storage does not rise between pairs {i + 1} and {i + 2} "
+            f"({storage[i]:g} then {storage[i + 1]:g} ML above FSV)")
+    fall = np.diff(flow)
+    if np.any(fall < 0):
+        i = int(np.argmax(fall < 0))
+        raise ValueError(
+            f"{sq_path}: outflow falls from {flow[i]:g} to {flow[i + 1]:g} m3/s as "
+            f"storage rises from {storage[i]:g} to {storage[i + 1]:g} ML above FSV. "
+            f"Reservoir routing needs a rating that never falls with storage; a flat "
+            f"run is fine, a fall is not.")
 
 
 def _read_indexed(path, description, sims_list_column):
@@ -153,7 +183,9 @@ def _route_storage_indication(inflows_arr, adv, grids, dt_hours):
                               =  psi(S1) - 2*O1 + (I1+I2)
 
     where psi(S) = 2000*S/dt_s + O(S) is strictly monotone in S, so a single
-    np.interp per timestep solves for S2 across all sims simultaneously.
+    np.interp per timestep solves for S2 across all sims simultaneously.  That
+    holds because ``_read_sq`` refuses a rating whose outflow falls with storage
+    (``_check_routable``); np.interp would not raise on a psi that fell.
 
     Parameters
     ----------
