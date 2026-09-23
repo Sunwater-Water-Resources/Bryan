@@ -14,11 +14,16 @@ The kinds, and what each reproduces:
                    duration**, not at their own - that is what the report's
                    "* Peak inflow for lake level critical duration" says. A
                    duration that does not spill has no outflow quantile at that
-                   AEP, and the table says 0, as the report does.
+                   AEP, and the table says 0, as the report does. Table 1 adds
+                   two rows in AEP order: the dam crest flood (``dcf``: its
+                   AEP by ``aep_of_level``, no flows, shaded) and the PMF
+                   (``pmf``: the highest ensemble event at the notional AEP
+                   adopted on the PMF page).
 ``flood_levels``   Table 32. The AEP at which the level envelope reaches each of
                    a list of levels (the dam crest, each embankment crest),
-                   read with ``aep_for_level`` - linear in (log level, z), as
-                   util/DesignFloodInterpolation.py does it - and rounded to 10.
+                   rounded to 10. By default from the critical duration's own
+                   realisations, as the Callide DCF was estimated; see
+                   ``aep_of_level``.
 ``peak_at_aep``    Table 33. Level, inflow and outflow at one AEP (the AEP of
                    the PMP) for several groups.
 ``ensemble_peak``  Table 34. The PMF: the largest level in an ensemble database,
@@ -70,6 +75,10 @@ ENSEMBLE_PEAK = "ensemble_peak"
 AT_LEVEL = "level"
 AT_OWN = "own"
 
+# How a level becomes an AEP - see aep_of_level.
+MCDF = "mcdf"
+ENVELOPE = "envelope"
+
 DASH = "–"
 NO_VALUE = DASH
 
@@ -99,14 +108,14 @@ KINDS = {
         False,
         {"kind": DESIGN_FLOODS, "title": "", "source": {"run": "", "group": ""},
          "aeps": list(DEFAULT_AEPS), "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
-         "thousands": True, "footnote": INFLOW_FOOTNOTE}),
+         "thousands": True, "footnote": INFLOW_FOOTNOTE, "dcf": None, "pmf": None}),
     FLOOD_LEVELS: Kind(
         FLOOD_LEVELS, "AEP of given lake levels",
         "The AEP at which each group's level curve reaches the dam crest, an "
         "embankment crest or any other level (report Table 32).",
         True,
         {"kind": FLOOD_LEVELS, "title": "", "first_column": "Climate Horizon",
-         "levels": [{"label": "DCF", "level": 219.13}],
+         "levels": [{"label": "DCF", "level": 219.13}], "method": MCDF,
          "round_to": 10, "duration": True, "sections": []}),
     PEAK_AT_AEP: Kind(
         PEAK_AT_AEP, "Peaks at one AEP",
@@ -289,13 +298,14 @@ def _design_floods(study: Study, spec: dict) -> ReportTable:
     if _finite(pmp_aep) and float(pmp_aep) not in aeps:
         aeps.append(float(pmp_aep))
 
+    rows = []                      # (AEP, cells, row options), sorted at the end
     envelope, critical = curves.envelope("level"), curves.critical("level")
     for aep in aeps:
         label = fmt_aep(aep)
         if _finite(pmp_aep) and aep == float(pmp_aep) and spec.get("pmp_label"):
             label = f"{label}\n({spec['pmp_label']})"
         if aep not in envelope.index or not _finite(envelope.get(aep)):
-            table.add([label, NO_VALUE, NO_VALUE, NO_VALUE, NO_VALUE])
+            rows.append((aep, [label, NO_VALUE, NO_VALUE, NO_VALUE, NO_VALUE], {}))
             table.problems.append(f"no level quantile at 1 in {fmt_aep(aep)}")
             continue
         duration = critical.get(aep)
@@ -303,9 +313,52 @@ def _design_floods(study: Study, spec: dict) -> ReportTable:
         outflow = curves.at("outflow", aep, duration)
         if not _finite(outflow) and curves.has("outflow"):
             outflow = 0.0          # that duration did not spill at this AEP
-        table.add([label, fmt_flow(inflow, thousands), fmt_flow(outflow, thousands),
-                   fmt_level(envelope[aep]), fmt_duration(duration)])
+        rows.append((aep, [label, fmt_flow(inflow, thousands), fmt_flow(outflow, thousands),
+                           fmt_level(envelope[aep]), fmt_duration(duration)], {}))
+
+    rows += _dcf_row(study, curves, spec.get("dcf"), table)
+    rows += _pmf_row(study, spec.get("pmf"), thousands, table)
+    for _, cells, options in sorted(rows, key=lambda item: item[0]):
+        table.add(cells, **options)
     return table
+
+
+def _dcf_row(study, curves, dcf, table) -> list:
+    """Table 1's dam crest flood row: its AEP and level, no flows, shaded."""
+    if not dcf or not _finite(dcf.get("level")):
+        return []
+    level = float(dcf["level"])
+    aep, duration, problem = aep_of_level(study, curves, level, dcf.get("method", MCDF))
+    if problem:
+        table.problems.append(f"DCF ({level:.2f} m) {problem}")
+    if not _finite(aep):
+        return []
+    label = f"{fmt_rounded_aep(aep, dcf.get('round_to', 10))} ({dcf.get('label') or 'DCF'})"
+    return [(aep, [label, "", "", fmt_level(level), fmt_duration(duration)],
+             {"bold": True, "shaded": True})]
+
+
+def _pmf_row(study, pmf, thousands, table) -> list:
+    """Table 1's PMF row: the highest ensemble event at the adopted notional AEP."""
+    if not pmf or not pmf.get("group"):
+        return []
+    aep = pmf.get("aep") or ensemble.settings(study).get("adopted_aep")
+    if not _finite(aep):
+        table.problems.append("PMF row: no notional AEP - adopt one on the PMF page")
+        return []
+    try:
+        frame = ensemble.load(study, pmf.get("run", ""), pmf["group"])
+    except StudyError as exc:
+        table.problems.append(f"PMF row: {exc}")
+        return []
+    chosen = ensemble.pick(frame, pmf.get("pick", ensemble.HIGHEST))
+    if not chosen.found:
+        table.problems.append("PMF row: no levels in the database")
+        return []
+    label = f"{fmt_aep(float(aep))} ({pmf.get('label') or 'PMF'})"
+    return [(float(aep), [label, fmt_flow(chosen.inflow, thousands),
+                          fmt_flow(chosen.outflow, thousands), fmt_level(chosen.level),
+                          fmt_duration(chosen.duration)], {})]
 
 
 def _rows(spec):
@@ -342,29 +395,63 @@ def _flood_levels(study: Study, spec: dict) -> ReportTable:
             continue
         curves = group_curves(study, row.get("run", ""), row.get("group", ""))
         table.problems.extend(curves.problems)
-        envelope = curves.envelope("level")
         cells = [label]
-        first_aep = math.nan
+        first_duration = None
         for item in levels:
-            lookup = EVENTS.aep_for_level(envelope, item["level"])
-            aep = lookup.aep if lookup.found else math.nan
-            if _finite(aep):
-                cells.append(fmt_rounded_aep(aep, round_to))
-            else:
-                cells.append(NO_VALUE)
-                where = ("above the top of the level curve - rarer than anything "
-                         "the run produced" if lookup.above_curve
-                         else "below the bottom of the level curve" if "below" in lookup.note
-                         else lookup.note or "not on the level curve")
-                table.problems.append(
-                    f"{label}: {item.get('label') or item['level']} "
-                    f"({float(item['level']):.2f} m) is {where}")
-            if not _finite(first_aep):
-                first_aep = aep
+            aep, duration, problem = aep_of_level(study, curves, item["level"],
+                                                  spec.get("method", MCDF))
+            cells.append(fmt_rounded_aep(aep, round_to))
+            if problem:
+                table.problems.append(f"{label}: {item.get('label') or item['level']} "
+                                      f"({float(item['level']):.2f} m) {problem}")
+            if first_duration is None:
+                first_duration = duration
         if spec.get("duration", True):
-            cells.append(fmt_duration(_critical_near(curves, first_aep)))
+            cells.append(fmt_duration(first_duration))
         table.add(cells)
     return table
+
+
+def aep_of_level(study: Study, curves: GroupCurves, level: float, method: str = MCDF):
+    """(AEP, critical duration, problem) of one lake level in one group.
+
+    ``envelope`` reads the level off the design curve - the envelope over the
+    durations, linear in (log level, z) between the standard AEPs
+    (util/DesignFloodInterpolation.py). ``mcdf`` - the default, and how the
+    Callide DCF was estimated - takes the **critical duration** from that curve
+    and then reads the level off that duration's own realisations
+    (``AEPofDCF_v2.py``): thousands of events rather than a straight line between
+    two standard AEPs a decade apart. On E012 near-term RFSL the two give 1 in
+    25,350 and 1 in 27,230 for the dam crest. Where the duration has no database
+    on disk the envelope answer is given, and the problem says so.
+    """
+    lookup = EVENTS.aep_for_level(curves.envelope("level"), level)
+    if not lookup.found:
+        where = ("is above the top of the level curve - rarer than anything the run "
+                 "produced" if lookup.above_curve
+                 else "is below the bottom of the level curve" if "below" in lookup.note
+                 else f"- {lookup.note or 'not on the level curve'}")
+        return math.nan, None, where
+    duration = _critical_near(curves, lookup.aep)
+    if method == ENVELOPE:
+        return lookup.aep, duration, ""
+    try:
+        databases = ensemble.mc_databases(study, curves.run, curves.group)
+    except StudyError as exc:
+        return lookup.aep, duration, f"read off the curve: {exc}"
+    path = databases.get(str(duration))
+    if path is None:
+        return lookup.aep, duration, (f"read off the curve - no {duration} results "
+                                      f"database to interpolate")
+    try:
+        real = ensemble.read_realisations(path)
+    except (StudyError, OSError) as exc:
+        return lookup.aep, duration, f"read off the curve: {exc}"
+    aep = ensemble.aep_at_value(real, level)
+    if not _finite(aep):
+        return lookup.aep, duration, (f"read off the curve - the {duration} "
+                                      f"realisations do not reach it")
+    return aep, duration, ""
 
 
 def _critical_near(curves: GroupCurves, aep):

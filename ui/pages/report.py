@@ -485,6 +485,33 @@ class _TableEditor:
             .on_value_change(lambda e: self.spec.update(
                 aeps=reporttables.parse_aeps(e.value)))
 
+        # Table 1's two extra rows, each placed in AEP order among the rest
+        dcf = self.spec.get("dcf")
+        with ui.row().classes("w-full items-center gap-2 no-wrap"):
+            ui.checkbox("Dam crest flood row", value=bool(dcf),
+                        on_change=lambda e: self._toggle(
+                            "dcf", {"level": 219.13, "label": "DCF"} if e.value else None)) \
+                .mark("dcf-row")
+            if dcf:
+                ui.number("at level (m AHD)", value=dcf.get("level"), format="%.2f") \
+                    .classes("w-40").props("dense") \
+                    .on_value_change(lambda e: dcf.update(level=e.value))
+                ui.input("Label", value=dcf.get("label", "DCF")).classes("w-24") \
+                    .props("dense").on_value_change(lambda e: dcf.update(label=e.value))
+                ui.label("AEP from the critical duration's realisations"
+                         ).classes("text-xs text-muted")
+        pmf = self.spec.get("pmf")
+        ui.checkbox("PMF row, at the notional AEP adopted on the PMF page", value=bool(pmf),
+                    on_change=lambda e: self._toggle(
+                        "pmf", {"run": self._default_run(), "group": "", "label": "PMF"}
+                        if e.value else None)).mark("pmf-row")
+        if pmf:
+            self._source_picker(pmf, mark="pmf")
+
+    def _toggle(self, key, value) -> None:
+        self.spec[key] = value
+        self.draw()
+
     # -- sections of rows ----------------------------------------------------
 
     def _multi(self) -> None:
@@ -507,6 +534,13 @@ class _TableEditor:
                     ui.checkbox("Critical duration column",
                                 value=self.spec.get("duration", True),
                                 on_change=lambda e: self.spec.update(duration=e.value))
+            ui.radio({reporttables.MCDF: "From the critical duration's realisations "
+                                         "(the mcdf) - the finer answer",
+                      reporttables.ENVELOPE: "Off the design curve (the envelope, between "
+                                             "standard AEPs)"},
+                     value=self.spec.get("method", reporttables.MCDF),
+                     on_change=lambda e: self.spec.update(method=e.value)) \
+                .props("dense").mark("level-method")
         if key == reporttables.PEAK_AT_AEP:
             ui.input("AEP (1 in x)", value=f"{self.spec.get('aep') or ''}") \
                 .classes("w-48").props("dense") \

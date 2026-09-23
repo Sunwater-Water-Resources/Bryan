@@ -423,3 +423,20 @@ def settings(study: Study) -> dict:
 
 def store(study: Study, section: dict) -> None:
     study.extra[PMF_KEY] = section
+
+
+def aep_at_value(real: Realisations, value: float) -> float:
+    """The AEP at which one duration's realisations reach ``value``, unfitted.
+
+    What ``AEPofDCF_v2.py`` does for the dam crest flood: sort the events by the
+    result, interpolate the standard normal variate linearly in log(result).
+    Dense enough at a DCF (thousands of events); too sparse at the PMF, which is
+    why that one is fitted instead. NaN outside the range the run reached.
+    """
+    if not len(real.value) or not (value and value > 0):
+        return math.nan
+    order = np.argsort(real.value, kind="mergesort")
+    values, variates = real.value[order], real.z[order]
+    if value < values[0] or value > values[-1]:
+        return math.nan
+    return aep_of_variate(float(np.interp(math.log(value), np.log(values), variates)))
