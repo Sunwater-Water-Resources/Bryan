@@ -352,6 +352,17 @@ A straight read off the realisations without a fit is too noisy up there - a doz
 
 **Adopted** is the value carried into the report: the analyst's judgement across the horizons and the grid, typed in with a note of how it was reached. **Summary of all** estimates every PMF group with its current settings.
 
+## Report figures
+
+The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Report page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped.
+
+- **Curves**: a group's design curve (the envelope over its durations, as the Results page draws it); a curve from a file with the AEP ('1 in X') in its first column and the result as a column, for a previous study's adopted curve; or an **FFA** - an RMC Bestfit export, drawn as v03 drew it: the posterior mode (solid) and/or mean (dashed) in black, the 90% credible interval in faint grey when there is only one FFA on the figure, the annual maxima as dots and any paleoflood lower bounds as upward triangles.
+- **Labels** belong to the figure. The same group can be 'URBS' on the FFA comparison and 'GWL 1.3 °C' among the horizons; edit a label in the box beside the preview and the figure redraws.
+- **Reference levels** are one ```label = level``` or ```label = level = colour``` per line (full supply, the dam crest, an embankment crest). The **AEP of the PMP** draws a vertical line.
+- **Duplicate** a figure and swap one curve for a sensitivity figure.
+
+**Export PNG** runs ```util/ReportFigure.py``` with Bryan's interpreter and writes ```<name>.png``` to the figure's folder (```figures/``` beside the study file by default) at 6.3 x 4.0 in and 300 dpi, the size and style of the figures already in the reports, with ```<name>.json``` beside it holding every series and label it was drawn from. The preview is drawn from the same data, so what is checked on the page is what is in the PNG. **Export all** redraws every figure - after a re-run, the whole set in one go.
+
 ## Things worth knowing
 
 ### Formulas without cached values

@@ -21,6 +21,7 @@ NAV = [
     ("Downstream", "/downstream"),
     ("Report", "/report"),
     ("PMF", "/pmf"),
+    ("Figures", "/figures"),
     ("Edit", "/edit"),
     ("History", "/history"),
 ]
