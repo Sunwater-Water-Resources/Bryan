@@ -33,6 +33,11 @@ class UiSettings:
     # filename at different paths (one per model revision), and keying on the name would
     # hand one project's regional model to the other.
     downstream_configs: dict = field(default_factory=dict)
+    # Study files (the Report page's), most recent first - the same list shape as
+    # recent_configs, kept apart because a study and a sims config are opened on
+    # different pages and one is never offered for the other.
+    recent_studies: list = field(default_factory=list)
+    last_study: str = ""
 
     @classmethod
     def load(cls) -> "UiSettings":
@@ -40,6 +45,8 @@ class UiSettings:
         known = {key: data.get(key, getattr(cls, key, None))
                  for key in cls.__dataclass_fields__}
         known["recent_configs"] = list(known.get("recent_configs") or [])
+        known["recent_studies"] = list(known.get("recent_studies") or [])
+        known["last_study"] = str(known.get("last_study") or "")
         known["downstream_configs"] = dict(known.get("downstream_configs") or {})
         settings = cls(**known)
         settings.fill_defaults()
@@ -65,6 +72,15 @@ class UiSettings:
         self.recent_configs = [text] + [
             entry for entry in self.recent_configs if entry != text
         ][:MAX_RECENT - 1]
+        self.save()
+
+    def remember_study(self, study_path) -> None:
+        text = str(Path(study_path).resolve()) if study_path else ""
+        if text:
+            self.recent_studies = [text] + [
+                entry for entry in self.recent_studies if entry != text
+            ][:MAX_RECENT - 1]
+        self.last_study = text
         self.save()
 
     @staticmethod
