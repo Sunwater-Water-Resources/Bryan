@@ -75,6 +75,11 @@ class AppState:
             show_console=self.settings.show_consoles,
         )
         self.active_run_id: str | None = None
+        # The Report page's study file - the level above one sims config. Not
+        # reopened at start-up: the page offers the last one instead, because a
+        # study on an external disk that is not plugged in should not stop the
+        # window opening.
+        self.study = None
         self._lock = threading.Lock()
 
     # -- project ----------------------------------------------------------
@@ -103,6 +108,18 @@ class AppState:
                              if project.label(index) in keep}
             self.completions = {}
         return project
+
+    def open_study(self, path, *, create=False, name=""):
+        from core import study as studies
+        study = (studies.new_study(path, name) if create
+                 else studies.load_study(path))
+        self.study = study
+        self.settings.remember_study(study.path)
+        return study
+
+    def close_study(self) -> None:
+        self.study = None
+        self.settings.remember_study("")
 
     def apply_settings(self) -> None:
         self.settings.save()

@@ -206,6 +206,35 @@ Settings are saved as they change to `lake_frequency.json` beside the
 sims_config.json, and fitted results are kept in `_lake_frequency/` so the curves
 come back without resampling.
 
+**Report** — the design flood report's result tables, straight from the
+runs, with **Copy for Word** on each.
+
+A **study file** (`bryan_study.json`, at the top of the study) names the runs a
+report is written from — one sims_config.json each, so the RFSL and FSL lists,
+the adopted run and a sensitivity are separate entries — and holds one entry per
+report table saying which group of which run fills it. Four kinds of table:
+design flood estimates by AEP (one group; inflow and outflow at the *level's*
+critical duration), the AEP of given lake levels (the dam crest and each
+embankment crest), peaks at one AEP (the PMPF), and the peak of an ensemble run
+(the PMF). The multi-group kinds take rows of fixed values too, for a previous
+study's numbers. **Copy for Word** puts the table on the clipboard as HTML in
+the report's table style and as tab-separated text; **Copy as text** gives only
+the second, for Excel. Paths in the study file are relative to it, and a table
+names its run by name, so moving the study or re-pointing it at a re-run is
+one edit.
+
+**PMF** — the probable maximum flood from its ensemble run, and a notional AEP
+for it. Each PMF group pairs a horizon's PMF ensemble group with its Monte Carlo
+group. The page shows the spread of the temporal patterns by duration as box
+plots, and takes the PMF as the **highest event** with that event's own inflow and
+outflow, with the median-pattern answer (Bryan's convention for every other
+ensemble result) beside it. The notional AEP places the PMF level on the upper
+tail of the Monte Carlo realisations of the PMF's own duration: a polynomial in
+log level fitted to the standard normal variate over a window you set, drawn
+with the realisations it was fitted to, and a grid of how the answer moves with
+the window and the degree. The adopted value, and how it was reached, is kept in
+the study file.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 

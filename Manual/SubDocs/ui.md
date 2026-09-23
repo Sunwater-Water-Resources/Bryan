@@ -298,6 +298,60 @@ With **Compare with the Monte Carlo results** on, the level curves of the chosen
 
 Everything on the page is saved to ```lake_frequency.json``` beside the sims_config.json as it changes, with paths inside the project stored relative to it, so the analysis can be handed on with the project. Fitted results go to ```_lake_frequency/``` and are reused whenever the settings and the input files are unchanged.
 
+## Report tables
+
+The **Report** page fills the design flood report's result tables from the runs, so a revised rating means re-running the groups and copying the tables again rather than re-typing them.
+
+### The study file
+
+A report draws on several runs - the RFSL and FSL sims lists are separate sims_config.json files, and a sensitivity or a PMF ensemble is another - so the page works from a **study file** one level above them: ```bryan_study.json```, kept at the top of the study folder. Open it, or create it with **New study**. It holds:
+
+- **Runs** - a name and a sims_config.json for each. Paths are stored relative to the study file, so a study copied to another disk still opens. Rename a run and every table that reads it follows; point the name at a re-run (E013 for E012) and every table moves with it.
+- **Tables** - one entry per report table: its kind, the group or groups it is drawn from, and its layout options.
+
+Everything is saved as it changes.
+
+### The kinds of table
+
+| Kind | Report table | What it computes |
+|---|---|---|
+| Design flood estimates | 1, 26-31 | One group. Per AEP: the peak lake level (the envelope over the durations) and its critical duration, with the peak inflow and outflow **of that same duration** - the report's "Peak inflow for lake level critical duration". Where no duration spills, the outflow is 0. The AEP of the PMP is a row of its own, labelled (PMPF). |
+| AEP of given lake levels | 32 | Per group, the AEP at which the level envelope reaches each level you list - the dam crest, each embankment crest - read linearly in log level against the standard normal variate, and rounded to 10. |
+| Peaks at one AEP | 33 | Per group, the lake level, inflow and outflow at one AEP - the AEP of the PMP for the PMPF. |
+| Ensemble peak | 34 | Per ensemble group, the event with the highest lake level: its level, inflow, outflow and duration - the PMF. |
+
+The last three hold **sections** (the RFSL and FSL halves of a table, each under a heading row) of **rows**: a row either reads a group, or holds fixed values - for a previous study's numbers, such as the Sunwater 2020 baseline, which are not a run in this one.
+
+**Where the inflow and outflow are read** is a choice for the last two kinds. The default is the storm that gives the peak level, consistent with the "Level critical duration" column and with Tables 1 and 26-31. The alternative is each result's own maximum, which is what the scripts that first filled Tables 33 and 34 did - the peak inflow of the PMPF then comes from a shorter storm than the peak level beside it, and differs from the PMPF row of Table 26.
+
+### Copying
+
+**Copy for Word** puts the table on the clipboard twice over: as a formatted table in the report's style (white bold header on the brand cyan, section rows on the cyan tint, Rubik Light 10 pt, units with a superscript), and as tab-separated text. Word pastes the first; Excel, or Word's *Keep Text Only*, takes the second. The caption is not copied - keep Word's own, so its numbering and cross-references survive. **Copy as text** gives the tab-separated form alone. A study can change the Word styling under a ```"word"``` key (```font```, ```size_pt```, ```header_fill```, ```header_text```, ```section_fill```, ```rule```).
+
+Anything a table cannot fill - a group with no results yet, an AEP the run did not produce, a level above the top of the curve - is shown as a dash and listed above the preview, never invented.
+
+## The PMF
+
+The **PMF** page reads the PMF's ensemble runs and gives the PMF a notional AEP from the Monte Carlo realisations. It keeps its settings in the study file (open it on the Report page).
+
+### Which event is the PMF
+
+An ensemble run routes every temporal pattern of every duration, so a result has to be picked from the spread. The PMF is the **highest event** - the largest lake level of any pattern and duration, with that event's own inflow and outflow. Every other ensemble result is taken as the **median pattern**: for each duration the pattern at position round(n/2) of the ascending sort (the sixth of ten), then the duration whose median is largest - Bryan's own pick, the one in ```csv/<name>_critical.csv```. The page shows both, and the box plots show where they sit: the middle line of each box is that median pattern, the diamond is the highest event. The report's PMF table takes the highest event by default and the median on request.
+
+### The notional AEP
+
+The PMF has no AEP of its own, but the Monte Carlo realisations extend beyond the AEP of the PMP as far as the storm config extrapolates the rainfall, and the PMF level usually lies within them. The page reads it there:
+
+- **Duration** - the realisations of the PMF event's own duration by default (the nearest one run), or any other.
+- **Window** - the realisations from a lower AEP (1 in 500,000 by default) to the top of the sample. An upper bound can be set, but one below the PMF leaves the PMF above the window, and the page says so.
+- **Degree** - of the polynomial in log10(level) fitted to the standard normal variate. A straight line (1) is the safe choice; a higher degree can turn over, and the page says when it does.
+
+The chart shows the realisations, those in the window, the fitted curve, the PMF level, where it lands, and the AEP of the PMP. The grid below it gives the answer for three windows (0.4, 1 and 2 times the lower bound) by the three degrees. It is the sensitivity of the **fit** only: how far the realisations reach, and so where the PMF sits in them, is set by the rainfall extrapolation beyond the PMP and by the rating and storage curves, which no fit setting touches.
+
+A straight read off the realisations without a fit is too noisy up there - a dozen or so events near the PMF level - which is why there is a fit at all. With fewer than 30 realisations in the window the page refuses rather than fits.
+
+**Adopted** is the value carried into the report: the analyst's judgement across the horizons and the grid, typed in with a note of how it was reached. **Summary of all** estimates every PMF group with its current settings.
+
 ## Things worth knowing
 
 ### Formulas without cached values

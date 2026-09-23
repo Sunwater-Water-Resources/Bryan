@@ -414,6 +414,42 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   when in metres they are 0.02–0.10 m and four of them are real. Nothing assumes which way the critical duration
   moves with AEP: it lengthens with rarity for inflow but *shortens* for lake level, which goes long
   at frequent AEPs while the storage fills and short on the rare tail as the dam becomes a conveyance.
+- **The Report page works from a study file, one level above a sims_config.json**
+  (`core/study.py`, `bryan_study.json`): a report draws on several runs - RFSL and FSL are
+  separate configs - so the file names the runs once and each table names its run **by name**,
+  never by path. Re-pointing a report at a re-run is then one edit, and `rename_run` carries
+  every table with it. Paths are stored relative to the study file (`portable`), so a study
+  copied from `C:\PythonProjects` to an external disk still opens. Unknown top-level keys are
+  kept on save (`Study.extra`), so a later version's figures survive an older UI.
+  `core/reporttables.py` builds the tables from the quantile files through
+  `results.compare`/`analyse`, the Results page's own reading, and `lib.RepresentativeEvents.aep_for_level`
+  for the AEP of a level - no new maths. **A design flood table reads inflow and outflow at the
+  level's critical duration**, which is what the report's footnote says; the scripts behind
+  Callide's Tables 33 and 34 took each result's own maximum instead, so those kinds carry a
+  `flows_at` choice with the level as the default. **`results.compare` drops an AEP where every
+  duration is blank**, which is what a dam that does not spill writes for outflow - so a missing
+  outflow at an AEP the level has is 0, not a gap. Validated against Callide E012 on 23 September
+  2026: Tables 26 and 28 reproduce to the digit, and where the report differed, E012's own
+  `_00h_` files agreed with this module - the report was behind. `core/wordtable.py` renders one
+  `ReportTable` as HTML for Word (inline styles in points, the report's table style) and as
+  tab-separated text, and the page puts both on the clipboard with one `ClipboardItem`; a
+  browser without it gets the text and the page says so.
+- **The PMF page takes the highest ensemble event; everything else takes the median pattern**
+  (`core/ensemble.py`). The median is `EnbAnalysis`'s own position rule, `int(np.around(n / 2))`
+  of the ascending sort - numpy rounds half to even, so five patterns give the third - and a
+  test pins it; do not replace it with `Series.median`, which averages the middle pair and
+  names no event. At Callide E012 the two conventions differ by 0.14-0.28 m of PMF level.
+  **The notional AEP of the PMF is `AEPofPMF.py`'s fit made explicit**: z as a polynomial in
+  log10(level) over an AEP window of one duration's mcdf, reproduced to the digit (1 in 7.8, 9.3
+  and 5.6 million at degrees 1-3, E012 GWL0 RFSL). Two things that script got by hand are now
+  defaults: the realisations are the **PMF event's own duration** (9 h there, not the 12 h
+  Monte Carlo critical duration at the AEP of the PMP), and the window runs to the **top of the
+  sample** - the script's 1 in 4,000,000 upper bound left the PMF above every realisation in its
+  window, so it was extrapolating off the end of its own fit. The mcdf AEP columns are
+  probabilities; `ensemble.variate` takes z as `-inv_cdf(p)`, because `ndtri(1 - p)` loses p's
+  digits at 1e-8. numpy and `statistics.NormalDist` only - the fit runs in the UI environment,
+  no util script. The settings live in the study file under `"pmf"`, and `Study.all_sources`
+  includes them so renaming a run carries them too.
 - `ui/tests/test_results_page.py` renders the page through `nicegui.testing.user_simulation`,
   which is why `pytest-asyncio` is in `requirements-ui.txt`. It builds its own fixture instead of
   enabling the nicegui pytest plugin, so the rest of the suite still runs without nicegui
