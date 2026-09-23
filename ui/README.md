@@ -235,6 +235,17 @@ with the realisations it was fitted to, and a grid of how the answer moves with
 the window and the degree. The adopted value, and how it was reached, is kept in
 the study file.
 
+**Figures** — the report's frequency-curve figures, kept in the study file.
+A figure's curves are groups of the study's runs (their envelope over the
+durations), curves from a file (a previous study's adopted curve), or an RMC
+Bestfit FFA export (posterior mode and mean, the 90% credible interval, the
+annual maxima and paleoflood lower bounds), with reference levels and the AEP of
+the PMP. Each curve's label belongs to that figure and is edited beside the
+preview. **Export PNG** runs `util/ReportFigure.py` with Bryan's interpreter and
+draws the figure in the style of the study plots (6.3 x 4 in, 300 dpi), leaving
+the job it was drawn from beside it as `<name>.json`. Duplicate a figure and swap
+a curve for a sensitivity figure.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 

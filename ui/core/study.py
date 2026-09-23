@@ -225,6 +225,9 @@ class Study:
         for entry in pmf_entries(self):
             found += [entry[key] for key in ("ensemble", "mc")
                       if isinstance(entry.get(key), dict)]
+        for spec in self.extra.get("figures") or []:        # core/figures.py owns these
+            found += [curve for curve in (spec.get("curves") or [])
+                      if isinstance(curve, dict) and "run" in curve]
         return found
 
     # -- tables ------------------------------------------------------------

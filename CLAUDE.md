@@ -450,6 +450,18 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   digits at 1e-8. numpy and `statistics.NormalDist` only - the fit runs in the UI environment,
   no util script. The settings live in the study file under `"pmf"`, and `Study.all_sources`
   includes them so renaming a run carries them too.
+- **The Figures page builds the data; `util/ReportFigure.py` only draws it** (`core/figures.py`).
+  The UI reduces every curve to (AEP, value) pairs with its label - a group's envelope through
+  `results.compare`/`analyse`, a file curve, or an RMC Bestfit export - previews them, and writes
+  them as a job the script draws with matplotlib under Bryan's interpreter. The script reads no
+  results of its own, so preview and PNG cannot disagree, and the job is left beside the PNG as
+  the record. Its style is `PlotFrequencyCurves_v03.py`'s (the study copy, newer than
+  `util/PlotFrequencyCurves.py`), checked against Callide E012's own plots: the four-horizon level
+  figure and the FFA concordance figure redraw to match. Two v03 behaviours worth keeping: the
+  annual maxima are labelled plain 'AMS', and the credible interval is drawn only when one FFA is on
+  the figure. A curve's label belongs to the figure, not the curve - the analyst relabels on the
+  fly. **`Study.all_sources` must cover every place a run is named** - tables, PMF groups and figure
+  curves - or renaming a run orphans them; a test caught the figures missing from it.
 - `ui/tests/test_results_page.py` renders the page through `nicegui.testing.user_simulation`,
   which is why `pytest-asyncio` is in `requirements-ui.txt`. It builds its own fixture instead of
   enabling the nicegui pytest plugin, so the rest of the suite still runs without nicegui
