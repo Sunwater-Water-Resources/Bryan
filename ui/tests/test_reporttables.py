@@ -13,6 +13,7 @@ What matters most, and is pinned here:
 from __future__ import annotations
 
 import json
+import math
 import shutil
 
 import pytest
@@ -163,6 +164,7 @@ def sections(*rows, heading="AEP for current RFSL of 215.5 m AHD"):
 def test_flood_levels_read_the_envelope_and_round_to_ten(study):
     spec = rt.new_spec(rt.FLOOD_LEVELS)
     spec["levels"] = [{"label": "DCF", "level": 219.13}, {"label": "Right", "level": 221.5}]
+    spec["method"] = rt.ENVELOPE
     spec["sections"] = sections(
         {"label": "Baseline: Sunwater 2020*", "values": ["121,000", "", "24"]},
         {"label": "Near Term", "run": "E099 RFSL", "group": GROUP})
@@ -240,3 +242,51 @@ def test_a_group_without_results_is_reported_once_not_once_per_cell(study):
 def test_a_long_title_makes_a_short_id():
     assert studies.slug("Table 29: Near-Term design hydrology results, reinstated FSL "
                         "216.1 m AHD (2021-2040)") == "table-29-near-term-design-hydrology"
+
+
+# -- the level's AEP, and Table 1's extra rows ---------------------------------
+
+def test_a_level_is_read_off_the_critical_duration_realisations(study):
+    from core import ensemble
+    from report_fixtures import MC_BASE, MC_SLOPE
+
+    curves = rt.group_curves(study, "E099 RFSL", GROUP)
+    aep, duration, problem = rt.aep_of_level(study, curves, 219.13)
+    assert not problem and duration == "36h"
+    # the fixture's realisations are level = 214 + 1.4 z, exactly
+    assert aep == pytest.approx(ensemble.aep_of_variate((219.13 - MC_BASE) / MC_SLOPE),
+                                rel=1e-3)
+    envelope_aep, _, _ = rt.aep_of_level(study, curves, 219.13, rt.ENVELOPE)
+    assert envelope_aep != pytest.approx(aep, rel=1e-3)     # the two methods differ
+
+
+def test_without_a_database_the_level_falls_back_to_the_curve_and_says_so(study):
+    for path in (study.folder / "runs" / "E099" / "sims_mc" / "results").glob("*__mcdf.csv"):
+        path.unlink()
+    curves = rt.group_curves(study, "E099 RFSL", GROUP)
+    aep, _, problem = rt.aep_of_level(study, curves, 219.13)
+    assert math.isfinite(aep) and "read off the curve" in problem
+
+
+def test_table_1_carries_the_dcf_and_pmf_rows_in_aep_order(study):
+    from core import ensemble
+
+    section = ensemble.settings(study)
+    section["adopted_aep"] = 8_000_000
+    ensemble.store(study, section)
+    spec = design_spec(dcf={"level": 219.13, "label": "DCF"},
+                       pmf={"run": "E099 PMF", "group": PMF_GROUP, "label": "PMF"})
+    table = rt.build(study, spec)
+    labels = [row.cells[0] for row in table.rows]
+    dcf = next(row for row in table.rows if row.cells[0].endswith("(DCF)"))
+    assert dcf.bold and dcf.shaded and dcf.cells[1:4] == ["", "", "219.13"]
+    order = [float(label.split()[0].replace(",", "")) for label in labels]
+    assert order == sorted(order)                        # the DCF sits in AEP order
+    assert labels.index(dcf.cells[0]) == labels.index("1,000") + 1
+    assert table.rows[-1].cells == ["8,000,000 (PMF)", "17,500", "16,310", "221.38", "9"]
+
+
+def test_a_pmf_row_without_an_adopted_aep_asks_for_one(study):
+    spec = design_spec(pmf={"run": "E099 PMF", "group": PMF_GROUP})
+    table = rt.build(study, spec)
+    assert any("adopt one on the PMF page" in problem for problem in table.problems)
