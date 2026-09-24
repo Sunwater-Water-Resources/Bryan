@@ -78,24 +78,26 @@ class Job:
         return self.settings[key]
 
 
-def load(path) -> Job:
+def load(path, routing: bool = True) -> Job:
     path = Path(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise JobError(f"{path} could not be read ({exc})") from exc
-    return from_dict(data, path.parent)
+    return from_dict(data, path.parent, routing)
 
 
-def from_dict(data: dict, folder) -> Job:
+def from_dict(data: dict, folder, routing: bool = True) -> Job:
+    """``routing=False`` for stage 1 alone (the inflow record): no target rating is
+    needed, and the evaporation only where the inflow keeps it."""
     settings = dict(DEFAULTS)
     settings.update(data or {})
     if not settings["gauges"]:
         raise JobError("the job names no gauge exports")
-    for key in ("storage", "register", "evaporation"):
+    for key in ("storage", "register") + (("evaporation",) if routing else ()):
         if not settings[key]:
             raise JobError(f"the job names no {key} file")
-    if not settings["targets"]:
+    if routing and not settings["targets"]:
         raise JobError("the job names no target rating to route through")
     return Job(settings=settings, folder=Path(folder))
 
@@ -119,18 +121,28 @@ class Inputs:
                                end=end, recession_correction=self.recession_correction)
 
 
-def load_inputs(job: Job) -> Inputs:
-    """Read every shared input; clip the record to where they all cover it."""
+def load_inputs(job: Job, with_evaporation: bool = True) -> Inputs:
+    """Read every shared input; clip the record to where they all cover it.
+
+    ``with_evaporation=False`` is for the inflow record without losses: the
+    evaporation is then zero over the whole level record, so the record is
+    clipped only where the rating register ends, not where SILO does.
+    """
     notes = []
-    for key in ("storage", "register", "evaporation"):
+    for key in ("storage", "register") + (("evaporation",) if with_evaporation else ()):
         if not job.path(key).is_file():
             raise JobError(f"{key} file not found: {job.path(key)}")
     volume_of_level, area_of_level = curves.read_storage(job.path("storage"))
     register, ratings = curves.read_ratings(job.path("register"))
-    evaporation = evaporation_module.read_evaporation(job.path("evaporation"),
-                                                      job["pan_factors"])
 
     record = gauges.read_chain([job.resolve(item, "gauge export") for item in job["gauges"]])
+    if with_evaporation:
+        evaporation = evaporation_module.read_evaporation(job.path("evaporation"),
+                                                          job["pan_factors"])
+    else:
+        days = pd.date_range(record.index.min().normalize() - pd.Timedelta(days=1),
+                             record.index.max().normalize() + pd.Timedelta(days=1), freq="D")
+        evaporation = evaporation_module.Evaporation(pd.Series(0.0, index=days))
     overlay = job["overlay"]
     if overlay:
         overlay_path = job.resolve(overlay.get("file"), "overlay gauge")

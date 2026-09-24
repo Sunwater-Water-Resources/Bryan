@@ -1,6 +1,6 @@
 """The Lake record page's settings, jobs and results - everything but the view.
 
-Three steps, in the order they depend on each other, all kept in the study file
+Four steps, in the order they depend on each other, all kept in the study file
 under ``"lake_record"`` with paths relative to it:
 
 1. **Catchment rainfall** - ``core/awap.py``, in this process: a shapefile and
@@ -16,6 +16,11 @@ under ``"lake_record"`` with paths relative to it:
 3. **Antecedent storage** - ``util/AntecedentStorage.py`` under Bryan's
    interpreter: the rainfall, the IFD and the homogenisation give the antecedent
    series and the ``lake_config.json`` files Bryan's Monte Carlo scheme samples.
+4. **Inflow record** - ``util/InflowRecord.py`` under Bryan's interpreter: step
+   2's derived inflow (stage 1, the rating in force at each step) as the annual
+   maximum peak inflow and burst volumes, and event hydrographs for calibration.
+   It shares step 2's inputs but not its target ratings, and by default leaves
+   the evaporation out, so it is not clipped where the evaporation file ends.
 
 This module writes the job files beside the outputs (so a run can be repeated
 from a console exactly as the page ran it), runs the scripts, and reads back what
@@ -41,6 +46,7 @@ from .study import Study, portable, resolve
 KEY = "lake_record"
 HOMOGENISE_SCRIPT = BRYAN_ROOT / "util" / "HomogeniseLakeLevels.py"
 ANTECEDENT_SCRIPT = BRYAN_ROOT / "util" / "AntecedentStorage.py"
+INFLOW_SCRIPT = BRYAN_ROOT / "util" / "InflowRecord.py"
 TIMEOUT_SECONDS = 3600
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -61,6 +67,10 @@ DEFAULTS = {
                                 "window_days": 30, "threshold_fraction": 0.8,
                                 "preburst_mm": 10, "cunnane_a": 0.4, "round_ml": 1000},
                    "out": "lake_record/antecedent"},
+    "inflow": {"evaporation": False, "recession_correction": True, "smoothing": "1h",
+               "durations_h": [24, 36, 48, 72], "catchment_km2": None, "rainfall": "",
+               "top_events": 10, "before_days": 3, "after_days": 7, "events": [],
+               "out": "lake_record/inflow"},
 }
 
 
@@ -129,6 +139,44 @@ def antecedent_job(study: Study, section: dict, homogenise_path: Path) -> dict:
             "settings": copy.deepcopy(a["settings"]), "out": _absolute(study, a["out"])}
 
 
+def inflow_job(study: Study, section: dict, homogenise_path: Path) -> dict:
+    i = section["inflow"]
+    rainfall = path_of(study, i.get("rainfall") or section["rainfall"]["output"])
+    job = {key: copy.deepcopy(i[key]) for key in (
+        "evaporation", "recession_correction", "smoothing", "durations_h", "catchment_km2",
+        "top_events", "before_days", "after_days", "events")}
+    job["homogenise"] = str(homogenise_path)
+    job["rainfall"] = str(rainfall) if rainfall and rainfall.is_file() else ""
+    job["out"] = _absolute(study, i["out"])
+    return job
+
+
+def parse_events(text) -> tuple:
+    """``name, start, end`` a line -> (events, problems)."""
+    events, problems = [], []
+    for number, line in enumerate(str(text or "").splitlines(), start=1):
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 3 or not parts[0]:
+            problems.append(f"line {number}: give name, start, end")
+            continue
+        try:
+            start, end = pd.Timestamp(parts[1]), pd.Timestamp(parts[2])
+        except (ValueError, TypeError):
+            problems.append(f"line {number}: the start or end is not a date")
+            continue
+        if end <= start:
+            problems.append(f"line {number}: the end is not after the start")
+            continue
+        events.append({"name": parts[0], "start": parts[1], "end": parts[2]})
+    return events, problems
+
+
+def events_text(events) -> str:
+    return "\n".join(f"{e['name']}, {e['start']}, {e['end']}" for e in events or [])
+
+
 def problems_before_running(study: Study, section: dict, step: str, grids: str = "") -> list:
     """What would stop a step, said before anything is started.
 
@@ -150,7 +198,7 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
             out.append("Folder of daily grids on this computer: not given")
         elif not Path(grids).is_dir():
             out.append(f"Folder of daily grids on this computer: not found ({grids})")
-    elif step in ("homogenise", "antecedent"):
+    elif step in ("homogenise", "antecedent", "inflow"):
         h = section["homogenise"]
         if not [g for g in h["gauges"] if str(g).strip()]:
             out.append("Gauge exports: none given")
@@ -158,9 +206,11 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
             need(f"Gauge export {number + 1}", gauge)
         need("Storage table (.els)", h["storage"])
         need("Rating register (.xlsx)", h["register"])
-        need("Evaporation (SILO)", h["evaporation"])
+        if step != "inflow" or section["inflow"]["evaporation"]:
+            need("Evaporation (SILO)", h["evaporation"])
         if h.get("overlay"):
             need("Overlay gauge", h["overlay"].get("file"))
+    if step in ("homogenise", "antecedent"):
         if not h["targets"]:
             out.append("Target ratings: none given")
         for target in h["targets"]:
@@ -223,6 +273,13 @@ def antecedent(study: Study, section: dict, python) -> RunResult:
     return run_script(ANTECEDENT_SCRIPT, job, Path(job["out"]) / "antecedent_job.json", python)
 
 
+def inflow(study: Study, section: dict, python) -> RunResult:
+    homogenise_path = job_path_for_homogenisation(study, section)
+    atomic_write_json(homogenise_path, homogenise_job(study, section))
+    job = inflow_job(study, section, homogenise_path)
+    return run_script(INFLOW_SCRIPT, job, Path(job["out"]) / "inflow_job.json", python)
+
+
 def last_summary(study: Study, section: dict, step: str) -> dict:
     folder = path_of(study, section[step]["out"])
     return read_json(folder / "summary.json", default={}) if folder else {}
@@ -238,6 +295,19 @@ def annual_maxima(summary: dict) -> dict:
         if path.is_file():
             out[target["name"]] = pd.read_csv(path)
     return out
+
+
+def inflow_maxima(summary: dict) -> pd.DataFrame | None:
+    path = Path(summary.get("ams") or "")
+    return pd.read_csv(path) if summary.get("ams") and path.is_file() else None
+
+
+def hydrograph(item: dict) -> pd.DataFrame | None:
+    """One event's hydrograph as the inflow step wrote it."""
+    path = Path(item.get("file") or "")
+    if not item.get("file") or not path.is_file():
+        return None
+    return pd.read_csv(path, index_col=0, parse_dates=True)
 
 
 def standard_normal(p: float) -> float:

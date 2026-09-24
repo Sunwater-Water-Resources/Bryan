@@ -146,9 +146,10 @@ def opened(study, monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_the_page_shows_the_three_steps_and_refuses_to_run_unready(user, opened):
+async def test_the_page_shows_the_four_steps_and_refuses_to_run_unready(user, opened):
     await user.open("/lake-record")
-    for heading in ("1. Catchment rainfall", "2. Homogenisation", "3. Antecedent storage"):
+    for heading in ("1. Catchment rainfall", "2. Homogenisation", "3. Antecedent storage",
+                    "4. Inflow record"):
         await user.should_see(heading)
     user.find(marker="run-homogenise").click()
     await user.should_see("Gauge exports: none given")
@@ -179,3 +180,62 @@ def test_the_antecedent_step_needs_only_the_stored_series_not_the_grids(study):
     section = configured(study)
     # no grids anywhere: the series in the study folder is enough
     assert not lakerecord.problems_before_running(study, section, "antecedent")
+
+
+# -- 4. the inflow record ------------------------------------------------------------
+
+def test_the_inflow_step_needs_no_target_rating_and_no_evaporation_unless_kept(study):
+    section = configured(study)
+    section["homogenise"]["targets"] = []
+    (study.folder / "silo.txt").unlink()
+    assert lakerecord.problems_before_running(study, section, "inflow") == []
+    section["inflow"]["evaporation"] = True
+    assert any(p.startswith("Evaporation (SILO): not found")
+               for p in lakerecord.problems_before_running(study, section, "inflow"))
+
+
+def test_the_inflow_job_takes_step_one_s_rainfall_where_it_exists(study, tmp_path):
+    section = configured(study)
+    job = lakerecord.inflow_job(study, section, tmp_path / "h.json")
+    assert job["rainfall"] == str((study.folder / "lake_record/rainfall.csv").resolve())
+    assert job["homogenise"] == str(tmp_path / "h.json")
+    assert job["evaporation"] is False and job["durations_h"] == [24, 36, 48, 72]
+    (study.folder / "lake_record/rainfall.csv").unlink()
+    assert lakerecord.inflow_job(study, section, tmp_path / "h.json")["rainfall"] == ""
+
+
+def test_hydrograph_windows_are_read_a_line_each_and_bad_lines_are_named():
+    events, problems = lakerecord.parse_events(
+        "Jan 2013, 2013-01-20, 2013-02-05 12:00\n\nbad line\nBackwards, 2015-03-01, 2015-02-01")
+    assert events == [{"name": "Jan 2013", "start": "2013-01-20", "end": "2013-02-05 12:00"}]
+    assert problems == ["line 3: give name, start, end",
+                        "line 4: the end is not after the start"]
+    assert lakerecord.parse_events(lakerecord.events_text(events))[0] == events
+
+
+@pytest.mark.asyncio
+async def test_the_page_draws_the_last_inflow_record_and_its_hydrographs(user, opened):
+    out = opened.folder / "lake_record" / "inflow"
+    (out / "hydrographs").mkdir(parents=True)
+    pd.DataFrame({"Period": ["2012-13", "2013-14"], "Peak_inflow_m3s": [1818.0, 40.0],
+                  "Complete": [True, False], "Depth_72h_mm": [230.0, 5.0],
+                  "Rain_72h_mm": [563.0, 30.0]}).to_csv(out / "inflow_ams.csv", index=False)
+    stamps = pd.date_range("2013-01-25", periods=4, freq="6h")
+    pd.DataFrame({"Inflow_m3s": [1, 900, 50, 0], "Inflow_smoothed_m3s": [1, 800, 60, 0],
+                  "Inflow_uncorrected_m3s": [1, 900, 50, -30], "Release_m3s": [0, 400, 300, 200],
+                  "Level_m": [215.4, 216.5, 216.2, 215.9],
+                  "Release_uncertain": [False, False, False, True]},
+                 index=pd.Index(stamps, name="Timestamp")).to_csv(out / "hydrographs" / "e.csv")
+    (out / "summary.json").write_text(json.dumps({
+        "record": {"start": "1970-01-01 00:00", "end": "2026-04-28 00:00"}, "notes": [],
+        "years": 2, "complete_years": 1, "settings": {"durations_h": [72]},
+        "ams": str(out / "inflow_ams.csv"),
+        "hydrographs": [{"name": "2012-13 peak", "file": str(out / "hydrographs" / "e.csv"),
+                         "start": "2013-01-25 00:00", "end": "2013-01-25 18:00",
+                         "peak_m3s": 900.0, "uncertain_share": 0.25}]}), encoding="utf-8")
+    await user.open("/lake-record")
+    await user.should_see("2 water years (1 complete)")
+    await user.should_see(marker="inflow-ams-chart")
+    await user.should_see(marker="inflow-depth-chart")
+    await user.should_see(marker="inflow-hydrograph")
+    await user.should_see("the release is uncertain over 25% of it")
