@@ -38,6 +38,10 @@ class UiSettings:
     # different pages and one is never offered for the other.
     recent_studies: list = field(default_factory=list)
     last_study: str = ""
+    # Where this computer keeps the daily AWAP / AWRA-L grids. The user's, not the
+    # study's: the grids are tens of gigabytes that not everyone has, so a study
+    # ships the catchment series extracted from them, never the path to them.
+    awap_folder: str = ""
 
     @classmethod
     def load(cls) -> "UiSettings":
@@ -47,6 +51,7 @@ class UiSettings:
         known["recent_configs"] = list(known.get("recent_configs") or [])
         known["recent_studies"] = list(known.get("recent_studies") or [])
         known["last_study"] = str(known.get("last_study") or "")
+        known["awap_folder"] = str(known.get("awap_folder") or "")
         known["downstream_configs"] = dict(known.get("downstream_configs") or {})
         settings = cls(**known)
         settings.fill_defaults()

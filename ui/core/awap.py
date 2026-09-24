@@ -338,6 +338,8 @@ def write_series(series: Series, path, *, source: str = "") -> Path:
               f"{series.files[-1].name}" if series.files else "# from no files"]
     if source:
         header.append(f"# {source}")
+    header.append(f"# made {pd.Timestamp.now():%Y-%m-%d} - kept with the study, so it can be "
+                  f"used without the grids")
     with path.open("w", encoding="utf-8", newline="") as stream:
         stream.write("\n".join(header) + "\n")
         frame.to_csv(stream, index=False)

@@ -370,11 +370,15 @@ The **Lake record** page makes the antecedent storage the Monte Carlo runs sampl
 
 ### 1. Catchment rainfall
 
-The daily catchment average of the AWAP / AWRA-L grids. Give the **catchment shapefile** (a field and value pick one catchment out of a regions file; blank takes every polygon) and the **folder of daily grids** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
+The daily catchment average of the AWAP / AWRA-L grids. Give the **catchment shapefile** (a field and value pick one catchment out of a regions file; blank takes every polygon) and the **folder of daily grids on this computer** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
 
 **Area-weighted** counts each grid cell by the share of it the catchment covers, and by the cell's own area, which shrinks towards the pole. **Cell centres** counts every cell whose centre is in the catchment equally - a plain mask average, as the yearly ```Average_<year>_<mask>.csv``` files made by the mask-and-average tool are. A cell with no value on a day drops out of that day and the rest are reweighted.
 
 The dates are the grids' own: a day D is the 24 hours to 9 am on D, which is what the antecedent search expects. The series is written as ```date,rain_mm``` with what produced it in ```#``` lines above.
+
+**The series is what the study keeps.** It is written into the study folder (```lake_record/rainfall.csv``` by default) and ships with the model, with the catchment shapefile beside it. The folder of grids is **yours, not the study's** - it is saved in your own launcher settings, because the grids are tens of gigabytes not every user has and their path differs from one computer to the next. Someone who opens the study without them never needs them: the homogenisation and the antecedent storage read only the stored series.
+
+On Callide, the area-weighted series from the AWRA-L grids reproduces the areal series the JPA project made (and the antecedent analysis was first run on) to 0.008 mm root mean square over all 42,126 days from 1911, on the same dates; the four lake configurations then come back unchanged.
 
 This step runs in the launcher itself and needs ```netCDF4```, ```pyshp``` and ```pyproj``` in its environment (```ui/requirements-ui.txt```).
 
