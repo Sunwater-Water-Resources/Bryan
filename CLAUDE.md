@@ -249,6 +249,23 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Needs scipy and matplotlib, so it is **not** UI-importable and does not try to be — the split
   from `lib/RepresentativeEvents.py` is the whole reason that one stays cheap.
 
+### Lake level homogenisation (`lib/homogenise/`, `util/HomogeniseLakeLevels.py`)
+- Puts a recorded lake level record onto one spillway configuration: derive the net inflow by
+  closing the water balance backwards against the rating **in force at each step** (a dated
+  register), then re-route it through one target rating, implicitly, at the gauge's native
+  resolution. Written for Callide in callide-fsl-reinstate; **the engine modules (`curves`,
+  `model`, `evaporation`, `peaks`, `gauges`) are that repository's `callide/` modules copied**, and
+  only `job.py` is new - it takes every input and setting from a JSON job instead of a repository
+  layout, so Callide's constants (gauge IDs, the 200.90 m intake splice, pan factors) are settings.
+  Keep it a copy: `tests/test_homogenise.py` runs the job on Callide's data and requires the same
+  four files, **byte for byte**, as `callide.cli.run_scenario` writes (skipped without the
+  checkout beside this one). A "fix" in one copy that is not in the other fails it.
+- A target `.sq` is tied to the FSL its header declares and is never re-based;
+  `curves.load_rating` refuses a mismatch. The record is clipped to where the evaporation and the
+  register both cover it, and the job's summary says where.
+- Needs scipy (PCHIP storage curves), so the launcher runs it as a subprocess under Bryan's
+  interpreter.
+
 ### Lake level frequency (`lib/LakeLevelRecord.py`, `lib/LakeLevelFrequency.py`)
 - The launcher's **Lake levels** page: the recorded annual maximum lake levels on a frequency axis,
   fitted, resampled and laid against the Monte Carlo design floods, with an A4 report figure and the
