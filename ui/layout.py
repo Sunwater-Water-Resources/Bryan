@@ -22,6 +22,7 @@ NAV = [
     ("Report", "/report"),
     ("PMF", "/pmf"),
     ("Figures", "/figures"),
+    ("Lake record", "/lake-record"),
     ("Edit", "/edit"),
     ("History", "/history"),
 ]
