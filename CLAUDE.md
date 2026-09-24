@@ -279,6 +279,11 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   released more than the rating says. Neither version is the true recession, so each hydrograph
   keeps `Inflow_m3s` (corrected), `Inflow_uncorrected_m3s` and a `Release_uncertain` flag; peaks
   and burst volumes sit on rising limbs and are unaffected.
+- The Lake record page cuts the record between two dates in the launcher (`core/lakerecord.
+  record_window`, pandas only, off `inflow_intervals.csv.gz`). A regular step is the exact mean
+  from the running volume, so each step keeps its volume. Extracts go to `<out>/extracts/` and
+  are also downloaded with `ui.download.file`. The NiceGUI user simulation replaces
+  `ui.download` when a page opens, so a test must patch it after `user.open`.
 
 ### Antecedent storage (`lib/antecedent/`, `util/AntecedentStorage.py`)
 - Per water year, the storm behind the annual maximum is found in the catchment rainfall (the

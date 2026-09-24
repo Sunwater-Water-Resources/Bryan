@@ -106,6 +106,7 @@ def run(job: dict, folder: Path) -> dict:
                      "at": f"{pd.Timestamp(row['Peak_time']):%Y-%m-%d %H:%M}"}
                     for _, row in top.iterrows()],
         "ams": str(out / "inflow_ams.csv"),
+        "intervals": str(out / "inflow_intervals.csv.gz"),
         "hydrographs": written,
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
