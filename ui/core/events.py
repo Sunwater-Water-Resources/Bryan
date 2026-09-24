@@ -28,13 +28,16 @@ happened to be selected would quietly answer a different question, so
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
 from . import grouping, results
-from .bryan import representative_events
+from .bryan import BRYAN_ROOT, representative_events
 from .columns import MONTE_CARLO, RESERVOIR_ROUTING, normalise_method
 from .outputs import find_database
 from .paths import atomic_write_json, cell_text, normalise_sep
@@ -584,10 +587,59 @@ def project_relative(project, path) -> str:
         return str(path)
 
 
-def extract_command(project, selection_path) -> str:
-    """The util command that turns a saved selection into hydrographs and plots."""
-    return ("python util/RepresentativeEvents.py --config "
-            f"{project.config.config_path} --selection {selection_path}")
+EXTRACT_SCRIPT = BRYAN_ROOT / "util" / "RepresentativeEvents.py"
+EXTRACT_TIMEOUT_SECONDS = 1800     # a rebuild loads the storm data once per duration
+_WROTE = re.compile(r"^\s*wrote\s+(.+\.png)\s*$", re.MULTILINE)
+
+
+def extract_argv(project, selection_path, python) -> list:
+    """The util command that turns a saved selection into hydrographs and plots.
+
+    Absolute paths throughout, and Bryan's own interpreter: the command used to
+    be ``python util/RepresentativeEvents.py``, which works only when typed in
+    Bryan's folder with an interpreter that has scipy and matplotlib.
+    """
+    return [str(python), "-u", str(EXTRACT_SCRIPT), "--config",
+            str(project.config.config_path), "--selection", str(selection_path)]
+
+
+def extract_command(project, selection_path, python="python") -> str:
+    """The same command as text, quoted for a Windows or POSIX shell."""
+    return " ".join(f'"{part}"' if " " in part else part
+                    for part in extract_argv(project, selection_path, python))
+
+
+@dataclass
+class ExtractResult:
+    returncode: int
+    output: str = ""
+    plots: list = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+
+def run_extract(argv, cwd) -> ExtractResult:
+    """Run the extraction. Blocking - call it off the event loop.
+
+    The plots are the ``wrote <file>.png`` lines the script prints, so the page
+    shows exactly what this run wrote rather than whatever is in the folder.
+    """
+    environment = dict(os.environ)
+    environment.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        finished = subprocess.run(list(argv), capture_output=True, text=True,
+                                  timeout=EXTRACT_TIMEOUT_SECONDS, env=environment,
+                                  stdin=subprocess.DEVNULL, cwd=str(cwd))
+    except subprocess.TimeoutExpired:
+        return ExtractResult(1, f"timed out after {EXTRACT_TIMEOUT_SECONDS} s")
+    except OSError as exc:
+        return ExtractResult(1, f"could not start {EXTRACT_SCRIPT.name}: {exc}")
+    output = (finished.stdout or "") + (finished.stderr or "")
+    plots = [Path(match.strip()) for match in _WROTE.findall(output)]
+    return ExtractResult(finished.returncode, output,
+                         [path for path in plots if path.is_file()])
 
 
 def load_targets(path) -> tuple:

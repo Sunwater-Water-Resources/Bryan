@@ -233,6 +233,15 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - **Every rebuild is checked against what the run wrote down**: `mean_rain_mm`, `preburst_mm` and
   the `embedded_bursts` comment. The three are independent, so agreement with all of them means
   it is the storm that was modelled. A rebuild that disagrees is reported, never quietly plotted.
+  **An excluded pre-burst (`pb`) still records `preburst_mm`**: `Simulator.run_models` samples it
+  and takes it off the burst's initial loss (the rest goes to `residual_depth`), but prepends no
+  rain. So under `pb` the check is that no rain falls before the burst, not that the recorded depth
+  was rebuilt. Holding the two against each other failed every pre-burst-excluded run - all of
+  Callide's `no-pbp` design runs - and their event plots went out with the hyetograph blank (fixed
+  24 September 2026; the test that pinned the old behaviour had set `preburst_mm` to 0, which no run
+  writes). The Events page's **Run** button now runs `util/RepresentativeEvents.py` itself, with
+  Bryan's interpreter and absolute paths (`core/events.extract_argv`); the copied command used to
+  be `python util/RepresentativeEvents.py`, right only in Bryan's folder with the right Python.
 - Temporal patterns are **percentages of the burst depth** throughout (`uniform_preburst`:
   `preburst_depth = preburst_proportion * 100`), so depths are `pattern / 100 * ave_rain`. The
   index is hours with the pre-burst at negative times: t = 0 is the start of the main burst,

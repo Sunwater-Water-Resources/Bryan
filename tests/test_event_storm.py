@@ -189,6 +189,16 @@ def test_excluding_the_preburst_leaves_the_burst_alone():
     assert hyeto.preburst_hours == 0.0
 
 
+def test_an_excluded_preburst_is_trusted_although_the_run_recorded_its_depth():
+    # What a real run writes with 'pb' excluded: the sampled depth is recorded
+    # (it came off the initial loss) and no pre-burst rain was prepended. Callide
+    # E011 sim 4980 recorded 135.48 mm, and the check used to reject the rebuild.
+    hyeto = build(ctx=context(exclusions="clp,pb,d50"),
+                  sim=realisation(preburst_mm=135.48))
+    assert hyeto.preburst_hours == 0.0
+    assert hyeto.trustworthy, hyeto.checks
+
+
 def test_the_uniform_preburst_method_is_honoured():
     storm = StubStorm()
     hyeto = build(storm, ctx=context(preburst_method="uniform"))

@@ -246,11 +246,23 @@ def hyetograph(storm, climate, context: StormContext, sim) -> Hyetograph:
     depths.name = 'rainfall_mm'
     return Hyetograph(depths=depths, timestep=timestep,
                       preburst_hours=preburst_hours,
-                      checks=_checks(depths, ave_rain, comment, sim))
+                      checks=_checks(depths, ave_rain, comment, sim,
+                                     preburst_applied=context.applies_preburst))
 
 
-def _checks(depths, ave_rain, comment, sim):
-    """Hold the rebuild against the three things the run wrote down."""
+def _checks(depths, ave_rain, comment, sim, preburst_applied=True):
+    """Hold the rebuild against the three things the run wrote down.
+
+    **An excluded pre-burst still records a depth.** With ``pb`` in the
+    exclusions the run samples the pre-burst as usual and writes it to
+    ``preburst_mm`` - it is taken off the burst's initial loss instead
+    (``Simulator.run_models``: ``initial_loss - preburst_depth``, the rest to
+    ``residual_depth``) - but prepends no pre-burst rain. So the rebuild is right
+    to have none, and the recorded depth is not what to hold it against: the
+    check is then that no rain falls before the burst. Comparing the two failed
+    every pre-burst-excluded run - all of Callide's ``no-pbp`` design runs - and
+    left their event plots without a hyetograph.
+    """
     checks = []
 
     recorded = _number(sim.get('mean_rain_mm'))
@@ -260,9 +272,15 @@ def _checks(depths, ave_rain, comment, sim):
                        f'rebuilt {ave_rain:.2f} mm, run recorded {recorded:.2f} mm'))
 
     recorded = _number(sim.get('preburst_mm'))
-    if recorded is not None:
-        rebuilt = float(depths[depths.index < 0].sum())
-        # An excluded or zero pre-burst is nothing in both, which agrees.
+    rebuilt = float(depths[depths.index < 0].sum())
+    if not preburst_applied:
+        went = (f' (its {recorded:.2f} mm went to the initial loss)'
+                if recorded is not None else '')
+        checks.append(('pre-burst excluded', abs(rebuilt) < 0.05,
+                       f'rebuilt {rebuilt:.2f} mm before the burst, run excluded the '
+                       f'pre-burst{went}'))
+    elif recorded is not None:
+        # a zero pre-burst is nothing in both, which agrees
         ok = _close(rebuilt, recorded) or (abs(rebuilt) < 0.05 and abs(recorded) < 0.05)
         checks.append(('pre-burst depth', ok,
                        f'rebuilt {rebuilt:.2f} mm, run recorded {recorded:.2f} mm'))
