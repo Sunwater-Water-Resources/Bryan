@@ -283,10 +283,14 @@ class Study:
 def table_sources(table: dict) -> list:
     """Every {run, group} a table reads, wherever in the spec it sits."""
     found = []
-    source = table.get("source")
-    if isinstance(source, dict):
-        found.append(source)
+    for key in ("source", "pmf"):                    # a design table and its PMF row
+        if isinstance(table.get(key), dict):
+            found.append(table[key])
     for section in table.get("sections") or []:
+        if "run" in section:                         # a representative-events section
+            found.append(section)
+        if isinstance(section.get("pmf"), dict):
+            found.append(section["pmf"])
         for row in section.get("rows") or []:
             if isinstance(row, dict) and "run" in row:
                 found.append(row)

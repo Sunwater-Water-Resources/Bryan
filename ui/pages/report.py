@@ -428,6 +428,8 @@ class _TableEditor:
         with self.form:
             if self.kind.key == reporttables.DESIGN_FLOODS:
                 self._design_floods()
+            elif self.kind.key == reporttables.REPRESENTATIVE:
+                self._representative()
             else:
                 self._multi()
             ui.input("Footnote, pasted under the table", value=self.spec.get("footnote", "")) \
@@ -510,6 +512,52 @@ class _TableEditor:
 
     def _toggle(self, key, value) -> None:
         self.spec[key] = value
+        self.draw()
+
+    # -- representative events ---------------------------------------------
+
+    def _representative(self) -> None:
+        spec = self.spec
+        ui.label("One section per group: its events are the ones saved on the Events "
+                 "page for that group.").classes("text-xs text-muted")
+        with ui.row().classes("w-full gap-4 no-wrap items-start"):
+            ui.textarea("Trigger names for level loadings, one 'label = level' per line",
+                        value=reporttables.levels_text(spec.get("triggers"))) \
+                .classes("grow").props("dense autogrow").mark("triggers") \
+                .on_value_change(lambda e: spec.update(
+                    triggers=reporttables.parse_levels(e.value)))
+            with ui.column().classes("gap-1"):
+                ui.input("AEP of the PMP (1 in x)", value=f"{spec.get('pmp_aep') or ''}") \
+                    .classes("w-48").props("dense") \
+                    .on_value_change(lambda e: spec.update(
+                        pmp_aep=(reporttables.parse_aeps(e.value) or [None])[0]))
+                ui.radio({reporttables.MCDF: "Level AEPs from the realisations",
+                          reporttables.ENVELOPE: "Level AEPs off the design curve"},
+                         value=spec.get("method", reporttables.MCDF),
+                         on_change=lambda e: spec.update(method=e.value)).props("dense")
+        sections = spec.setdefault("sections", [])
+        for index, section in enumerate(sections):
+            with ui.card().classes("w-full").props("flat bordered"):
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.input("Section heading", value=section.get("heading", "")) \
+                        .classes("grow").props("dense") \
+                        .on_value_change(lambda e, s=section: s.update(heading=e.value))
+                    ui.button(icon="delete", on_click=lambda _, i=index: self._drop(
+                        sections, i)).props("flat dense round")
+                self._source_picker(section, mark=f"events-{index}")
+                pmf = section.get("pmf")
+                ui.checkbox("PMF row, from the highest event of an ensemble group",
+                            value=bool(pmf),
+                            on_change=lambda e, s=section: self._set_pmf(s, e.value))
+                if pmf:
+                    self._source_picker(pmf, mark=f"events-pmf-{index}")
+        ui.button("Add section", icon="add", on_click=lambda: self._append(
+            sections, {"heading": "", "run": self._default_run(), "group": "",
+                       "pmf": None})).props("outline dense no-caps").mark("add-section")
+
+    def _set_pmf(self, section, on) -> None:
+        section["pmf"] = ({"run": self._default_run(), "group": "", "label": "PMF"}
+                          if on else None)
         self.draw()
 
     # -- sections of rows ----------------------------------------------------

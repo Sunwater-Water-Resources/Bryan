@@ -315,9 +315,10 @@ Everything is saved as it changes.
 | Kind | Report table | What it computes |
 |---|---|---|
 | Design flood estimates | 1, 26-31 | One group. Per AEP: the peak lake level (the envelope over the durations) and its critical duration, with the peak inflow and outflow **of that same duration** - the report's "Peak inflow for lake level critical duration". Where no duration spills, the outflow is 0. The AEP of the PMP is a row of its own, labelled (PMPF). |
-| AEP of given lake levels | 32 | Per group, the AEP at which the level envelope reaches each level you list - the dam crest, each embankment crest - read linearly in log level against the standard normal variate, and rounded to 10. |
+| AEP of given lake levels | 32 | Per group, the AEP at which each level you list is reached - the dam crest, each embankment crest - rounded to 10. By default the critical duration is taken from the design curve and the level is then read off **that duration's own realisations** (the mcdf), linear in log level against the standard normal variate; the alternative reads it off the design curve itself, between the standard AEPs. Table 1's dam crest flood row uses the same reading. |
 | Peaks at one AEP | 33 | Per group, the lake level, inflow and outflow at one AEP - the AEP of the PMP for the PMPF. |
 | Ensemble peak | 34 | Per ensemble group, the event with the highest lake level: its level, inflow, outflow and duration - the PMF. |
+| Representative events | 35-36 | One section per group, from the events **saved on the Events page** for it: each loading's AEP (a level loading's AEP read as above), lake level, trigger, the chosen simulation and the duration it came from, in AEP order, with the PMF's event from an ensemble group last. A level loading takes its trigger from its own comment on the Events page, or from the table's list of named levels (DCF, each embankment crest). |
 
 The last three hold **sections** (the RFSL and FSL halves of a table, each under a heading row) of **rows**: a row either reads a group, or holds fixed values - for a previous study's numbers, such as the Sunwater 2020 baseline, which are not a run in this one.
 
