@@ -265,6 +265,20 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   register both cover it, and the job's summary says where.
 - Needs scipy (PCHIP storage curves), so the launcher runs it as a subprocess under Bryan's
   interpreter.
+- **The inflow record** (`lib/homogenise/inflow.py`, `util/InflowRecord.py`) is stage 1 alone:
+  the derived inflow as each water year's peak (a 1 h time average off the cumulative volume) and
+  largest 24-72 h burst volumes, with runoff depths and the catchment rain beside them, and event
+  hydrographs for calibration. It takes the homogenisation job with `routing=False` (no target
+  ratings) and by default `load_inputs(with_evaporation=False)`: zero evaporation, so the record
+  is clipped only where the register ends, not where SILO does. Held against callide-fsl-reinstate's
+  independent `reverse_routing` package (`tests/test_inflow_record.py`): median 0.00% on the peak
+  and every volume. Floods differ by 1-4% on volume because that package joins rating rows with
+  straight lines, and dry years differ by more because it has no intake splice.
+- **Recessions in the inflow record.** The recession correction books negative inflow above FSL as
+  release (`Unaccounted_Release_ML`), which leaves a hydrograph's recession at zero where the gates
+  released more than the rating says. Neither version is the true recession, so each hydrograph
+  keeps `Inflow_m3s` (corrected), `Inflow_uncorrected_m3s` and a `Release_uncertain` flag; peaks
+  and burst volumes sit on rising limbs and are unaffected.
 
 ### Antecedent storage (`lib/antecedent/`, `util/AntecedentStorage.py`)
 - Per water year, the storm behind the annual maximum is found in the catchment rainfall (the

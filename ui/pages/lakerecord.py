@@ -1,7 +1,8 @@
-"""Lake record: catchment rainfall, homogenised levels and antecedent storage.
+"""Lake record: catchment rainfall, homogenised levels, antecedent storage, inflow.
 
 Three steps that feed each other and end in the ``lake_config.json`` files the
-Monte Carlo runs sample their antecedent storage from:
+Monte Carlo runs sample their antecedent storage from, and a fourth off the same
+record:
 
 1. **Catchment rainfall** from a catchment shapefile and the folder of daily
    AWAP / AWRA-L grids, area-weighted - run here, in the launcher.
@@ -10,6 +11,9 @@ Monte Carlo runs sample their antecedent storage from:
 3. **Antecedent storage**: the storm behind each year's maximum, the lake volume
    when it started, the S-curve and the lake configs -
    ``util/AntecedentStorage.py`` under Bryan's interpreter.
+4. **Inflow record**: the inflow step 2 derives, as annual maximum peak inflow
+   and burst volumes (for an inflow flood frequency analysis) and as event
+   hydrographs (for calibration) - ``util/InflowRecord.py``.
 
 Everything is kept in the study file (open it on the Report page) and saved as
 it changes; each run leaves its job file beside its outputs. See
@@ -67,6 +71,7 @@ class _LakeRecordView:
         self._rainfall_card()
         self._homogenise_card()
         self._antecedent_card()
+        self._inflow_card()
 
     def save(self) -> None:
         lakerecord.store(self.study, self.section)
@@ -477,6 +482,191 @@ class _LakeRecordView:
                                   "nameLocation": "middle", "nameGap": 55},
                         "series": series}).classes("w-full h-72") \
                         .mark(f"scurve-{target['name']}")
+
+    # -- 4. inflow record ---------------------------------------------------------------
+
+    def _inflow_card(self) -> None:
+        i = self.section["inflow"]
+        with ui.card().classes("w-full"):
+            ui.label("4. Inflow record").classes("text-lg font-bold")
+            ui.label("Step 2's derived inflow - the change in storage plus the release "
+                     "through the rating in force at each step - as each water year's peak "
+                     "inflow and largest burst volumes, and as event hydrographs for "
+                     "calibration. It uses step 2's inputs but none of its target ratings.") \
+                .classes("text-xs text-muted")
+            ui.label("On a recession above full supply the balance often goes negative: the "
+                     "gates released more than the rating says. The recession correction "
+                     "books that as release, so the corrected inflow sits at zero there; "
+                     "each hydrograph also keeps the uncorrected inflow and flags the "
+                     "intervals where the release is uncertain. The rising limb and the peak "
+                     "are unaffected either way.").classes("text-xs text-muted")
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+                ui.checkbox("Keep the lake evaporation in the inflow",
+                            value=bool(i["evaporation"]),
+                            on_change=lambda e: self._set(i, "evaporation", e.value)) \
+                    .mark("inflow-evaporation")
+                ui.checkbox("Recession correction", value=bool(i["recession_correction"]),
+                            on_change=lambda e: self._set(i, "recession_correction", e.value))
+                ui.input("Peak averaged over", value=i["smoothing"] or "") \
+                    .classes("w-36").props("dense") \
+                    .on("blur", lambda e: self._set(i, "smoothing", e.sender.value.strip()))
+                ui.input("Burst durations (h)",
+                         value=" ".join(f"{d:g}" for d in i["durations_h"])) \
+                    .classes("w-40").props("dense") \
+                    .on("blur", lambda e: self._set_durations(e.sender.value))
+                ui.input("Catchment area (km2)", value=f"{i['catchment_km2'] or ''}") \
+                    .classes("w-40").props("dense").mark("inflow-area") \
+                    .on("blur", lambda e: self._set(i, "catchment_km2", _float(e.sender.value)))
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+                with ui.element("div").classes("grow"):
+                    self._path_input("Rainfall series, beside each burst (blank: step 1's)",
+                                     i, "rainfall")
+                for key, label in (("top_events", "Hydrographs of the largest"),
+                                   ("before_days", "from days before"),
+                                   ("after_days", "to days after")):
+                    ui.input(label, value=f"{i[key]:g}").classes("w-40").props("dense") \
+                        .on("blur", lambda e, k=key: self._set(
+                            i, k, _float(e.sender.value, i[k])))
+            ui.textarea("More hydrographs: name, start, end - one a line "
+                        "(e.g. Jan 2013, 2013-01-20, 2013-02-05 12:00)",
+                        value=lakerecord.events_text(i["events"])) \
+                .classes("w-full").props("dense autogrow").mark("inflow-events") \
+                .on("blur", lambda e: self._set_events(e.sender.value))
+            self._path_input("Write the results under", i, "out")
+            with ui.row().classes("items-center gap-2"):
+                ui.button("Inflow record", icon="waves", on_click=self._inflow) \
+                    .mark("run-inflow")
+                self.i_status = ui.label("").classes("text-sm text-body")
+            self.i_box = ui.column().classes("w-full")
+            self._draw_inflow(lakerecord.last_summary(self.study, self.section, "inflow"))
+
+    def _set_durations(self, text) -> None:
+        values = [_float(token) for token in str(text).replace(",", " ").split()]
+        if not values or None in values or min(values) <= 0:
+            ui.notify("Give the burst durations in hours, e.g. 24 36 48 72", type="warning")
+            return
+        self._set(self.section["inflow"], "durations_h", sorted({int(v) for v in values}))
+
+    def _set_events(self, text) -> None:
+        events, problems = lakerecord.parse_events(text)
+        for problem in problems:
+            ui.notify(f"Hydrographs, {problem}", type="warning")
+        if not problems:
+            self._set(self.section["inflow"], "events", events)
+
+    async def _inflow(self) -> None:
+        if self._blocked("inflow"):
+            return
+        self.i_status.text = "deriving the inflow..."
+        result = await _off_thread(lakerecord.inflow, self.study,
+                                   copy.deepcopy(self.section), STATE.settings.bryan_python)
+        self.i_status.text = ""
+        if not result.ok:
+            self._failed(self.i_box, result)
+            return
+        self._draw_inflow(result.summary)
+
+    def _draw_inflow(self, summary) -> None:
+        self.i_box.clear()
+        if not summary:
+            return
+        ams = lakerecord.inflow_maxima(summary)
+        with self.i_box:
+            record = summary.get("record", {})
+            ui.label(f"{summary.get('years', 0)} water years "
+                     f"({summary.get('complete_years', 0)} complete), {record.get('start')} to "
+                     f"{record.get('end')}").classes("text-sm").mark("inflow-summary")
+            for note in summary.get("notes", []):
+                severity_banner("info", note)
+            if ams is not None and len(ams):
+                complete = ams["Complete"].astype(str).str.lower() == "true"
+                house_echart({
+                    "tooltip": {"trigger": "axis"}, "legend": {"top": 0},
+                    "grid": {"left": 60, "right": 20, "top": 30, "bottom": 30},
+                    "xAxis": {"type": "category", "data": [str(p) for p in ams["Period"]]},
+                    "yAxis": {"type": "value", "name": "Annual maximum inflow (m3/s)",
+                              "nameLocation": "middle", "nameGap": 45},
+                    "series": [{"type": "bar", "name": name, "stack": "peak",
+                                "data": [round(float(v), 1) if keep == want else None
+                                         for v, keep in zip(ams["Peak_inflow_m3s"], complete)]}
+                               for name, want in (("complete year", True),
+                                                  ("part year", False))]}) \
+                    .classes("w-full h-64").mark("inflow-ams-chart")
+                self._depth_check(ams, summary.get("settings", {}))
+            events = summary.get("hydrographs") or []
+            if events:
+                names = {index: f"{item['name']} ({item['peak_m3s']:,.0f} m3/s)"
+                         for index, item in enumerate(events)}
+                ui.select(names, value=0, label="Hydrograph",
+                          on_change=lambda e: self._draw_hydrograph(holder, events[e.value])) \
+                    .classes("w-96").props("dense").mark("inflow-hydrograph-select")
+                holder = ui.column().classes("w-full")
+                self._draw_hydrograph(holder, events[0])
+
+    def _depth_check(self, ams, settings) -> None:
+        """Runoff depth beside the catchment rain: the one check the inflow did not make."""
+        durations = settings.get("durations_h") or []
+        if not durations:
+            return
+        hours = max(durations)
+        depth, rain = f"Depth_{hours}h_mm", f"Rain_{hours}h_mm"
+        if depth not in ams or rain not in ams:
+            return
+        over = ams[ams[depth] > ams[rain]]
+        if len(over):
+            severity_banner("warn", f"{len(over)} water years show more {hours} h runoff than "
+                            f"rain fell ({', '.join(map(str, over['Period'][:6]))}) - "
+                            f"check the level record there.")
+        house_echart({
+            "tooltip": {"trigger": "axis"}, "legend": {"top": 0},
+            "grid": {"left": 60, "right": 20, "top": 30, "bottom": 30},
+            "xAxis": {"type": "category", "data": [str(p) for p in ams["Period"]]},
+            "yAxis": {"type": "value", "name": f"Largest {hours} h burst (mm)",
+                      "nameLocation": "middle", "nameGap": 45},
+            "series": [{"type": "bar", "name": "catchment rain (the burst's days and the day before)",
+                        "data": [None if v != v else round(float(v), 1) for v in ams[rain]]},
+                       {"type": "bar", "name": "runoff depth",
+                        "data": [None if v != v else round(float(v), 1) for v in ams[depth]]}]}) \
+            .classes("w-full h-56").mark("inflow-depth-chart")
+
+    def _draw_hydrograph(self, holder, item) -> None:
+        holder.clear()
+        frame = lakerecord.hydrograph(item)
+        if frame is None or frame.empty:
+            return
+        step = max(1, len(frame) // 5000)
+        frame = frame.iloc[::step]
+        stamps = [f"{t:%Y-%m-%d %H:%M:%S}" for t in frame.index]
+        uncertain = frame["Release_uncertain"].astype(str).str.lower() == "true"
+
+        def pairs(values, keep=None):
+            return [[t, None if (v != v or (keep is not None and not k)) else round(float(v), 2)]
+                    for t, v, k in zip(stamps, values, keep if keep is not None else stamps)]
+
+        inflow = frame.get("Inflow_smoothed_m3s", frame["Inflow_m3s"])
+        share = float(uncertain.mean())
+        with holder:
+            ui.label(f"{Path(item['file']).name}: {item['start']} to {item['end']}; the release "
+                     f"is uncertain over {share:.0%} of it"
+                     ).classes("text-xs text-muted").mark("inflow-hydrograph-note")
+            house_echart({
+                "tooltip": {"trigger": "axis"}, "legend": {"top": 0},
+                "grid": {"left": 60, "right": 60, "top": 30, "bottom": 30},
+                "xAxis": {"type": "time"},
+                "yAxis": [{"type": "value", "name": "m3/s", "nameLocation": "middle",
+                           "nameGap": 45},
+                          {"type": "value", "name": "Level (m AHD)", "scale": True,
+                           "nameLocation": "middle", "nameGap": 45, "splitLine": {"show": False}}],
+                "series": [
+                    {"type": "line", "name": "inflow", "symbol": "none", "data": pairs(inflow)},
+                    {"type": "line", "name": "inflow, uncorrected where the release is uncertain",
+                     "symbol": "none", "lineStyle": {"type": "dashed"},
+                     "data": pairs(frame["Inflow_uncorrected_m3s"], uncertain.tolist())},
+                    {"type": "line", "name": "release", "symbol": "none",
+                     "data": pairs(frame["Release_m3s"])},
+                    {"type": "line", "name": "level", "symbol": "none", "yAxisIndex": 1,
+                     "lineStyle": {"width": 1}, "data": pairs(frame["Level_m"])},
+                ]}).classes("w-full h-72").mark("inflow-hydrograph")
 
     def _failed(self, box, result) -> None:
         box.clear()

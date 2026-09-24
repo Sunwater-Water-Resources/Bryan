@@ -366,7 +366,7 @@ The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v
 
 ## Lake record
 
-The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other. Everything is kept in the study file (open it on the Report page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
+The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other, and a fourth, the **inflow record**, off the same record. Everything is kept in the study file (open it on the Report page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
 
 ### 1. Catchment rainfall
 
@@ -398,6 +398,20 @@ The record is routed at the gauge's own resolution, gaps longer than the longest
 For each water year's homogenised maximum, the storm that produced it: the rarest burst of 1-5 days in the **search window** before the peak, scored against the **IFD** (```duration_h``` against ```1 in X``` columns, with a ```1 in 2``` column) after the **restriction factors** that correct a fixed 9 am day to an unrestricted one. A year qualifies when a burst exceeds the **significance** fraction of its 1 in 2 depth. The homogenised lake volume is read at 9 am where the burst started (**burst**) and, walking back through days wetter than the **pre-burst edge**, where the pre-burst started (**storm**). Each series gets a Cunnane plotting position and a logistic S-curve in the standard normal variate, with the floor from the data (rounded) and the ceiling at the full supply volume, and is written as a sigmoid lake configuration - ```burst``` for a design storm simulated without its pre-burst, ```storm``` for one with it. Point the sims list's ```Lake config``` at them.
 
 Run on Callide's inputs this reproduces the four lake configurations delivered for the design floods, byte for byte.
+
+### 4. Inflow record
+
+The inflow step 2 derives - the change in storage plus the release through the rating in force at each step - for an inflow flood frequency analysis and for calibrating the hydrologic model. It uses step 2's gauges, storage table and register, but none of its target ratings, and writes under ```lake_record/inflow```:
+
+- ```inflow_ams.csv```: each water year's **peak inflow**, averaged over the **peak averaged over** window (1 hour by default - over a one-minute interval a millimetre of gauge is hundreds of m3/s of noise), with the release and level at the peak, and the largest inflow volume over each **burst duration**. Given the **catchment area**, each volume is also a runoff depth, and with step 1's rainfall the catchment rain over the same days (and the day before) is beside it. The page charts the two for the longest duration and warns of any year with more runoff than rain: that is the one check on the inflow that the inflow did not produce. Years covering less than 90% of the year are marked as part years.
+- ```hydrographs/```: one file per event - the largest annual peaks (**hydrographs of the largest**, from **days before** to **days after** each peak) and any windows listed as ```name, start, end```, one a line.
+- ```inflow_intervals.csv.gz```: every interval of the record.
+
+**Evaporation** is left out by default, so the inflow is the net inflow before lake losses and the record is not cut off where the evaporation file ends. Tick **keep the lake evaporation** to add it back, as step 2 does.
+
+**Recessions.** Above full supply the falling limb often derives negative inflow: the gates released more than the rating says. The **recession correction** books that as release, which is right for the water balance, but leaves the corrected inflow at zero there where the real inflow was falling away. The actual release is not recorded, so neither version is the true recession. Each hydrograph therefore carries both, ```Inflow_m3s``` (corrected) and ```Inflow_uncorrected_m3s```, with ```Release_uncertain``` marking every interval the correction touched; the chart draws the uncorrected inflow dashed over those intervals. Calibrate to the rising limb and the peak with confidence, and to the flagged part of the recession with care. Peaks and burst volumes are on rising limbs and are unaffected.
+
+On Callide, with the evaporation left out, the annual maxima agree with the independent reverse routing in callide-fsl-reinstate to a median of 0.00% on the peak and on every volume. The floods differ by 1-4% on volume, because that routing joins the rating rows with straight lines, which overstates a convex spillway rating between rows.
 
 ## Things worth knowing
 
