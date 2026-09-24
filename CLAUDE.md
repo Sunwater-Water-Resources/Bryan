@@ -266,6 +266,23 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Needs scipy (PCHIP storage curves), so the launcher runs it as a subprocess under Bryan's
   interpreter.
 
+### Antecedent storage (`lib/antecedent/`, `util/AntecedentStorage.py`)
+- Per water year, the storm behind the annual maximum is found in the catchment rainfall (the
+  rarest 1-5 day burst in the 30 days before the peak, against the IFD) and the **homogenised**
+  lake volume read where the burst started (`burst`) and where its pre-burst started (`storm`);
+  a logistic S-curve is fitted to each with the ceiling at the FSV and written as the sigmoid
+  `lake_config.json` that `LakeConditions` samples. The method modules are callide-fsl-reinstate's
+  `antecedent_storage/` modules, copied, with **one change each**: `burst_frame` and
+  `choose_bounds` resolve their defaults when called, because the job binds the settings into
+  the module constants (`job.applied`) and a default captured at definition time would ignore
+  them. `tests/test_antecedent_job.py` requires Callide's four delivered lake configs back, byte
+  for byte.
+- The homogenisation runs **in the same process**, from its own job: reading the volumes back
+  from `trace.csv.gz` would round them to four decimals and move the fit.
+- Rainfall is `date,rain_mm` with day D the 24 h to 9 am on D; the burst search and the 9 am
+  volume snapshot are built around that label (see `antecedent.daily_volume_at_9am`). The
+  launcher makes the series from AWAP/AWRA-L grids with `ui/core/awap.py`.
+
 ### Lake level frequency (`lib/LakeLevelRecord.py`, `lib/LakeLevelFrequency.py`)
 - The launcher's **Lake levels** page: the recorded annual maximum lake levels on a frequency axis,
   fitted, resampled and laid against the Monte Carlo design floods, with an A4 report figure and the
