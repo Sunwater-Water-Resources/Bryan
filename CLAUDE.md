@@ -281,7 +281,12 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   from `trace.csv.gz` would round them to four decimals and move the fit.
 - Rainfall is `date,rain_mm` with day D the 24 h to 9 am on D; the burst search and the 9 am
   volume snapshot are built around that label (see `antecedent.daily_volume_at_9am`). The
-  launcher makes the series from AWAP/AWRA-L grids with `ui/core/awap.py`.
+  launcher makes the series from AWAP/AWRA-L grids with `ui/core/awap.py`, and **the study keeps
+  the series, not the grids**: the grids folder is the user's setting (`UiSettings.awap_folder`),
+  never written to the study, because the grids are tens of gigabytes not every user has. On
+  Callide the area-weighted series reproduces the JPA areal series to 0.008 mm rms over 42,126 days
+  on the same dates (a one-day shift drops r to 0.41), and the delivered lake configs come back
+  unchanged from it.
 
 ### Lake level frequency (`lib/LakeLevelRecord.py`, `lib/LakeLevelFrequency.py`)
 - The launcher's **Lake levels** page: the recorded annual maximum lake levels on a frequency axis,

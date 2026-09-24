@@ -107,8 +107,10 @@ class _LakeRecordView:
             ui.label("1. Catchment rainfall").classes("text-lg font-bold")
             ui.label("The daily catchment average of the AWAP / AWRA-L grids (one netCDF "
                      "file per year, as downloaded). A day D is the 24 hours to 9 am on D, "
-                     "as the grids stamp it and as the antecedent search expects."
-                     ).classes("text-xs text-muted")
+                     "as the grids stamp it and as the antecedent search expects. The "
+                     "series is kept in the study folder and ships with the model; the "
+                     "grids stay on this computer, so anyone without them uses the series "
+                     "as it is.").classes("text-xs text-muted")
             with ui.row().classes("w-full gap-2 no-wrap"):
                 with ui.column().classes("grow gap-1"):
                     self._path_input("Catchment shapefile (.shp)", r, "shapefile",
@@ -120,7 +122,10 @@ class _LakeRecordView:
                         ui.input("equal to", value=r["value"]).classes("grow").props("dense") \
                             .on("blur", lambda e: self._set(r, "value", e.sender.value.strip()))
                 with ui.column().classes("grow gap-1"):
-                    self._path_input("Folder of daily grids", r, "grids", mark="rain-grids")
+                    ui.input("Folder of daily grids on this computer (yours, not the "
+                             "study's)", value=STATE.settings.awap_folder) \
+                        .classes("w-full").props("dense").mark("rain-grids") \
+                        .on("blur", lambda e: self._set_grids(e.sender.value))
                     with ui.row().classes("w-full gap-2 no-wrap"):
                         ui.input("Files", value=r["pattern"]).classes("w-32").props("dense") \
                             .on("blur", lambda e: self._set(r, "pattern", e.sender.value.strip()
@@ -140,8 +145,18 @@ class _LakeRecordView:
             self.rain_box = ui.column().classes("w-full")
             self._draw_rainfall()
 
+    def _set_grids(self, text) -> None:
+        text = str(text or "").strip().strip('"')
+        if text != STATE.settings.awap_folder:
+            STATE.settings.awap_folder = text
+            STATE.settings.save()
+
     async def _make_rainfall(self) -> None:
-        if self._blocked("rainfall"):
+        grids = STATE.settings.awap_folder
+        problems = lakerecord.problems_before_running(self.study, self.section, "rainfall",
+                                                      grids)
+        if problems:
+            ui.notify("Not ready:\n" + "\n".join(problems), type="warning", multi_line=True)
             return
         r = self.section["rainfall"]
         self.rain_status.text = "reading the grids..."
@@ -150,13 +165,14 @@ class _LakeRecordView:
         def work():
             catchment = awap.read_catchment(lakerecord.path_of(self.study, r["shapefile"]),
                                             r["field"], r["value"])
-            files = awap.rainfall_files(lakerecord.path_of(self.study, r["grids"]),
-                                        r["pattern"] or "*.nc")
+            files = awap.rainfall_files(grids, r["pattern"] or "*.nc")
             series = awap.catchment_rainfall(
                 files, catchment, r["variable"], r["weighting"],
                 progress=lambda n, total, name: progress.update(text=f"{n + 1} of {total}: {name}"))
             awap.write_series(series, lakerecord.path_of(self.study, r["output"]),
-                              source=f"{Path(r['shapefile']).name}, {r['weighting']} weighting")
+                              source=f"catchment {Path(r['shapefile']).name}"
+                                     f"{' ' + r['field'] + '=' + r['value'] if r['field'] else ''}"
+                                     f", {r['weighting']} weighting")
             return series
 
         timer = ui.timer(0.5, lambda: setattr(self.rain_status, "text", progress["text"]))

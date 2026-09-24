@@ -163,3 +163,19 @@ async def test_a_path_typed_on_the_page_is_kept_relative_to_the_study(user, open
     await asyncio.sleep(0.2)
     stored = lakerecord.settings(studies.load_study(opened.path))
     assert stored["antecedent"]["ifd"] == "ifd/cld.csv"
+
+
+def test_the_grids_folder_is_the_user_s_not_the_study_s(study, tmp_path):
+    section = lakerecord.settings(study)
+    assert "grids" not in section["rainfall"]
+    touch(study.folder / "catchment.shp")
+    section["rainfall"]["shapefile"] = "catchment.shp"
+    assert lakerecord.problems_before_running(study, section, "rainfall", "") == [
+        "Folder of daily grids on this computer: not given"]
+    assert lakerecord.problems_before_running(study, section, "rainfall", str(tmp_path)) == []
+
+
+def test_the_antecedent_step_needs_only_the_stored_series_not_the_grids(study):
+    section = configured(study)
+    # no grids anywhere: the series in the study folder is enough
+    assert not lakerecord.problems_before_running(study, section, "antecedent")

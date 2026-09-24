@@ -4,7 +4,12 @@ Three steps, in the order they depend on each other, all kept in the study file
 under ``"lake_record"`` with paths relative to it:
 
 1. **Catchment rainfall** - ``core/awap.py``, in this process: a shapefile and
-   the folder of AWAP/AWRA-L daily grids give ``date,rain_mm``.
+   the folder of AWAP/AWRA-L daily grids give ``date,rain_mm``. **The series is
+   what the study keeps and ships**, in its own folder; the grids are tens of
+   gigabytes not every user has, so their folder is each user's setting
+   (``UiSettings.awap_folder``), never the study's, and steps 2-3 need only the
+   series. On Callide the area-weighted series from ``C:\\AWAP`` reproduces the
+   JPA project's to 0.008 mm rms over 42,126 days, dates and all.
 2. **Homogenisation** - ``util/HomogeniseLakeLevels.py`` under Bryan's
    interpreter (scipy): the gauge exports, storage table, rating register,
    evaporation and target ratings give the lake re-routed through each target.
@@ -42,7 +47,7 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 CALLIDE_PAN_FACTORS = [0.82, 0.82, 0.83, 0.79, 0.75, 0.71, 0.76, 0.81, 0.79, 0.81, 0.82, 0.83]
 
 DEFAULTS = {
-    "rainfall": {"shapefile": "", "field": "", "value": "", "grids": "", "pattern": "*.nc",
+    "rainfall": {"shapefile": "", "field": "", "value": "", "pattern": "rain_day_*.nc",
                  "variable": "", "weighting": "area", "output": "lake_record/rainfall.csv"},
     "homogenise": {"gauges": [], "overlay": None, "storage": "", "register": "",
                    "evaporation": "", "pan_factors": list(CALLIDE_PAN_FACTORS), "step": "1h",
@@ -124,8 +129,11 @@ def antecedent_job(study: Study, section: dict, homogenise_path: Path) -> dict:
             "settings": copy.deepcopy(a["settings"]), "out": _absolute(study, a["out"])}
 
 
-def problems_before_running(study: Study, section: dict, step: str) -> list:
-    """What would stop a step, said before a subprocess is started."""
+def problems_before_running(study: Study, section: dict, step: str, grids: str = "") -> list:
+    """What would stop a step, said before anything is started.
+
+    ``grids`` is the user's own folder of daily grids (the rainfall step only).
+    """
     out = []
 
     def need(label, value, is_dir=False):
@@ -138,7 +146,10 @@ def problems_before_running(study: Study, section: dict, step: str) -> list:
     if step == "rainfall":
         r = section["rainfall"]
         need("Catchment shapefile", r["shapefile"])
-        need("Folder of rainfall grids", r["grids"], is_dir=True)
+        if not str(grids or "").strip():
+            out.append("Folder of daily grids on this computer: not given")
+        elif not Path(grids).is_dir():
+            out.append(f"Folder of daily grids on this computer: not found ({grids})")
     elif step in ("homogenise", "antecedent"):
         h = section["homogenise"]
         if not [g for g in h["gauges"] if str(g).strip()]:
