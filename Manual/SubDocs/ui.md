@@ -319,6 +319,7 @@ Everything is saved as it changes.
 | Peaks at one AEP | 33 | Per group, the lake level, inflow and outflow at one AEP - the AEP of the PMP for the PMPF. |
 | Ensemble peak | 34 | Per ensemble group, the event with the highest lake level: its level, inflow, outflow and duration - the PMF. |
 | Representative events | 35-36 | One section per group, from the events **saved on the Events page** for it: each loading's AEP (a level loading's AEP read as above), lake level, trigger, the chosen simulation and the duration it came from, in AEP order, with the PMF's event from an ensemble group last. A level loading takes its trigger from its own comment on the Events page, or from the table's list of named levels (DCF, each embankment crest). |
+| Frequent levels | 37 | A grid: one column per group (the climate horizons), one row per frequency, in sections (RFSL, FSL). A standard AEP the quantile tables carry (1 in 2) is the design curve's value; a more frequent one (1 EY, 1 in 1.582) is read off each duration's realisations and the highest taken. The last column is the critical duration, as a range where the horizons differ. **Durations to consider** limits which runs count: Callide's Table 37 was made from 6-96 h, and a 120 h run changes the 1 in 2 level where it governs. |
 
 The last three hold **sections** (the RFSL and FSL halves of a table, each under a heading row) of **rows**: a row either reads a group, or holds fixed values - for a previous study's numbers, such as the Sunwater 2020 baseline, which are not a run in this one.
 

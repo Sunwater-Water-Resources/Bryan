@@ -440,3 +440,21 @@ def aep_at_value(real: Realisations, value: float) -> float:
     if value < values[0] or value > values[-1]:
         return math.nan
     return aep_of_variate(float(np.interp(math.log(value), np.log(values), variates)))
+
+
+def value_at_aep(real: Realisations, aep: float) -> float:
+    """One duration's result at a '1 in X' AEP, read straight off its realisations.
+
+    Linear in the AEP, as ``List_1EY_results.py`` reads the 1 EY level
+    (``np.interp(aep, 1 / level_aep, level)``) - an AEP more frequent than the
+    quantile tables go (they start at 1 in 2), so the database is the only place
+    it can come from. NaN outside the range the run reached.
+    """
+    if not len(real.z) or not (aep and aep > 1):
+        return math.nan
+    aeps = np.array([aep_of_variate(float(z)) for z in real.z])
+    keep = np.isfinite(aeps)
+    aeps, values = aeps[keep], real.value[keep]
+    if not len(aeps) or aep < aeps[0] or aep > aeps[-1]:
+        return math.nan
+    return float(np.interp(float(aep), aeps, values))
