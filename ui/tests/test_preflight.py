@@ -91,6 +91,28 @@ def test_a_blank_config_file_is_allowed_for_reservoir_routing(project):
     assert not issues
 
 
+def test_a_blank_duration_is_allowed_for_an_ensemble_row(project):
+    """The ensemble's durations are storm_durations in its config file.
+
+    Simulator.__init__ reads the Duration column for every row, but only
+    MonteCarloSimulator uses the value.
+    """
+    row = monte_carlo_row(**{"Output file": "enb", "Method": "ensemble",
+                             "Duration": None})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    issues = [i for i in preflight.check(sims, config, [0])
+              if i.code == "blank-required" and "Duration" in i.message]
+    assert not issues
+
+
+def test_a_blank_duration_still_blocks_a_monte_carlo_row(project):
+    row = monte_carlo_row(**{"Output file": "mc", "Duration": None})
+    config, sims = setup(project, [row], columns=MONTE_CARLO_COLUMNS)
+    issues = [i for i in preflight.check(sims, config, [0])
+              if i.code == "blank-required" and "Duration" in i.message]
+    assert issues
+
+
 def test_output_collision_blocks(project):
     """The Callide case - twenty-four rows share one Output file there."""
     rows = [reservoir_row(Duration=d, **{"Output file": "shared"})
