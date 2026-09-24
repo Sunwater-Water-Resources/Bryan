@@ -297,9 +297,13 @@ def requirements_for(method: str, running: bool,
         if existing and existing.when == "always":
             return
         # A blank Config file is legitimate for reservoir routing with ensemble
-        # input - sim_list.md says to leave it blank.
+        # input - sim_list.md says to leave it blank. A blank Duration is
+        # legitimate for an ensemble row: Simulator.__init__ reads the column,
+        # but only MonteCarloSimulator uses the value - the ensemble takes its
+        # durations from storm_durations in the ensemble config.
         blank_ok = (name in BLANK_IS_NO_SETTING
-                    or (name == "Config file" and method == RESERVOIR_ROUTING))
+                    or (name == "Config file" and method == RESERVOIR_ROUTING)
+                    or (name == "Duration" and method == ENSEMBLE))
         out[name] = ColumnRequirement(name, when, is_path, tuple(aliases),
                                       blank_ok)
 
