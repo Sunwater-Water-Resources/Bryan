@@ -430,6 +430,8 @@ class _TableEditor:
                 self._design_floods()
             elif self.kind.key == reporttables.REPRESENTATIVE:
                 self._representative()
+            elif self.kind.key == reporttables.FREQUENT:
+                self._frequent()
             else:
                 self._multi()
             ui.input("Footnote, pasted under the table", value=self.spec.get("footnote", "")) \
@@ -554,6 +556,59 @@ class _TableEditor:
         ui.button("Add section", icon="add", on_click=lambda: self._append(
             sections, {"heading": "", "run": self._default_run(), "group": "",
                        "pmf": None})).props("outline dense no-caps").mark("add-section")
+
+    # -- frequent levels ----------------------------------------------------
+
+    def _frequent(self) -> None:
+        spec = self.spec
+        with ui.row().classes("w-full gap-4 no-wrap items-start"):
+            ui.textarea("Frequencies, one 'label = AEP (1 in x)' per line",
+                        value=reporttables.levels_text(
+                            [{"label": f.get("label", ""), "level": f.get("aep")}
+                             for f in spec.get("frequencies") or []])) \
+                .classes("grow").props("dense autogrow").mark("frequencies") \
+                .on_value_change(lambda e: spec.update(frequencies=[
+                    {"label": item["label"], "aep": item["level"]}
+                    for item in reporttables.parse_levels(e.value)]))
+            with ui.column().classes("gap-1 w-80"):
+                ui.input("Column headings, separated by |",
+                         value=" | ".join(spec.get("columns") or [])) \
+                    .classes("w-full").props("dense") \
+                    .on("blur", lambda e: self._set_columns(e.sender.value))
+                ui.input("Durations to consider (h), blank for all",
+                         value=" ".join(f"{h:g}" for h in spec.get("durations") or [])) \
+                    .classes("w-full").props("dense") \
+                    .on_value_change(lambda e: spec.update(
+                        durations=[float(token) for token in str(e.value).replace(",", " ").split()
+                                   if token.replace(".", "", 1).isdigit()]))
+        columns = spec.get("columns") or []
+        sections = spec.setdefault("sections", [])
+        for index, section in enumerate(sections):
+            groups = section.setdefault("groups", [])
+            while len(groups) < len(columns):
+                groups.append({"run": self._default_run(), "group": ""})
+            with ui.card().classes("w-full").props("flat bordered"):
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.input("Section heading", value=section.get("heading", "")) \
+                        .classes("grow").props("dense") \
+                        .on_value_change(lambda e, s=section: s.update(heading=e.value))
+                    ui.button(icon="delete", on_click=lambda _, i=index: self._drop(
+                        sections, i)).props("flat dense round")
+                for position, column in enumerate(columns):
+                    with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                        ui.label(column).classes("w-28 text-sm")
+                        with ui.element("div").classes("grow"):
+                            self._source_picker(groups[position],
+                                                mark=f"frequent-{index}-{position}")
+        ui.button("Add section", icon="add", on_click=lambda: self._append(
+            sections, {"heading": "", "groups": []})).props("outline dense no-caps") \
+            .mark("add-section")
+
+    def _set_columns(self, text) -> None:
+        columns = [part.strip() for part in str(text).split("|") if part.strip()]
+        if columns != self.spec.get("columns"):
+            self.spec["columns"] = columns
+            self.draw()
 
     def _set_pmf(self, section, on) -> None:
         section["pmf"] = ({"run": self._default_run(), "group": "", "label": "PMF"}

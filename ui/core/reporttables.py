@@ -58,6 +58,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from . import ensemble, results
@@ -72,6 +73,7 @@ FLOOD_LEVELS = "flood_levels"
 PEAK_AT_AEP = "peak_at_aep"
 ENSEMBLE_PEAK = "ensemble_peak"
 REPRESENTATIVE = "representative_events"
+FREQUENT = "frequent_levels"
 
 AT_LEVEL = "level"
 AT_OWN = "own"
@@ -143,6 +145,16 @@ KINDS = {
          "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
          "triggers": [{"label": "DCF", "level": 219.13}],
          "sections": []}),     # [{heading, run, group, pmf: {run, group} | None}]
+    FREQUENT: Kind(
+        FREQUENT, "Frequent levels",
+        "The lake level at frequent AEPs - 1 in 2 and 1 EY - for a row of groups "
+        "(the climate horizons), for closing the hazard curve (report Table 37).",
+        True,
+        {"kind": FREQUENT, "title": "", "first_column": "Frequency",
+         "frequencies": [{"label": "1 in 2 AEP", "aep": 2}, {"label": "1 EY", "aep": 1.582}],
+         "columns": ["GWL 0°C", "GWL 1.3°C", "GWL 1.7°C", "GWL 2.7°C"],
+         "duration": True, "durations": [],     # hours to consider; blank = all
+         "sections": []}),     # [{heading, groups: [{run, group}] in column order}]
 }
 
 
@@ -649,7 +661,99 @@ def _representative(study: Study, spec: dict) -> ReportTable:
     return table
 
 
+def frequent_level(study: Study, run_name: str, group: str, aep: float, durations=None):
+    """(level, critical duration, problem) of a group at a frequent AEP.
+
+    A standard AEP the quantile tables carry (1 in 2) is the design curve's own
+    value. One more frequent than they go (1 EY is 1 in 1.582) is read off each
+    duration's realisations and the highest taken, as ``List_1EY_results.py``
+    does; at 1 in 2 the two readings agree to the digit on Callide E012.
+
+    ``durations`` (hours) limits which runs count. ``List_1EY_results.py`` took
+    6-96 h; Callide E010 also ran 120 h, which governs the 1 in 2 level at GWL 1.7
+    and 2.7, so the report's Table 37 is reproduced only with the same limit.
+    With a limit the envelope shortcut is not taken, since the envelope is over
+    every duration.
+    """
+    wanted = {float(hours) for hours in durations or []}
+    if not wanted:
+        curves = group_curves(study, run_name, group)
+        if curves.problems and not curves.has("level"):
+            return math.nan, None, "; ".join(curves.problems)
+        envelope = curves.envelope("level")
+        if aep in envelope.index and _finite(envelope.get(aep)):
+            return float(envelope[aep]), curves.critical("level").get(aep), ""
+    try:
+        databases = ensemble.mc_databases(study, run_name, group)
+    except StudyError as exc:
+        return math.nan, None, str(exc)
+    if wanted:
+        databases = {label: path for label, path in databases.items()
+                     if ensemble._hours(label) in wanted}
+    if not databases:
+        return math.nan, None, (f"{group}: no results database on disk"
+                                + (" for the durations chosen" if wanted else ""))
+    best, best_duration = math.nan, None
+    for label, path in databases.items():
+        try:
+            value = ensemble.value_at_aep(ensemble.read_realisations(path), aep)
+        except (StudyError, OSError):
+            continue
+        if _finite(value) and not (value <= best):
+            best, best_duration = value, label
+    if not _finite(best):
+        return math.nan, None, f"{group}: no realisations reach 1 in {aep:g}"
+    return best, best_duration, ""
+
+
+def _duration_span(labels) -> str:
+    """'24' when the horizons agree, '24–72' when they do not."""
+    hours = sorted({float(str(label).rstrip("h")) for label in labels
+                    if label and str(label).rstrip("h").replace(".", "", 1).isdigit()})
+    if not hours:
+        return NO_VALUE
+    low, high = hours[0], hours[-1]
+    return f"{low:g}" if low == high else f"{low:g}{DASH}{high:g}"
+
+
+def _frequent(study: Study, spec: dict) -> ReportTable:
+    columns = list(spec.get("columns") or [])
+    header = [spec.get("first_column") or "Frequency"] + columns
+    if spec.get("duration", True):
+        header.append("Critical duration (h)")
+    table = ReportTable(header=header, align=["left"] + ["center"] * (len(header) - 1))
+    for section in spec.get("sections") or []:
+        if section.get("heading"):
+            table.section(section["heading"])
+        groups = list(section.get("groups") or [])
+        for frequency in spec.get("frequencies") or []:
+            try:
+                aep = float(frequency.get("aep"))
+            except (TypeError, ValueError):
+                table.problems.append(f"{frequency.get('label')}: no AEP")
+                continue
+            cells, durations = [frequency.get("label") or fmt_aep(aep)], []
+            for position in range(len(columns)):
+                source = groups[position] if position < len(groups) else {}
+                if not source.get("group"):
+                    cells.append("")
+                    continue
+                level, duration, problem = frequent_level(study, source.get("run", ""),
+                                                          source["group"], aep,
+                                                          spec.get("durations"))
+                if problem:
+                    table.problems.append(problem)
+                # numpy's rounding, as List_1EY_results.py wrote the report's values
+                cells.append(fmt_level(np.around(level, 2)) if _finite(level) else NO_VALUE)
+                durations.append(duration)
+            if spec.get("duration", True):
+                cells.append(_duration_span(durations))
+            table.add(cells)
+    return table
+
+
 BUILDERS = {
+    FREQUENT: _frequent,
     DESIGN_FLOODS: _design_floods,
     FLOOD_LEVELS: _flood_levels,
     PEAK_AT_AEP: _peak_at_aep,

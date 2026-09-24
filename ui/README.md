@@ -212,12 +212,13 @@ runs, with **Copy for Word** on each.
 A **study file** (`bryan_study.json`, at the top of the study) names the runs a
 report is written from — one sims_config.json each, so the RFSL and FSL lists,
 the adopted run and a sensitivity are separate entries — and holds one entry per
-report table saying which group of which run fills it. Five kinds of table:
+report table saying which group of which run fills it. Six kinds of table:
 design flood estimates by AEP (one group; inflow and outflow at the *level's*
 critical duration, with optional dam crest flood and PMF rows), the AEP of given
 lake levels (the dam crest and each embankment crest), peaks at one AEP (the
-PMPF), the peak of an ensemble run (the PMF), and the representative events
-chosen on the Events page. The multi-group kinds take rows of fixed values too, for a previous
+PMPF), the peak of an ensemble run (the PMF), the representative events
+chosen on the Events page, and the frequent levels (1 in 2, 1 EY) that close the
+hazard curve. The multi-group kinds take rows of fixed values too, for a previous
 study's numbers. **Copy for Word** puts the table on the clipboard as HTML in
 the report's table style and as tab-separated text; **Copy as text** gives only
 the second, for Excel. Paths in the study file are relative to it, and a table

@@ -291,8 +291,8 @@ def table_sources(table: dict) -> list:
             found.append(section)
         if isinstance(section.get("pmf"), dict):
             found.append(section["pmf"])
-        for row in section.get("rows") or []:
-            if isinstance(row, dict) and "run" in row:
+        for row in (section.get("rows") or []) + (section.get("groups") or []):
+            if isinstance(row, dict) and "run" in row:      # rows, or a grid's columns
                 found.append(row)
     return found
 

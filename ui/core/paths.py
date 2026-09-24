@@ -118,10 +118,30 @@ def atomic_write_json(path: Path, data) -> None:
             json.dump(data, stream, indent=2, default=str)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+# Windows refuses to replace a file another process has open, and a virus
+# scanner or indexer opens every file just written for a moment. Seen twice in
+# a row on a study file on an external disk, so the replace is retried briefly
+# rather than failing the save.
+REPLACE_ATTEMPTS = 20
+REPLACE_PAUSE_SECONDS = 0.1
+
+
+def _replace(source, target) -> None:
+    import time
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_PAUSE_SECONDS)
 
 
 def read_json(path: Path, default=None):

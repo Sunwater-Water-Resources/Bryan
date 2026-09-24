@@ -350,3 +350,65 @@ def test_renaming_a_run_carries_representative_sections_and_pmf_rows(study):
     study.rename_run("E099 PMF", "E100 PMF")
     runs = [source["run"] for table in study.tables for source in studies.table_sources(table)]
     assert "E099 PMF" not in runs and runs.count("E100 PMF") == 2
+
+
+# -- frequent levels (Table 37) --------------------------------------------------
+
+def frequent_spec(**overrides):
+    spec = rt.new_spec(rt.FREQUENT)
+    spec["columns"] = ["GWL 1.3", "GWL 2.7"]
+    spec["sections"] = [{"heading": "Current RFSL",
+                         "groups": [{"run": "E099 RFSL", "group": GROUP}, {}]}]
+    spec.update(overrides)
+    return spec
+
+
+def test_a_standard_aep_is_the_design_curve_and_1_ey_comes_off_the_realisations(study):
+    from core import ensemble
+    from report_fixtures import MC_BASE, MC_SLOPE
+    table = rt.build(study, frequent_spec())
+    one_in_two, one_ey = table.rows[1].cells, table.rows[2].cells
+    assert one_in_two == ["1 in 2 AEP", "214.00", "", "72"]      # the envelope at 1 in 2
+    # the fixture's realisations are level = 214 + 1.4 z, both durations alike
+    z = ensemble.variate(1 / 1.582)
+    assert one_ey[1] == f"{MC_BASE + MC_SLOPE * z:.2f}" and one_ey[2] == ""
+    assert not table.problems
+
+
+def test_a_duration_limit_leaves_the_other_runs_out(study):
+    table = rt.build(study, frequent_spec(durations=[72]))
+    assert table.rows[1].cells[-1] == "72" and table.rows[2].cells[-1] == "72"
+    table = rt.build(study, frequent_spec(durations=[48]))           # nothing run at 48 h
+    assert table.rows[1].cells[1] == rt.NO_VALUE and table.problems
+
+
+def test_the_critical_duration_column_is_a_range_across_the_horizons():
+    assert rt._duration_span(["24h", "72h", "24h"]) == f"24{rt.DASH}72"
+    assert rt._duration_span(["24h", "24h"]) == "24"
+    assert rt._duration_span([None]) == rt.NO_VALUE
+
+
+def test_renaming_a_run_carries_a_grid_s_columns(study):
+    study.put_table(frequent_spec())
+    study.rename_run("E099 RFSL", "E100 RFSL")
+    assert study.tables[0]["sections"][0]["groups"][0]["run"] == "E100 RFSL"
+
+
+def test_a_save_waits_out_a_file_briefly_held_by_another_process(tmp_path, monkeypatch):
+    """A virus scanner holding the study file for a moment must not fail the save."""
+    import os as real_os
+    from core import paths
+
+    calls = []
+    original = real_os.replace
+
+    def flaky(source, target):
+        calls.append(target)
+        if len(calls) < 3:
+            raise PermissionError(32, "being used by another process")
+        return original(source, target)
+
+    monkeypatch.setattr(paths.os, "replace", flaky)
+    monkeypatch.setattr(paths, "REPLACE_PAUSE_SECONDS", 0.0)
+    paths.atomic_write_json(tmp_path / "study.json", {"a": 1})
+    assert len(calls) == 3 and json.loads((tmp_path / "study.json").read_text()) == {"a": 1}
