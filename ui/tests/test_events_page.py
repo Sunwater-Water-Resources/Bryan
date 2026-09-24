@@ -9,6 +9,8 @@ runs in an environment without nicegui.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("nicegui")
@@ -295,3 +297,37 @@ async def test_a_run_without_stored_hydrographs_says_so(user, project):
 
     user.find(marker="preview-button-0").click()
     await user.should_see("Store hydrographs")
+
+
+@pytest.mark.asyncio
+async def test_the_extraction_runs_from_the_page_and_shows_its_warnings(user, project,
+                                                                         monkeypatch):
+    """No more copying the command into a console: Run does it and shows the plots."""
+    import pages.events as events_page
+    from core import events as core_events
+
+    _open(project)
+    await user.open("/events")
+    code = next(element for element in user.find(kind=nicegui_code()).elements
+                if "--selection" in element.content)
+    selection = Path(code.content.split("--selection", 1)[1].strip().strip('"'))
+    selection.parent.mkdir(parents=True, exist_ok=True)
+    selection.write_text('{"targets": []}', encoding="utf-8")
+
+    ran = []
+
+    def fake_run(argv, cwd):
+        ran.append(argv)
+        return core_events.ExtractResult(
+            0, "  NOTE: hyetograph does not match the run - burst depth\n")
+
+    monkeypatch.setattr(events_page.events, "run_extract", fake_run)
+    user.find(marker="run-extract").click()
+    await user.should_see(marker="extract-done")
+    await user.should_see("hyetograph does not match the run - burst depth")
+    assert ran and ran[0][ran[0].index("--selection") + 1] == str(selection)
+
+
+def nicegui_code():
+    from nicegui import ui
+    return ui.code

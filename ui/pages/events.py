@@ -147,6 +147,7 @@ class _EventsView:
         self.detail_box = None
         self.summary_box = None
         self.command_box = None
+        self.extract_box = None
         self.status = None
 
     # -- build ------------------------------------------------------------
@@ -524,7 +525,8 @@ class _EventsView:
         if self.folder is None:
             return
         path = events.selection_path(self.folder, self.group)
-        command = events.extract_command(self.project, path)
+        python = STATE.settings.bryan_python or "python"
+        command = events.extract_command(self.project, path, python)
         with self.command_box:
             with ui.row().classes("w-full items-center gap-2 no-wrap"):
                 ui.code(command).classes("grow text-xs")
@@ -534,6 +536,50 @@ class _EventsView:
                           on_click=lambda: self._copy(command)) \
                     .props("flat dense round").mark("copy-command") \
                     .tooltip("Copy the command")
+                ui.button("Run", icon="play_arrow",
+                          on_click=lambda: self._run_extract(path)) \
+                    .props("dense no-caps").mark("run-extract") \
+                    .tooltip("Write the hydrographs, the rebuilt hyetographs and a plot "
+                             "per chosen event, beside the saved selection")
+            self.extract_box = ui.column().classes("w-full gap-2")
+
+    async def _run_extract(self, selection) -> None:
+        if not Path(selection).is_file():
+            ui.notify("Save the chosen events first", type="warning")
+            return
+        argv = events.extract_argv(self.project, selection,
+                                   STATE.settings.bryan_python or "python")
+        self.extract_box.clear()
+        with self.extract_box:
+            with ui.row().classes("items-center gap-2"):
+                ui.spinner()
+                ui.label("Rebuilding the storms and plotting the events - the storm "
+                         "data loads once per duration, so this takes a minute or two."
+                         ).classes("text-sm text-body")
+        result = await _off_thread(events.run_extract, argv,
+                                   self.project.config.project_folder)
+        if self.extract_box.is_deleted:
+            return
+        self.extract_box.clear()
+        with self.extract_box:
+            if result.ok:
+                ui.label(f"{len(result.plots)} plot(s) written beside the selection") \
+                    .classes("text-sm").mark("extract-done")
+            else:
+                severity_banner("block", "The extraction failed - the log is below.")
+            notes = [line.strip()[len("NOTE:"):].strip()
+                     for line in result.output.splitlines()
+                     if line.strip().startswith("NOTE:")]
+            for note in dict.fromkeys(notes):
+                if "does not match the run" in note or "hyetograph" in note.lower():
+                    severity_banner("warn", note)
+            with ui.row().classes("w-full gap-2"):
+                for plot in result.plots:
+                    with ui.column().classes("gap-0 w-[32rem]"):
+                        ui.image(plot).props("fit=contain").classes("w-full")
+                        ui.label(plot.name).classes("mono text-xs text-muted")
+            with ui.expansion("Log").classes("w-full"):
+                ui.code(result.output[-20000:] or "(no output)").classes("w-full text-xs")
 
     def _copy(self, command) -> None:
         """Onto the clipboard, which needs localhost or https - as the launcher is."""
