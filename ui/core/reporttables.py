@@ -71,6 +71,7 @@ DESIGN_FLOODS = "design_floods"
 FLOOD_LEVELS = "flood_levels"
 PEAK_AT_AEP = "peak_at_aep"
 ENSEMBLE_PEAK = "ensemble_peak"
+REPRESENTATIVE = "representative_events"
 
 AT_LEVEL = "level"
 AT_OWN = "own"
@@ -132,6 +133,16 @@ KINDS = {
         True,
         {"kind": ENSEMBLE_PEAK, "title": "", "first_column": "Climate Horizon",
          "pick": "highest", "flows_at": AT_LEVEL, "thousands": True, "sections": []}),
+    REPRESENTATIVE: Kind(
+        REPRESENTATIVE, "Representative events",
+        "The events chosen on the Events page, one section per group: each loading's "
+        "AEP, lake level, trigger, simulation and duration, with the PMF's event "
+        "(report Tables 35-36).",
+        True,
+        {"kind": REPRESENTATIVE, "title": "", "method": MCDF, "round_to": 10,
+         "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
+         "triggers": [{"label": "DCF", "level": 219.13}],
+         "sections": []}),     # [{heading, run, group, pmf: {run, group} | None}]
 }
 
 
@@ -547,11 +558,103 @@ def _ensemble_peak(study: Study, spec: dict) -> ReportTable:
     return table
 
 
+def selection_for(study: Study, run_name: str, group: str):
+    """The Events page's saved selection for a group: (path, targets)."""
+    from .events import load_targets, selection_path      # local: events is heavy
+    from .outputs import find_database
+
+    run = study.open_run(run_name)
+    rows = run.rows_in(group)
+    if not rows:
+        raise StudyError(f"{run_name} has no group {group!r}")
+    for index in rows:
+        database = find_database(run.frame.loc[index], run.project_folder)
+        if database is not None:
+            path = selection_path(database.parent, group)
+            if not path.is_file():
+                raise StudyError(f"{group}: no events chosen yet - pick them on the "
+                                 f"Events page and press Save ({path.name})")
+            targets, _ = load_targets(path)
+            return path, targets
+    raise StudyError(f"{group}: no results database on disk")
+
+
+def _event_duration(run, target) -> str:
+    """The duration of the run the event was taken from, '72h'."""
+    wanted = str(target.output_file or "").replace("\\", "/").rsplit("/", 1)[-1]
+    for index in run.frame.index:
+        row = run.frame.loc[index]
+        name = str(row.get("Output file") or "").replace("\\", "/").rsplit("/", 1)[-1]
+        if name and name == wanted:
+            duration = results.duration_of(row, name)
+            return f"{duration:g}h" if duration is not None else ""
+    return ""
+
+
+def _representative(study: Study, spec: dict) -> ReportTable:
+    table = ReportTable(header=["AEP\n(1 in Y)", "Lake Level (m AHD)", "Trigger",
+                                "Representative Event", "Critical duration"],
+                        align=["center"] * 5)
+    pmp_aep = spec.get("pmp_aep")
+    triggers = {round(float(item["level"]), 3): item.get("label", "")
+                for item in spec.get("triggers") or [] if _finite(item.get("level"))}
+    for section in spec.get("sections") or []:
+        if section.get("heading"):
+            table.section(section["heading"])
+        run_name, group = section.get("run", ""), section.get("group", "")
+        try:
+            _, targets = selection_for(study, run_name, group)
+            run = study.open_run(run_name)
+        except StudyError as exc:
+            table.problems.append(str(exc))
+            targets, run = [], None
+        curves = group_curves(study, run_name, group) if run is not None else None
+        rows = []
+        for target in targets:
+            if target.picked is None:
+                table.problems.append(f"{group}: no event picked for {target.label}")
+                continue
+            duration = _event_duration(run, target)
+            if target.kind == "level":
+                level = float(target.value)
+                aep, _, problem = aep_of_level(study, curves, level,
+                                               spec.get("method", MCDF))
+                if problem:
+                    table.problems.append(f"{group}: {level:.2f} m {problem}")
+                trigger = (target.comment or "").strip() or triggers.get(round(level, 3), "")
+                rows.append((aep if _finite(aep) else math.inf,
+                             [fmt_rounded_aep(aep, spec.get("round_to", 10)),
+                              fmt_level(level), trigger, str(target.picked), duration]))
+            else:
+                aep = float(target.value)
+                level = EVENTS.value_for_aep(curves.envelope("level"), aep)
+                label = (spec.get("pmp_label") or "PMPF"
+                         if _finite(pmp_aep) and aep == float(pmp_aep) else fmt_aep(aep))
+                rows.append((aep, [label, fmt_level(level), "", str(target.picked),
+                                   duration]))
+        pmf = section.get("pmf")
+        if pmf and pmf.get("group"):
+            try:
+                chosen = ensemble.pick(ensemble.load(study, pmf.get("run", ""),
+                                                     pmf["group"]), ensemble.HIGHEST)
+            except StudyError as exc:
+                table.problems.append(f"PMF: {exc}")
+                chosen = None
+            if chosen is not None and chosen.found:
+                rows.append((math.inf, [pmf.get("label") or "PMF", fmt_level(chosen.level),
+                                        "", str(chosen.event),
+                                        f"{chosen.duration:g}h"]))
+        for _, cells in sorted(rows, key=lambda item: item[0]):
+            table.add(cells)
+    return table
+
+
 BUILDERS = {
     DESIGN_FLOODS: _design_floods,
     FLOOD_LEVELS: _flood_levels,
     PEAK_AT_AEP: _peak_at_aep,
     ENSEMBLE_PEAK: _ensemble_peak,
+    REPRESENTATIVE: _representative,
 }
 
 

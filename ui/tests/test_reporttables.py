@@ -290,3 +290,63 @@ def test_a_pmf_row_without_an_adopted_aep_asks_for_one(study):
     spec = design_spec(pmf={"run": "E099 PMF", "group": PMF_GROUP})
     table = rt.build(study, spec)
     assert any("adopt one on the PMF page" in problem for problem in table.problems)
+
+
+# -- representative events (Tables 35-36) --------------------------------------
+
+def save_selection(study, targets):
+    from core import events
+
+    folder = study.folder / "runs" / "E099" / "sims_mc" / "results"
+    events.save_targets(events.selection_path(folder, GROUP),
+                        [events.Target.from_dict(target) for target in targets])
+
+
+def representative_spec(**overrides):
+    spec = rt.new_spec(rt.REPRESENTATIVE)
+    spec["triggers"] = [{"label": "DCF", "level": 219.13}]
+    spec["sections"] = [{"heading": "Near-Term", "run": "E099 RFSL", "group": GROUP,
+                         "pmf": {"run": "E099 PMF", "group": PMF_GROUP}}]
+    spec.update(overrides)
+    return spec
+
+
+def test_representative_events_come_from_the_saved_selection(study):
+    save_selection(study, [
+        {"kind": "level", "value": 219.13, "result_type": "level", "picked": 8096,
+         "output_file": "CLD_mc_36h_GWL1p3_RFSL"},
+        {"kind": "aep", "value": 100, "result_type": "level", "picked": 4980,
+         "output_file": "CLD_mc_72h_GWL1p3_RFSL"},
+        {"kind": "aep", "value": 1_900_000, "result_type": "level", "picked": 9728,
+         "output_file": "CLD_mc_36h_GWL1p3_RFSL"},
+        {"kind": "aep", "value": 1_000, "result_type": "level", "picked": None,
+         "output_file": "CLD_mc_36h_GWL1p3_RFSL"}])
+    table = rt.build(study, representative_spec())
+    cells = [row.cells for row in table.rows]
+    assert cells[0] == ["Near-Term"]
+    assert cells[1] == ["100", "216.80", "", "4980", "72h"]         # AEP order
+    assert cells[2][1:] == ["219.13", "DCF", "8096", "36h"]
+    assert cells[3] == ["PMPF", "221.00", "", "9728", "36h"]
+    assert cells[4] == ["PMF", "221.38", "", "2", "9h"]              # highest ensemble event
+    assert any("no event picked" in problem for problem in table.problems)
+
+
+def test_a_trigger_can_come_from_the_loading_s_own_comment(study):
+    save_selection(study, [{"kind": "level", "value": 219.50, "result_type": "level",
+                            "picked": 1, "comment": "Right embankment overtopping",
+                            "output_file": "CLD_mc_36h_GWL1p3_RFSL"}])
+    table = rt.build(study, representative_spec())
+    assert table.rows[1].cells[2] == "Right embankment overtopping"
+
+
+def test_a_group_without_a_saved_selection_says_where_to_make_one(study):
+    table = rt.build(study, representative_spec())
+    assert any("pick them on the Events page" in problem for problem in table.problems)
+
+
+def test_renaming_a_run_carries_representative_sections_and_pmf_rows(study):
+    study.put_table(representative_spec())
+    study.put_table(design_spec(pmf={"run": "E099 PMF", "group": PMF_GROUP}))
+    study.rename_run("E099 PMF", "E100 PMF")
+    runs = [source["run"] for table in study.tables for source in studies.table_sources(table)]
+    assert "E099 PMF" not in runs and runs.count("E100 PMF") == 2
