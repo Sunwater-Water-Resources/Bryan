@@ -72,6 +72,24 @@ The job is JSON; every key has a default (```JOB_DEFAULTS``` in ```lib/LakeLevel
 
 A ```plateau_tolerance``` of 0 fits no plateau; ```upper_join``` is ```free``` (a step up from the plateau is allowed) or ```fsl``` (continuous). A ```--png``` also writes ```<figure>.json``` beside it with the settings and fit statistics. ```--results``` is reused when it was written for the same job and the same input files, so drawing the figure a second time - ```--without-design``` for the record-only version - does not resample again. Run it with **Bryan's** interpreter: it needs scipy and matplotlib.
 
+## Lake record analyses and report figures
+
+The [run launcher's](ui.md) Lake record and Figures pages run four scripts with Bryan's interpreter. Each takes one JSON job file and nothing else, and the page leaves that job beside the outputs, so a run can be repeated from a console exactly as the page ran it:
+
+```bat
+python util\HomogeniseLakeLevels.py lake_record\homogenised\homogenise_job.json
+python util\AntecedentStorage.py lake_record\antecedent\antecedent_job.json
+python util\InflowRecord.py lake_record\inflow\inflow_job.json
+python util\ReportFigure.py figures\<name>.json
+```
+
+- ```HomogeniseLakeLevels.py``` re-routes the recorded lake levels through each target rating and writes ```trace.csv.gz```, ```daily.csv```, ```ams.csv``` and ```peaks.csv``` for each target (the job's keys are described in ```lib/homogenise/job.py```).
+- ```AntecedentStorage.py``` finds the storm behind each year's maximum and writes the antecedent storage table, the S-curve parameters and the ```lake_config_<basis>_<target>_01.json``` files (```lib/antecedent/job.py```).
+- ```InflowRecord.py``` writes the derived inflow as ```inflow_ams.csv```, ```inflow_intervals.csv.gz``` and event ```hydrographs/``` (the job is described at the top of the script).
+- ```ReportFigure.py``` only draws: its job already holds every series and label, as the Figures page previewed them.
+
+Each writes ```summary.json``` beside its outputs, and prints a line starting ```ERROR:``` and exits 1 when the job cannot be run. See [the Lake record](ui.md) section of the launcher's page for what each step does.
+
 ## Calibrating temporal pattern weights
 Use the ```CalibrateTpWeights.py``` script to calibrate temporal pattern probability weights so that the Monte Carlo ensemble satisfies the sub-burst AEP-neutrality condition - see [the sub-burst check](sub_burst_check.md) for the background. The script works entirely from the mcdf file (ideally from an unfiltered simulation run with ```Run models``` set to *storms only*): trial weights are evaluated by re-weighting the recorded realisations in the TPT, so no model reruns are needed. Patterns whose sub-bursts exceed the same-z IFD are progressively down-weighted until the weighted sub-burst frequency curves sit at or below the IFD. Outputs are the calibrated weights, the neutrality margins before and after calibration, and (if flow results are present in the mcdf) the weighted flood quantiles as a preview of the effect on the flood frequency curve. If the weights land on the floor without achieving neutrality, weighting alone is not enough for that simulation - consider the embedded burst filter, or review the offending patterns. For a production run, the calibrated weights file can be applied to the pattern sampling itself using the ```TP weights``` key in the [simulation list](sim_list.md). Note that the calibration is against **main-burst** sub-burst depths only - the pre-burst is not scanned, so weights that achieve neutrality say nothing about the pre-burst-inclusive storm. The only part of the script that should need editing is shown below:
 

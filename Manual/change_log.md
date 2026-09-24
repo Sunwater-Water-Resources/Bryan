@@ -266,3 +266,18 @@
 - A main division where **nothing** came back is taken as never exceeding, and now says so in the log with the share of the probability space it covers. That is right for a division of frequent rainfalls that could not have flooded; for one that could have, it understates the AEP, which is why it is reported rather than silent.
 - Measured against an external study while making this change: HARC's Fairbairn Dam design flood model (SUN00035, 700,000 realisations over 28 Monte Carlo sets, 24.98 % of runs excluded). With the old divisor Bryan's assigned AEPs sat 5-17 % below HARC's published `*_TPT.csv`; with the new one they agree to ~1e-4. The 16 most frequent main divisions of that study retain no runs at all, carrying 33 % of the probability space.
 - `tests/test_tpt_vectorised.py` gains four tests: the divisor, an empty division, the two paths still agreeing when runs are lost, and the no-exclusions case being unchanged.
+
+# 24 September 2026 -- Richard
+- **New: the run launcher's Report, PMF and Figures pages**, which replace the hand-filled result tables and ```PlotFrequencyCurves_v03.py```. The tables and figures are defined in a study file (```bryan_study.json```), which names each run and stores paths relative to itself. **Copy for Word** puts a table on the clipboard in the report style. Figure curve labels are set per figure and can be edited, and a figure can take curves from any run in the study.
+- **Levels are read off the critical duration's realisations (the mcdf method)**, after the critical duration is chosen from the envelope. On Callide, the E010 report's DCF and trigger AEPs had been read off the envelope. Table 1 gains DCF and PMF rows.
+- **The PMF page** takes the highest ensemble event as the PMF, and gives it a notional AEP from the GEV rainfall extrapolation and the rating.
+- **Report Tables 35-37**: representative events (built from the Events page's saved selections) and the frequent levels, with a durations filter.
+- **Fixed: the hyetograph was blank for runs with the pre-burst excluded.** The Events page's **Run** button now runs the extraction itself.
+- **New: the Lake record page**, which takes the dam's own lake level record through four steps:
+  - catchment rainfall from the AWAP / AWRA-L grids (the study keeps the series, and the grids folder is each user's own setting);
+  - homogenisation onto target ratings (```lib/homogenise```, copied from callide-fsl-reinstate and reproducing it byte for byte);
+  - antecedent storage and the lake configs (```lib/antecedent```, reproducing Callide's four delivered configs byte for byte);
+  - the inflow record: annual maximum peak inflow and burst volumes, event hydrographs for calibration, and any stretch of the record plotted or extracted as CSV on its own intervals or a regular step.
+- The inflow record keeps both the corrected and uncorrected inflow on recessions, and flags where the release is uncertain. On Callide it agrees with the independent reverse routing in callide-fsl-reinstate to a median of 0.00%.
+- A study file briefly locked by another program (OneDrive, antivirus) is now retried before a save fails.
+
