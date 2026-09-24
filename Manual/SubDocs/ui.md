@@ -364,6 +364,37 @@ The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v
 
 **Export PNG** runs ```util/ReportFigure.py``` with Bryan's interpreter and writes ```<name>.png``` to the figure's folder (```figures/``` beside the study file by default) at 6.3 x 4.0 in and 300 dpi, the size and style of the figures already in the reports, with ```<name>.json``` beside it holding every series and label it was drawn from. The preview is drawn from the same data, so what is checked on the page is what is in the PNG. **Export all** redraws every figure - after a re-run, the whole set in one go.
 
+## Lake record
+
+The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other. Everything is kept in the study file (open it on the Report page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
+
+### 1. Catchment rainfall
+
+The daily catchment average of the AWAP / AWRA-L grids. Give the **catchment shapefile** (a field and value pick one catchment out of a regions file; blank takes every polygon) and the **folder of daily grids** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
+
+**Area-weighted** counts each grid cell by the share of it the catchment covers, and by the cell's own area, which shrinks towards the pole. **Cell centres** counts every cell whose centre is in the catchment equally - a plain mask average, as the yearly ```Average_<year>_<mask>.csv``` files made by the mask-and-average tool are. A cell with no value on a day drops out of that day and the rest are reweighted.
+
+The dates are the grids' own: a day D is the 24 hours to 9 am on D, which is what the antecedent search expects. The series is written as ```date,rain_mm``` with what produced it in ```#``` lines above.
+
+This step runs in the launcher itself and needs ```netCDF4```, ```pyshp``` and ```pyproj``` in its environment (```ui/requirements-ui.txt```).
+
+### 2. Homogenisation
+
+The recorded lake levels re-routed through each **target rating**, so that a record made under several spillway configurations becomes one population. The net inflow is derived by closing the water balance backwards against the rating **in force at each step**, from the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating), then routed through the target. Its inputs:
+
+- **Gauge exports** (WMIP or Hydstra), in the order the gauges operated; each owns the record from its first reading to the next one's.
+- An optional **overlay gauge** that replaces the chain wherever it reads below a level, its last value held until the chain climbs clear by the reconnect margin - Callide's intake gauge, reading the working storage below the sediment bar that partitions the pool at 200.90 m.
+- The **storage table** (```.els```: ```EL, A, V```), the **SILO evaporation** and the monthly **pan factors**.
+- **Target ratings**: a URBS ```.sq``` (storage above full supply against outflow, tied to the FSL its header declares - never re-based to another) or a ```level,flow``` csv starting at the FSL, each with a name and its FSL.
+
+The record is routed at the gauge's own resolution, gaps longer than the longest step filled, and clipped to where the evaporation and the register both cover it; the page says where. The chart is each water year's recorded maximum against the homogenised ones.
+
+### 3. Antecedent storage
+
+For each water year's homogenised maximum, the storm that produced it: the rarest burst of 1-5 days in the **search window** before the peak, scored against the **IFD** (```duration_h``` against ```1 in X``` columns, with a ```1 in 2``` column) after the **restriction factors** that correct a fixed 9 am day to an unrestricted one. A year qualifies when a burst exceeds the **significance** fraction of its 1 in 2 depth. The homogenised lake volume is read at 9 am where the burst started (**burst**) and, walking back through days wetter than the **pre-burst edge**, where the pre-burst started (**storm**). Each series gets a Cunnane plotting position and a logistic S-curve in the standard normal variate, with the floor from the data (rounded) and the ceiling at the full supply volume, and is written as a sigmoid lake configuration - ```burst``` for a design storm simulated without its pre-burst, ```storm``` for one with it. Point the sims list's ```Lake config``` at them.
+
+Run on Callide's inputs this reproduces the four lake configurations delivered for the design floods, byte for byte.
+
 ## Things worth knowing
 
 ### Formulas without cached values

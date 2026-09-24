@@ -248,6 +248,16 @@ draws the figure in the style of the study plots (6.3 x 4 in, 300 dpi), leaving
 the job it was drawn from beside it as `<name>.json`. Duplicate a figure and swap
 a curve for a sensitivity figure.
 
+**Lake record** — the homogenised lake level record and the antecedent storage
+the Monte Carlo runs sample, in three steps kept in the study file:
+**catchment rainfall** from a catchment shapefile and the folder of daily AWAP /
+AWRA-L netCDF grids (area-weighted, made in the launcher); **homogenisation** of
+the recorded levels onto each target rating (`util/HomogeniseLakeLevels.py`);
+and **antecedent storage** - the storm behind each year's maximum, the lake
+volume when it started, the S-curve and the `lake_config.json` files
+(`util/AntecedentStorage.py`). The two analyses run with Bryan's interpreter and
+leave their job files beside their outputs.
+
 **Edit** — change cells and save to a **new** file. The master workbook is
 never written; see below.
 
