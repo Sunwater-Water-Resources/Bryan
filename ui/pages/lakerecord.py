@@ -25,9 +25,10 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
+import pandas as pd
 from nicegui import app, run, ui
 
-from core import awap, lakerecord
+from core import awap, lakerecord, wordtable
 from layout import page_frame, severity_banner
 from state import STATE
 from theme import house_echart
@@ -592,9 +593,11 @@ class _LakeRecordView:
                                for name, want in (("complete year", True),
                                                   ("part year", False))]}) \
                     .classes("w-full h-64").mark("inflow-ams-chart")
+                self._ams_actions(summary, ams)
                 self._depth_check(ams, summary.get("settings", {}))
             events = summary.get("hydrographs") or []
             if events:
+                ui.label("Event hydrographs").classes("text-sm font-bold pt-2")
                 names = {index: f"{item['name']} ({item['peak_m3s']:,.0f} m3/s)"
                          for index, item in enumerate(events)}
                 ui.select(names, value=0, label="Hydrograph",
@@ -602,6 +605,113 @@ class _LakeRecordView:
                     .classes("w-96").props("dense").mark("inflow-hydrograph-select")
                 holder = ui.column().classes("w-full")
                 self._draw_hydrograph(holder, events[0])
+            if lakerecord.intervals_path(summary) and lakerecord.intervals_path(summary).is_file():
+                self._record_window(summary, ams)
+
+    def _ams_actions(self, summary, ams) -> None:
+        path = Path(summary["ams"])
+        durations = summary.get("settings", {}).get("durations_h") or []
+        with ui.row().classes("items-center gap-2"):
+            ui.button("Download AMS CSV", icon="download",
+                      on_click=lambda: ui.download.file(path, path.name)) \
+                .props("outline dense no-caps").mark("inflow-ams-download")
+            ui.button("Copy AMS for Word", icon="content_copy",
+                      on_click=lambda: self._copy_ams(ams, durations, rich=True)) \
+                .props("outline dense no-caps").mark("inflow-ams-copy")
+            ui.button("Copy as text", on_click=lambda: self._copy_ams(ams, durations, rich=False)) \
+                .props("flat dense no-caps")
+            ui.label(f"Written to {path}").classes("text-xs text-muted")
+
+    async def _copy_ams(self, ams, durations, *, rich: bool) -> None:
+        table = lakerecord.ams_table(ams, durations)
+        text = wordtable.to_text(table)
+        if not rich:
+            ui.clipboard.write(text)
+            ui.notify("Copied as text")
+            return
+        fragment = wordtable.to_html(table, self.study.extra.get("word"))
+        outcome = await ui.run_javascript(
+            wordtable.clipboard_script(wordtable.clipboard_document(fragment), text),
+            timeout=5.0)
+        if outcome == "html":
+            ui.notify("Copied - paste into Word")
+        elif outcome == "text":
+            ui.notify("This browser would only take text; copied as text", type="warning")
+        else:
+            ui.notify(f"Could not copy: {outcome}", type="negative")
+
+    # the record between two dates
+
+    def _record_window(self, summary, ams) -> None:
+        i = self.section["inflow"]
+        window = i.setdefault("window", {"start": "", "end": "", "step": ""})
+        if not window.get("start") and ams is not None and len(ams):
+            peak = pd.Timestamp(ams.loc[ams["Peak_inflow_m3s"].idxmax(), "Peak_time"])
+            window.update(start=f"{(peak - pd.Timedelta(days=3)).floor('D'):%Y-%m-%d}",
+                          end=f"{(peak + pd.Timedelta(days=7)).ceil('D'):%Y-%m-%d}")
+        record = summary.get("record", {})
+        ui.label("The record between two dates").classes("text-sm font-bold pt-2")
+        ui.label(f"Anywhere from {record.get('start')} to {record.get('end')}. Blank time step: "
+                 "the record's own intervals, with the inflow averaged as the peaks are. A "
+                 "time step (15min, 1h, 1D): the mean over each step, stamped at its end as a "
+                 "model hydrograph is, so each step keeps its volume.") \
+            .classes("text-xs text-muted")
+        with ui.row().classes("items-end gap-2"):
+            start = ui.input("Start", value=window["start"]).classes("w-44").props("dense") \
+                .mark("window-start")
+            end = ui.input("End", value=window["end"]).classes("w-44").props("dense") \
+                .mark("window-end")
+            step = ui.input("Time step (blank: as recorded)", value=window.get("step", "")) \
+                .classes("w-52").props("dense").mark("window-step")
+            ui.button("Plot", icon="show_chart",
+                      on_click=lambda: self._window(summary, start.value, end.value, step.value,
+                                                    holder, save=False)) \
+                .props("dense").mark("window-plot")
+            ui.button("Save CSV", icon="download",
+                      on_click=lambda: self._window(summary, start.value, end.value, step.value,
+                                                    holder, save=True)) \
+                .props("outline dense").mark("window-save")
+        holder = ui.column().classes("w-full")
+
+    async def _window(self, summary, start, end, step, holder, *, save: bool) -> None:
+        try:
+            first, last, delta = lakerecord.parse_window(start, end, step)
+        except ValueError as exc:
+            ui.notify(str(exc), type="warning")
+            return
+        self._set(self.section["inflow"], "window",
+                  {"start": str(start).strip(), "end": str(end).strip(),
+                   "step": str(step or "").strip()})
+        path = lakerecord.intervals_path(summary)
+
+        def work():
+            table = lakerecord.record_window(lakerecord.read_record(path), first, last, delta)
+            written = None
+            if save and not table.empty:
+                written = lakerecord.write_window(
+                    table, lakerecord.window_file(path.parent, first, last, delta))
+            return table, written
+
+        try:
+            table, written = await _off_thread(work)
+        except OSError as exc:
+            ui.notify(f"Could not write the CSV: {exc}", type="negative")
+            return
+        holder.clear()
+        if table.empty:
+            ui.notify("The record has nothing between those dates", type="warning")
+            return
+        with holder:
+            volume = table["Volume_ML"].sum()
+            ui.label(f"{len(table):,} rows, {table.index[0]:%d %b %Y %H:%M} to "
+                     f"{table.index[-1]:%d %b %Y %H:%M}; peak {table['Inflow_m3s'].max():,.0f} "
+                     f"m3/s, inflow volume {volume:,.0f} ML"
+                     + (f"; written to {written}" if written else "")) \
+                .classes("text-xs text-muted").mark("window-note")
+            self._flow_chart(table, "window-chart")
+            if written:
+                ui.download.file(written, written.name)
+                ui.notify(f"Wrote {written}")
 
     def _depth_check(self, ams, settings) -> None:
         """Runoff depth beside the catchment rain: the one check the inflow did not make."""
@@ -634,39 +744,47 @@ class _LakeRecordView:
         frame = lakerecord.hydrograph(item)
         if frame is None or frame.empty:
             return
-        step = max(1, len(frame) // 5000)
-        frame = frame.iloc[::step]
-        stamps = [f"{t:%Y-%m-%d %H:%M:%S}" for t in frame.index]
-        uncertain = frame["Release_uncertain"].astype(str).str.lower() == "true"
-
-        def pairs(values, keep=None):
-            return [[t, None if (v != v or (keep is not None and not k)) else round(float(v), 2)]
-                    for t, v, k in zip(stamps, values, keep if keep is not None else stamps)]
-
-        inflow = frame.get("Inflow_smoothed_m3s", frame["Inflow_m3s"])
-        share = float(uncertain.mean())
+        share = float((frame["Release_uncertain"].astype(str).str.lower() == "true").mean())
+        if "Inflow_smoothed_m3s" in frame:
+            frame = frame.assign(Inflow_m3s=frame["Inflow_smoothed_m3s"])
         with holder:
             ui.label(f"{Path(item['file']).name}: {item['start']} to {item['end']}; the release "
                      f"is uncertain over {share:.0%} of it"
                      ).classes("text-xs text-muted").mark("inflow-hydrograph-note")
-            house_echart({
-                "tooltip": {"trigger": "axis"}, "legend": {"top": 0},
-                "grid": {"left": 60, "right": 60, "top": 30, "bottom": 30},
-                "xAxis": {"type": "time"},
-                "yAxis": [{"type": "value", "name": "m3/s", "nameLocation": "middle",
-                           "nameGap": 45},
-                          {"type": "value", "name": "Level (m AHD)", "scale": True,
-                           "nameLocation": "middle", "nameGap": 45, "splitLine": {"show": False}}],
-                "series": [
-                    {"type": "line", "name": "inflow", "symbol": "none", "data": pairs(inflow)},
-                    {"type": "line", "name": "inflow, uncorrected where the release is uncertain",
-                     "symbol": "none", "lineStyle": {"type": "dashed"},
-                     "data": pairs(frame["Inflow_uncorrected_m3s"], uncertain.tolist())},
-                    {"type": "line", "name": "release", "symbol": "none",
-                     "data": pairs(frame["Release_m3s"])},
-                    {"type": "line", "name": "level", "symbol": "none", "yAxisIndex": 1,
-                     "lineStyle": {"width": 1}, "data": pairs(frame["Level_m"])},
-                ]}).classes("w-full h-72").mark("inflow-hydrograph")
+            self._flow_chart(frame, "inflow-hydrograph")
+
+    def _flow_chart(self, table, mark) -> None:
+        """Inflow, release and level; the uncorrected inflow dashed where it differs."""
+        points = lakerecord.chart_points(table)
+        stamps = [f"{t:%Y-%m-%d %H:%M:%S}" for t in points.index]
+        uncertain = (points["Uncertain"].astype(bool).tolist() if "Uncertain" in points
+                     else [False] * len(points))
+
+        def pairs(values, keep=None):
+            keep = keep or [True] * len(stamps)
+            return [[t, None if (v != v or not k) else round(float(v), 2)]
+                    for t, v, k in zip(stamps, values, keep)]
+
+        house_echart({
+            "tooltip": {"trigger": "axis"}, "legend": {"top": 0},
+            "grid": {"left": 60, "right": 60, "top": 30, "bottom": 60},
+            "xAxis": {"type": "time"},
+            "yAxis": [{"type": "value", "name": "m3/s", "nameLocation": "middle",
+                       "nameGap": 45},
+                      {"type": "value", "name": "Level (m AHD)", "scale": True,
+                       "nameLocation": "middle", "nameGap": 45, "splitLine": {"show": False}}],
+            "dataZoom": [{"type": "inside"}, {"type": "slider", "height": 18, "bottom": 8}],
+            "series": [
+                {"type": "line", "name": "inflow", "symbol": "none",
+                 "data": pairs(points["Inflow_m3s"])},
+                {"type": "line", "name": "inflow, uncorrected where the release is uncertain",
+                 "symbol": "none", "lineStyle": {"type": "dashed"},
+                 "data": pairs(points["Inflow_uncorrected_m3s"], uncertain)},
+                {"type": "line", "name": "release", "symbol": "none",
+                 "data": pairs(points["Release_m3s"])},
+                {"type": "line", "name": "level", "symbol": "none", "yAxisIndex": 1,
+                 "lineStyle": {"width": 1}, "data": pairs(points["Level_m"])},
+            ]}).classes("w-full h-80").mark(mark)
 
     def _failed(self, box, result) -> None:
         box.clear()

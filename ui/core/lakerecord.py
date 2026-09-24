@@ -37,11 +37,13 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .bryan import BRYAN_ROOT
 from .paths import atomic_write_json, read_json
 from .study import Study, portable, resolve
+from .wordtable import ReportTable
 
 KEY = "lake_record"
 HOMOGENISE_SCRIPT = BRYAN_ROOT / "util" / "HomogeniseLakeLevels.py"
@@ -70,7 +72,8 @@ DEFAULTS = {
     "inflow": {"evaporation": False, "recession_correction": True, "smoothing": "1h",
                "durations_h": [24, 36, 48, 72], "catchment_km2": None, "rainfall": "",
                "top_events": 10, "before_days": 3, "after_days": 7, "events": [],
-               "out": "lake_record/inflow"},
+               "out": "lake_record/inflow",
+               "window": {"start": "", "end": "", "step": ""}},
 }
 
 
@@ -307,7 +310,171 @@ def hydrograph(item: dict) -> pd.DataFrame | None:
     path = Path(item.get("file") or "")
     if not item.get("file") or not path.is_file():
         return None
-    return pd.read_csv(path, index_col=0, parse_dates=True)
+    frame = pd.read_csv(path, index_col=0)
+    frame.index = pd.DatetimeIndex(pd.to_datetime(frame.index, format="ISO8601"),
+                                   name="Timestamp")
+    return frame
+
+
+def ams_table(ams: pd.DataFrame, durations) -> ReportTable:
+    """The inflow AMS as a report table: peak, and each burst's volume, depth and rain."""
+    header = ["Water year", "Peak inflow (m3/s)", "Peak time"]
+    columns = []
+    for hours in durations:
+        for column, label in ((f"Volume_{hours}h_ML", f"{hours} h volume (ML)"),
+                              (f"Depth_{hours}h_mm", f"{hours} h runoff (mm)"),
+                              (f"Rain_{hours}h_mm", f"{hours} h rain (mm)")):
+            if column in ams:
+                columns.append((column, 0 if column.startswith("Volume") else 1))
+                header.append(label)
+    table = ReportTable(header=header, align=["left", "right", "left"])
+    complete = ams["Complete"].astype(str).str.lower() == "true" if "Complete" in ams else None
+    for index, row in ams.iterrows():
+        cells = [row["Period"], f"{row['Peak_inflow_m3s']:,.0f}",
+                 f"{pd.Timestamp(row['Peak_time']):%d %b %Y %H:%M}"]
+        cells += ["" if pd.isna(row[column]) else f"{row[column]:,.{places}f}"
+                  for column, places in columns]
+        table.add(cells)
+    if complete is not None and not complete.all():
+        table.footnotes.append("Part years (less than 90% of the year recorded): "
+                               + ", ".join(map(str, ams.loc[~complete, "Period"])) + ".")
+    return table
+
+
+# -- the inflow record between two dates ------------------------------------------------
+
+_RECORD_CACHE: dict = {}
+
+
+def intervals_path(summary: dict) -> Path | None:
+    if summary.get("intervals"):
+        return Path(summary["intervals"])
+    return Path(summary["ams"]).parent / "inflow_intervals.csv.gz" if summary.get("ams") else None
+
+
+def read_record(path: Path) -> pd.DataFrame:
+    """Every interval of the inflow record, kept while the file is unchanged."""
+    path = Path(path)
+    stamp = path.stat().st_mtime_ns
+    cached = _RECORD_CACHE.get(path)
+    if cached is None or cached[0] != stamp:
+        frame = pd.read_csv(path, index_col=0)
+        # midpoints of odd intervals carry fractional seconds, so the formats are mixed
+        frame.index = pd.DatetimeIndex(pd.to_datetime(frame.index, format="ISO8601"),
+                                       name="Timestamp")
+        frame["Interval_start"] = pd.to_datetime(frame["Interval_start"], format="ISO8601")
+        _RECORD_CACHE.clear()
+        _RECORD_CACHE[path] = (stamp, frame)
+    return _RECORD_CACHE[path][1]
+
+
+def parse_window(start, end, step="") -> tuple:
+    """(start, end, step) as timestamps and a timedelta (None for native), or ValueError."""
+    try:
+        start, end = pd.Timestamp(str(start).strip()), pd.Timestamp(str(end).strip())
+    except (ValueError, TypeError) as exc:
+        raise ValueError("give the start and end as dates, e.g. 2013-01-20 or "
+                         "2013-01-20 09:00") from exc
+    if end <= start:
+        raise ValueError("the end is not after the start")
+    step = str(step or "").strip()
+    if not step:
+        return start, end, None
+    try:
+        delta = pd.Timedelta(step)
+    except ValueError as exc:
+        raise ValueError(f"'{step}' is not a time step - e.g. 15min, 1h, 1D") from exc
+    if delta <= pd.Timedelta(0):
+        raise ValueError("the time step must be positive")
+    if (end - start) / delta > 2_000_000:
+        raise ValueError("that time step gives more than two million rows")
+    return start, end, delta
+
+
+def record_window(frame: pd.DataFrame, start, end, step=None) -> pd.DataFrame:
+    """The record between two times: its own intervals, or means over a regular step.
+
+    Native, each row is one interval of the record stamped at its midpoint. On a
+    regular step, each row is the step *ending* at its time stamp (as a model's
+    hydrograph is), and every flow is the exact mean over the step - the change in
+    the running volume across it - so the step's volume is kept whatever the gauge
+    did inside it. The level is read at the stamp; ``Release_uncertain`` becomes the
+    share of the step the recession correction touched.
+    """
+    if step is None:
+        part = frame.loc[start:end]
+        out = pd.DataFrame({
+            "Inflow_m3s": part["Inflow_m3s"], "Inflow_native_m3s": part["Inflow_native_m3s"],
+            "Inflow_uncorrected_m3s": part["Inflow_uncorrected_m3s"],
+            "Release_m3s": part["Release_m3s"], "Level_m": part["Level_end"],
+            "Volume_ML": part["Volume_ML"], "Release_uncertain": part["Release_uncertain"],
+            "Interpolated": part["Interpolated"], "dt_s": part["dt_s"]})
+        out.index.name = "Timestamp"
+        return out
+
+    starts = pd.DatetimeIndex(frame["Interval_start"])
+    dt = frame["dt_s"].to_numpy(dtype=float)
+    ends = starts + pd.to_timedelta(dt, unit="s")
+    uncertain = frame["Release_uncertain"].astype(str).str.lower().eq("true").to_numpy()
+    running = {
+        "Inflow_m3s": frame["Volume_ML"].to_numpy(dtype=float) * 1000.0,
+        "Inflow_uncorrected_m3s": frame["Inflow_uncorrected_m3s"].to_numpy(dtype=float) * dt,
+        "Release_m3s": frame["Release_m3s"].to_numpy(dtype=float) * dt,
+        "Release_uncertain": uncertain * dt,
+    }
+    origin = starts[0]
+    knots = np.r_[0.0, (ends - origin).total_seconds().to_numpy()]
+    first = max(start, starts[0])
+    grid = pd.date_range(first.ceil(step), min(end, ends[-1]), freq=step)
+    if len(grid) < 2:
+        return pd.DataFrame()
+    at = (grid - origin).total_seconds().to_numpy()
+    seconds = np.diff(at)
+    out = pd.DataFrame(index=pd.DatetimeIndex(grid[1:], name="Timestamp"))
+    for column, amount in running.items():
+        total = np.interp(at, knots, np.r_[0.0, np.cumsum(amount)])
+        out[column] = np.diff(total) / seconds
+    out["Volume_ML"] = out["Inflow_m3s"] * seconds / 1000.0
+    out["Level_m"] = np.interp(at[1:], knots[1:], frame["Level_end"].to_numpy(dtype=float))
+    out = out.rename(columns={"Release_uncertain": "Release_uncertain_share"})
+    return out[["Inflow_m3s", "Inflow_uncorrected_m3s", "Release_m3s", "Level_m", "Volume_ML",
+                "Release_uncertain_share"]]
+
+
+def window_file(out_folder: Path, start, end, step=None) -> Path:
+    tail = ""
+    if step is not None:
+        seconds = int(pd.Timedelta(step).total_seconds())
+        tail = f"_{seconds // 3600}h" if seconds % 3600 == 0 else f"_{seconds // 60}min"
+    return (Path(out_folder) / "extracts"
+            / f"inflow_{pd.Timestamp(start):%Y%m%d%H%M}_{pd.Timestamp(end):%Y%m%d%H%M}{tail}.csv")
+
+
+def write_window(table: pd.DataFrame, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(path, float_format="%.4f", date_format="%Y-%m-%d %H:%M:%S")
+    return path
+
+
+def chart_points(table: pd.DataFrame, bins: int = 3000) -> pd.DataFrame:
+    """At most ``bins`` rows for a chart: each flow the largest in its bin, so a long
+    window still shows every peak; the level its mean. ``Uncertain`` (bool) is where
+    the recession correction touched the release."""
+    table = table.copy()
+    if "Release_uncertain_share" in table:
+        table["Uncertain"] = table["Release_uncertain_share"] > 0
+    elif "Release_uncertain" in table:
+        table["Uncertain"] = table["Release_uncertain"].astype(str).str.lower() == "true"
+    if len(table) <= bins:
+        return table
+    labels = np.arange(len(table)) * bins // len(table)
+    grouped = table.groupby(labels)
+    flows = [c for c in ("Inflow_m3s", "Inflow_uncorrected_m3s", "Release_m3s", "Uncertain")
+             if c in table]
+    out = grouped[flows].max()
+    out["Level_m"] = grouped["Level_m"].mean()
+    out.index = pd.DatetimeIndex(pd.Series(table.index).groupby(labels).min().to_numpy())
+    return out
 
 
 def standard_normal(p: float) -> float:

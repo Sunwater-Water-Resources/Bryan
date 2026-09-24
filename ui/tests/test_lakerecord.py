@@ -239,3 +239,111 @@ async def test_the_page_draws_the_last_inflow_record_and_its_hydrographs(user, o
     await user.should_see(marker="inflow-depth-chart")
     await user.should_see(marker="inflow-hydrograph")
     await user.should_see("the release is uncertain over 25% of it")
+
+
+# -- the inflow record between two dates -------------------------------------------------
+
+def intervals_file(folder, rates=(0, 0, 100, 300, 200, 50, 0, 0), step_min=30):
+    """An ``inflow_intervals.csv.gz`` as InflowRecord writes it: rows at midpoints."""
+    folder.mkdir(parents=True, exist_ok=True)
+    dt = step_min * 60.0
+    starts = pd.date_range("2013-01-25", periods=len(rates), freq=f"{step_min}min")
+    rates = pd.Series(rates, dtype=float).to_numpy()
+    frame = pd.DataFrame({
+        "Interval_start": starts, "dt_s": dt, "Volume_ML": rates * dt / 1000.0,
+        "Inflow_native_m3s": rates, "Inflow_uncorrected_m3s": rates + 5.0,
+        "Release_m3s": rates / 2.0, "Level_end": 215.0 + rates / 1000.0,
+        "Interpolated": False, "Release_uncertain": [False] * (len(rates) - 2) + [True, True],
+        "Inflow_m3s": rates}, index=pd.Index(starts + pd.Timedelta(seconds=dt / 2),
+                                             name="Timestamp"))
+    path = folder / "inflow_intervals.csv.gz"
+    frame.to_csv(path, float_format="%.4f")
+    return path
+
+
+def test_a_window_on_a_regular_step_keeps_every_step_s_volume(tmp_path):
+    frame = lakerecord.read_record(intervals_file(tmp_path))
+    start, end, step = lakerecord.parse_window("2013-01-25", "2013-01-25 04:00", "1h")
+    hourly = lakerecord.record_window(frame, start, end, step)
+    assert list(hourly.index.hour) == [1, 2, 3, 4]                     # stamped at the step's end
+    assert hourly["Inflow_m3s"].tolist() == pytest.approx([0.0, 200.0, 125.0, 0.0])
+    assert hourly["Volume_ML"].sum() == pytest.approx(frame["Volume_ML"].sum())
+    assert hourly["Inflow_uncorrected_m3s"].iloc[0] == pytest.approx(5.0)
+    assert hourly["Release_uncertain_share"].tolist() == pytest.approx([0, 0, 0, 1.0])
+    native = lakerecord.record_window(frame, start, pd.Timestamp("2013-01-25 01:30"), None)
+    assert len(native) == 3 and "Release_uncertain" in native
+
+
+def test_a_window_is_refused_in_words_before_anything_is_read():
+    for start, end, step, words in (("2013-02-01", "2013-01-01", "", "not after"),
+                                     ("soon", "2013-01-01", "", "as dates"),
+                                     ("2013-01-01", "2013-02-01", "fortnightly", "time step"),
+                                     ("1900-01-01", "2020-01-01", "1s", "two million")):
+        with pytest.raises(ValueError, match=words):
+            lakerecord.parse_window(start, end, step)
+
+
+def test_a_long_window_is_charted_by_bins_that_keep_every_peak():
+    stamps = pd.date_range("2000-01-01", periods=10_000, freq="1h")
+    table = pd.DataFrame({"Inflow_m3s": 1.0, "Inflow_uncorrected_m3s": 1.0, "Release_m3s": 0.0,
+                          "Level_m": 215.0, "Release_uncertain": False}, index=stamps)
+    table.iloc[4321, 0] = 999.0
+    points = lakerecord.chart_points(table, bins=500)
+    assert len(points) == 500 and points["Inflow_m3s"].max() == 999.0
+    assert not points["Uncertain"].any()
+
+
+def test_the_window_file_names_the_window_and_the_step(tmp_path):
+    start, end = pd.Timestamp("2015-02-18"), pd.Timestamp("2015-03-05 12:00")
+    assert lakerecord.window_file(tmp_path, start, end, pd.Timedelta("1h")).name == \
+        "inflow_201502180000_201503051200_1h.csv"
+    assert lakerecord.window_file(tmp_path, start, end, pd.Timedelta("15min")).name == \
+        "inflow_201502180000_201503051200_15min.csv"
+    assert lakerecord.window_file(tmp_path, start, end).parent.name == "extracts"
+
+
+def test_the_inflow_ams_copies_as_a_table_with_its_part_years_footnoted():
+    ams = pd.DataFrame({"Period": ["2012-13", "2025-26"], "Peak_inflow_m3s": [1818.2, 243.0],
+                        "Peak_time": ["2013-01-26 13:07", "2026-03-10 00:15"],
+                        "Complete": [True, False], "Volume_72h_ML": [119495.2, 13863.0],
+                        "Depth_72h_mm": [230.24, 26.7], "Rain_72h_mm": [563.4, float("nan")]})
+    table = lakerecord.ams_table(ams, [72])
+    assert table.header == ["Water year", "Peak inflow (m3/s)", "Peak time",
+                            "72 h volume (ML)", "72 h runoff (mm)", "72 h rain (mm)"]
+    assert table.rows[0].cells == ["2012-13", "1,818", "26 Jan 2013 13:07", "119,495", "230.2",
+                                   "563.4"]
+    assert table.rows[1].cells[-1] == ""
+    assert table.footnotes == ["Part years (less than 90% of the year recorded): 2025-26."]
+
+
+@pytest.mark.asyncio
+async def test_the_record_between_two_dates_is_plotted_and_saved(user, opened, monkeypatch):
+    out = opened.folder / "lake_record" / "inflow"
+    intervals = intervals_file(out)
+    pd.DataFrame({"Period": ["2012-13"], "Peak_inflow_m3s": [300.0],
+                  "Peak_time": ["2013-01-25 01:45"], "Complete": [True]}) \
+        .to_csv(out / "inflow_ams.csv", index=False)
+    (out / "summary.json").write_text(json.dumps({
+        "record": {"start": "2013-01-25 00:15", "end": "2013-01-25 03:45"}, "notes": [],
+        "years": 1, "complete_years": 1, "settings": {"durations_h": [24]},
+        "ams": str(out / "inflow_ams.csv"), "intervals": str(intervals),
+        "hydrographs": []}), encoding="utf-8")
+    await user.open("/lake-record")
+    downloads = []           # the simulation's own download fetches a path as a URL
+    from nicegui import ui
+    monkeypatch.setattr(ui.download, "file", lambda path, name=None: downloads.append(path))
+    await user.should_see(marker="inflow-ams-download")
+    user.find(marker="window-start").clear().type("2013-01-25")
+    user.find(marker="window-end").clear().type("2013-01-25 04:00")
+    user.find(marker="window-step").clear().type("1h")
+    user.find(marker="window-plot").click()
+    await user.should_see(marker="window-chart")
+    await user.should_see("4 rows")
+    user.find(marker="window-save").click()
+    await user.should_see("written to")
+    written = out / "extracts" / "inflow_201301250000_201301250400_1h.csv"
+    assert written.is_file() and downloads == [written]
+    saved = pd.read_csv(written, index_col=0)
+    assert saved["Inflow_m3s"].round(3).tolist() == [0.0, 200.0, 125.0, 0.0]
+    stored = lakerecord.settings(studies.load_study(opened.path))["inflow"]["window"]
+    assert stored == {"start": "2013-01-25", "end": "2013-01-25 04:00", "step": "1h"}
