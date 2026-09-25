@@ -33,14 +33,13 @@ import copy
 import json
 import math
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from . import dam as dams
+from . import dam as dams, processes
 from .bryan import BRYAN_ROOT
 from .paths import atomic_write_json, read_json
 from .study import Study, portable, resolve
@@ -298,53 +297,49 @@ class RunResult:
     returncode: int
     output: str
     summary: dict
+    cancelled: bool = False
 
     @property
     def ok(self) -> bool:
         return self.returncode == 0 and bool(self.summary)
 
 
-def run_script(script: Path, job: dict, job_path: Path, python) -> RunResult:
-    """Write the job, run the script on it, read its summary. Blocking."""
+def run_script(script: Path, job: dict, job_path: Path, python, cancel=None) -> RunResult:
+    """Write the job, run the script on it, read its summary. Blocking; ``cancel``
+    (a threading.Event) stops it."""
     atomic_write_json(job_path, job)
     environment = dict(os.environ)
     environment.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        finished = subprocess.run([str(python), "-u", str(script), str(job_path)],
-                                  capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
-                                  env=environment, stdin=subprocess.DEVNULL,
-                                  cwd=str(job_path.parent))
-    except subprocess.TimeoutExpired:
-        return RunResult(1, f"timed out after {TIMEOUT_SECONDS} s", {})
-    except OSError as exc:
-        return RunResult(1, f"could not start {script.name}: {exc}", {})
-    output = (finished.stdout or "") + (finished.stderr or "")
+    finished = processes.run([python, "-u", script, job_path], cwd=job_path.parent,
+                             env=environment, timeout=TIMEOUT_SECONDS, cancel=cancel)
     out_folder = Path(job.get("out") or job_path.parent)
     summary = read_json(out_folder / "summary.json", default={}) if finished.returncode == 0 else {}
-    return RunResult(finished.returncode, output, summary or {})
+    return RunResult(finished.returncode, finished.output, summary or {}, finished.cancelled)
 
 
-def homogenise(study: Study, section: dict, python) -> RunResult:
+def homogenise(study: Study, section: dict, python, cancel=None) -> RunResult:
     job = homogenise_job(study, section)
-    return run_script(HOMOGENISE_SCRIPT, job, Path(job["out"]) / "homogenise_job.json", python)
+    return run_script(HOMOGENISE_SCRIPT, job, Path(job["out"]) / "homogenise_job.json", python,
+                      cancel)
 
 
 def job_path_for_homogenisation(study: Study, section: dict) -> Path:
     return path_of(study, section["homogenise"]["out"]) / "homogenise_job.json"
 
 
-def antecedent(study: Study, section: dict, python) -> RunResult:
+def antecedent(study: Study, section: dict, python, cancel=None) -> RunResult:
     homogenise_path = job_path_for_homogenisation(study, section)
     atomic_write_json(homogenise_path, homogenise_job(study, section))
     job = antecedent_job(study, section, homogenise_path)
-    return run_script(ANTECEDENT_SCRIPT, job, Path(job["out"]) / "antecedent_job.json", python)
+    return run_script(ANTECEDENT_SCRIPT, job, Path(job["out"]) / "antecedent_job.json", python,
+                      cancel)
 
 
-def inflow(study: Study, section: dict, python) -> RunResult:
+def inflow(study: Study, section: dict, python, cancel=None) -> RunResult:
     homogenise_path = job_path_for_homogenisation(study, section)
     atomic_write_json(homogenise_path, homogenise_job(study, section))
     job = inflow_job(study, section, homogenise_path)
-    return run_script(INFLOW_SCRIPT, job, Path(job["out"]) / "inflow_job.json", python)
+    return run_script(INFLOW_SCRIPT, job, Path(job["out"]) / "inflow_job.json", python, cancel)
 
 
 def last_summary(study: Study, section: dict, step: str) -> dict:

@@ -25,7 +25,7 @@ from core import dam as dams, events, lakefreq, study as studies
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
 from state import STATE
-from widgets import OUTPUT_FOLDER, path_input, path_list
+from widgets import OUTPUT_FOLDER, Running, path_input, path_list
 
 MONTHS = {index + 1: name for index, name in enumerate(lakefreq.RECORD.MONTH_NAMES)}
 
@@ -218,6 +218,7 @@ class _LakeLevelsView:
                               on_click=self.export_csv).props("outline")
                     self.spinner = ui.spinner(size="md")
                     self.spinner.set_visibility(False)
+                    self.running_box = ui.row().classes("items-center")
                     ui.switch("Show design floods", value=self.show_design,
                               on_change=lambda e: (setattr(self, "show_design", e.value),
                                                    self.redraw()))
@@ -513,14 +514,16 @@ class _LakeLevelsView:
         argv = lakefreq.command(STATE.settings.bryan_python, job_path, results=results)
         for button in (self.fit_button, self.band_button):
             button.set_enabled(False)
-        self.spinner.set_visibility(True)
-        ui.notify(message)
+        running = Running(self.running_box, message, mark="running-fit")
         try:
-            done = await _off_thread(lakefreq.run, argv, (results,))
+            done = await _off_thread(lakefreq.run, argv, (results,), running.cancel)
         finally:
             for button in (self.fit_button, self.band_button):
                 button.set_enabled(True)
-            self.spinner.set_visibility(False)
+            running.done()
+        if done.cancelled:
+            ui.notify("Cancelled - the curves are as they were")
+            return
         if not done.ok:
             with self.messages:
                 severity_banner("block", f"The fit failed (exit {done.returncode}).",

@@ -29,11 +29,10 @@ import json
 import math
 import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import dam as dams
+from . import dam as dams, processes
 from . import study as studies
 from .bryan import BRYAN_ROOT, lake_level_record
 from .palette import BODY, MUTED, PALETTE, SURFACE
@@ -457,6 +456,7 @@ class ScriptResult:
     returncode: int
     output: str
     written: tuple = ()
+    cancelled: bool = False
 
     @property
     def ok(self) -> bool:
@@ -493,22 +493,16 @@ def interpreter_problem(python) -> str:
     return ""
 
 
-def run(argv, outputs=()) -> ScriptResult:
-    """Run the util script. Blocking - call it off the UI thread."""
+def run(argv, outputs=(), cancel=None) -> ScriptResult:
+    """Run the util script. Blocking - call it off the UI thread; ``cancel`` (a
+    threading.Event) stops it."""
     environment = dict(os.environ)
     environment["PYTHONUNBUFFERED"] = "1"
     environment.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        finished = subprocess.run(list(argv), capture_output=True, text=True,
-                                  timeout=TIMEOUT_SECONDS, env=environment,
-                                  stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        return ScriptResult(1, f"timed out after {TIMEOUT_SECONDS} s")
-    except OSError as exc:
-        return ScriptResult(1, f"could not start the analysis: {exc}")
-    output = (finished.stdout or "") + (finished.stderr or "")
-    return ScriptResult(finished.returncode, output,
-                        tuple(Path(path) for path in outputs if Path(path).is_file()))
+    finished = processes.run(argv, env=environment, timeout=TIMEOUT_SECONDS, cancel=cancel)
+    return ScriptResult(finished.returncode, finished.output,
+                        tuple(Path(path) for path in outputs if Path(path).is_file()),
+                        finished.cancelled)
 
 
 # -- exports ----------------------------------------------------------------------------
