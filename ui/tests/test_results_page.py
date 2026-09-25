@@ -318,3 +318,31 @@ async def test_one_group_has_nothing_to_overlay(user, project):
     """The single-group sims list is the common case - say so, do not sulk."""
     await _open_groups_tab(user, project)
     await user.should_see("nothing to overlay it against")
+
+
+@pytest.mark.asyncio
+async def test_the_critical_duration_table_is_copied_as_shown(user, project, monkeypatch):
+    from nicegui import ui as nicegui_ui
+    copied = []
+    monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
+    _open(project)
+    await user.open("/results")
+    await user.should_see("120h")
+    user.find(marker="copy-text-results").click()
+    await user.should_see("Copied as text")
+    assert copied, "nothing reached the clipboard"
+    lines = copied[0].splitlines()
+    assert lines[0].split("\t")[0] == "AEP (1 in X)"
+    assert "120h" in lines[0].split("\t")
+    assert len(lines) > 2
+
+    sent = []
+
+    async def fake_run_javascript(code, timeout=1.0):
+        sent.append(code)
+        return "html"
+
+    monkeypatch.setattr(nicegui_ui, "run_javascript", fake_run_javascript)
+    user.find(marker="copy-word-results").click()
+    await user.should_see("Copied - paste into Word")
+    assert "<table" in sent[0] and "120h" in sent[0]
