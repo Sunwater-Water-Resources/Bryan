@@ -34,6 +34,10 @@ if errorlevel 1 pause
 
 The two ```--bryan-*``` values are the same pair the ordinary batch files set as ```VENV_PY``` and ```PYFILE```. They are saved, so they only need giving once.
 
+### Help
+
+The **?** beside the gear opens the page's section of this manual in a new tab - the copy that came with this Bryan, served by the launcher itself, so it matches the launcher and needs no network.
+
 ### Settings, and Check setup
 
 The **gear** at the right of the menu bar opens this computer's settings: Bryan's interpreter and ```Main.py```, the folder of AWAP grids, how many runs at once, and whether Bryan's console windows show. They are kept in ```.bryan_ui.json``` in your home folder, never in a study, since they differ between computers.
