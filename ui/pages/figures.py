@@ -20,6 +20,7 @@ from core import figurechart, figures, study as studies
 from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
+from widgets import OUTPUT_FOLDER, path_input
 
 TYPES = {"level": "Lake level", "inflow": "Peak inflow", "outflow": "Peak outflow",
          "inflowVol24h": "24 h inflow volume", "inflowVol48h": "48 h inflow volume",
@@ -234,6 +235,9 @@ class _FigureEditor:
         self.view.store(self.spec)
         self.dialog.close()
 
+    def _path_base(self) -> dict:
+        return {"base": self.study.folder, "base_name": "the study folder"}
+
     def draw(self) -> None:
         spec = self.spec
         self.form.clear()
@@ -242,9 +246,10 @@ class _FigureEditor:
                 ui.input("File name (no extension)", value=spec.get("filename", "")) \
                     .classes("w-64").props("dense").mark("figure-filename") \
                     .on_value_change(lambda e: spec.update(filename=e.value))
-                ui.input("Folder (blank: figures/ beside the study)",
-                         value=spec.get("folder", "")).classes("grow").props("dense") \
-                    .on_value_change(lambda e: spec.update(folder=e.value))
+                path_input("Folder (blank: figures/ beside the study)",
+                           spec.get("folder", ""), **self._path_base(),
+                           expect=OUTPUT_FOLDER, classes="grow",
+                           on_change=lambda text: spec.update(folder=text))
                 ui.select(TYPES, value=spec.get("type", "level"), label="Result",
                           on_change=lambda e: spec.update(type=e.value)) \
                     .classes("w-48").props("dense").mark("figure-type")
@@ -289,16 +294,16 @@ class _FigureEditor:
                 if kind == figures.GROUP:
                     self._group_picker(curve, index)
                 elif kind == figures.FILE:
-                    ui.input("File (AEP in the first column)", value=curve.get("file", "")) \
-                        .classes("grow").props("dense") \
-                        .on_value_change(lambda e: curve.update(file=e.value))
+                    path_input("File (AEP in the first column)", curve.get("file", ""),
+                               **self._path_base(), suffixes=(".csv",), classes="grow",
+                               on_change=lambda text: curve.update(file=text))
                     ui.input("Column (blank: the result)", value=curve.get("column", "")) \
                         .classes("w-40").props("dense") \
                         .on_value_change(lambda e: curve.update(column=e.value))
                 else:
-                    ui.input("RMC Bestfit export (.csv)", value=curve.get("file", "")) \
-                        .classes("grow").props("dense") \
-                        .on_value_change(lambda e: curve.update(file=e.value))
+                    path_input("RMC Bestfit export (.csv)", curve.get("file", ""),
+                               **self._path_base(), suffixes=(".csv",), classes="grow",
+                               on_change=lambda text: curve.update(file=text))
                     ui.select(list(figures.POSTERIORS), value=curve.get("posterior", "Both"),
                               label="Posterior",
                               on_change=lambda e: curve.update(posterior=e.value)) \

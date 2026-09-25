@@ -18,6 +18,7 @@ from nicegui import ui
 from core import downstream
 from layout import page_frame, require_project
 from state import STATE
+from widgets import path_input
 
 
 def downstream_page() -> None:
@@ -83,12 +84,14 @@ def downstream_page() -> None:
                       ).props("clearable").classes("w-32")
 
         with ui.row().classes("w-full items-end gap-4"):
-            ui.input(label="Downstream storm config", value=state["config"],
-                     on_change=lambda e: (state.update(config=e.value), remember())
-                     ).classes("grow")
-            ui.input(label="Regional model URBS config", value=state["model"],
-                     on_change=lambda e: (state.update(model=e.value), remember())
-                     ).classes("grow")
+            # Bryan runs with the project folder as its working folder, so a
+            # relative path is read from there.
+            for label, key in (("Downstream storm config", "config"),
+                               ("Regional model URBS config", "model")):
+                path_input(label, state[key], base=folder, base_name="the project folder",
+                           suffixes=(".json",), classes="grow",
+                           on_change=lambda text, k=key: (state.update({k: text}),
+                                                          remember()))
 
         def generate(dry_run: bool) -> None:
             if not state["config"] or not state["model"]:

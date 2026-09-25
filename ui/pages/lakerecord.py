@@ -37,6 +37,7 @@ from core.paths import clean_path_text
 from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
+from widgets import FOLDER, OUTPUT, OUTPUT_FOLDER, path_input
 
 
 async def _off_thread(function, *args):
@@ -83,12 +84,10 @@ class _LakeRecordView:
         except OSError as exc:
             ui.notify(f"Could not save {self.study.path.name}: {exc}", type="warning")
 
-    def _path_input(self, label, holder, key, *, mark=""):
-        box = ui.input(label, value=holder.get(key) or "").classes("w-full").props("dense")
-        box.on("blur", lambda e: self._set_path(holder, key, e.sender.value))
-        if mark:
-            box.mark(mark)
-        return box
+    def _path_input(self, label, holder, key, *, mark="", expect="file", suffixes=()):
+        return path_input(label, holder.get(key) or "", base=self.study.folder,
+                          base_name="the study folder", expect=expect, suffixes=suffixes,
+                          mark=mark, on_commit=lambda text: self._set_path(holder, key, text))
 
     def _set_path(self, holder, key, text) -> None:
         value = lakerecord.keep_path(self.study, text) if str(text).strip() else ""
@@ -125,10 +124,9 @@ class _LakeRecordView:
                      f"inputs above.").classes("text-sm text-body").mark("rain-catchment")
             with ui.row().classes("w-full gap-2 no-wrap"):
                 with ui.column().classes("grow gap-1"):
-                    ui.input("Folder of daily grids on this computer (yours, not the "
-                             "study's)", value=STATE.settings.awap_folder) \
-                        .classes("w-full").props("dense").mark("rain-grids") \
-                        .on("blur", lambda e: self._set_grids(e.sender.value))
+                    path_input("Folder of daily grids on this computer (yours, not the "
+                               "study's)", STATE.settings.awap_folder, expect=FOLDER,
+                               mark="rain-grids", on_commit=self._set_grids)
                     with ui.row().classes("w-full gap-2 no-wrap"):
                         ui.input("Files", value=r["pattern"]).classes("w-32").props("dense") \
                             .on("blur", lambda e: self._set(r, "pattern", e.sender.value.strip()
@@ -140,7 +138,7 @@ class _LakeRecordView:
                                   value=r["weighting"], label="Weighting",
                                   on_change=lambda e: self._set(r, "weighting", e.value)) \
                             .classes("w-40").props("dense")
-            self._path_input("Write the series to", r, "output")
+            self._path_input("Write the series to", r, "output", expect=OUTPUT)
             with ui.row().classes("items-center gap-2"):
                 ui.button("Make the rainfall series", icon="water_drop",
                           on_click=self._make_rainfall).mark("run-rainfall")
@@ -322,7 +320,7 @@ class _LakeRecordView:
             ui.label("Target ratings").classes("text-sm font-bold pt-1")
             self.targets_box = ui.column().classes("w-full gap-1")
             self._draw_targets()
-            self._path_input("Write the results under", h, "out")
+            self._path_input("Write the results under", h, "out", expect=OUTPUT_FOLDER)
             with ui.row().classes("items-center gap-2"):
                 ui.button("Homogenise", icon="timeline", on_click=self._homogenise) \
                     .mark("run-homogenise")
@@ -342,7 +340,8 @@ class _LakeRecordView:
                         .on("blur", lambda e, t=target: self._set(t, "name",
                                                                   e.sender.value.strip()))
                     with ui.element("div").classes("grow"):
-                        self._path_input("Rating (.sq, or level,flow .csv)", target, "rating")
+                        self._path_input("Rating (.sq, or level,flow .csv)", target, "rating",
+                                         suffixes=(".sq", ".csv", ".rat"))
                     ui.input("FSL (m AHD)", value=f"{target.get('fsl') or ''}") \
                         .classes("w-28").props("dense") \
                         .on("blur", lambda e, t=target: self._set(t, "fsl", _float(e.sender.value)))
@@ -413,12 +412,13 @@ class _LakeRecordView:
                      "started, and the S-curve fitted to them with the ceiling at the full "
                      "supply volume - written as the lake configs the Monte Carlo runs "
                      "sample.").classes("text-xs text-muted")
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+            with ui.row().classes("w-full items-start gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
-                    self._path_input("Rainfall series (blank: step 1's)", a, "rainfall")
+                    self._path_input("Rainfall series (blank: step 1's)", a, "rainfall",
+                                     suffixes=(".csv",))
                 with ui.element("div").classes("grow"):
                     self._path_input("IFD (duration_h against '1 in X' columns, mm)", a, "ifd",
-                                     mark="ifd")
+                                     mark="ifd", suffixes=(".csv",))
                 self._water_year_select("antecedent")
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 for key, label, width in (("window_days", "Search window (d)", "w-32"),
@@ -438,7 +438,7 @@ class _LakeRecordView:
                                      ("storm", "storm - with the pre-burst")):
                     ui.checkbox(label, value=basis in a["bases"],
                                 on_change=lambda e, b=basis: self._set_basis(b, e.value))
-            self._path_input("Write the results under", a, "out")
+            self._path_input("Write the results under", a, "out", expect=OUTPUT_FOLDER)
             with ui.row().classes("items-center gap-2"):
                 ui.button("Antecedent storage", icon="show_chart", on_click=self._antecedent) \
                     .mark("run-antecedent")
@@ -560,10 +560,10 @@ class _LakeRecordView:
                          f"in the dam inputs." if i["catchment_km2"] else
                          "No catchment area in the dam inputs, so no runoff depths.") \
                     .classes("text-xs text-muted").mark("inflow-area")
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+            with ui.row().classes("w-full items-start gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._path_input("Rainfall series, beside each burst (blank: step 1's)",
-                                     i, "rainfall")
+                                     i, "rainfall", suffixes=(".csv",))
                 for key, label in (("top_events", "Hydrographs of the largest"),
                                    ("before_days", "from days before"),
                                    ("after_days", "to days after")):
@@ -575,7 +575,7 @@ class _LakeRecordView:
                         value=lakerecord.events_text(i["events"])) \
                 .classes("w-full").props("dense autogrow").mark("inflow-events") \
                 .on("blur", lambda e: self._set_events(e.sender.value))
-            self._path_input("Write the results under", i, "out")
+            self._path_input("Write the results under", i, "out", expect=OUTPUT_FOLDER)
             with ui.row().classes("items-center gap-2"):
                 ui.button("Inflow record", icon="waves", on_click=self._inflow) \
                     .mark("run-inflow")

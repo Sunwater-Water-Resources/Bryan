@@ -9,12 +9,15 @@ file that can be sent on (core/setupcheck.py).
 
 from __future__ import annotations
 
+import os
+
 from nicegui import run, ui
 
 import settings as settings_module
 from core import setupcheck
 from core.paths import clean_path_text
 from state import STATE
+from widgets import FOLDER, path_input
 
 STATUS_LOOK = {setupcheck.OK: ("check_circle", "text-positive"),
                setupcheck.WARN: ("warning", "text-warning"),
@@ -34,13 +37,13 @@ def open_settings() -> None:
                  f"the environment that reproduces study results is left alone."
                  ).classes("text-sm text-body")
 
-        python_input = ui.input("Bryan's Python interpreter", value=settings.bryan_python) \
-            .classes("w-full").props("dense").mark("settings-python")
-        main_input = ui.input("Main.py", value=settings.bryan_main) \
-            .classes("w-full").props("dense").mark("settings-main")
-        awap_input = ui.input("Folder of daily AWAP / AWRA-L grids (optional)",
-                              value=settings.awap_folder) \
-            .classes("w-full").props("dense").mark("settings-awap")
+        python_input = path_input("Bryan's Python interpreter", settings.bryan_python,
+                                  suffixes=(".exe",) if os.name == "nt" else (),
+                                  mark="settings-python")
+        main_input = path_input("Main.py", settings.bryan_main, suffixes=(".py",),
+                                mark="settings-main")
+        awap_input = path_input("Folder of daily AWAP / AWRA-L grids (optional)",
+                                settings.awap_folder, expect=FOLDER, mark="settings-awap")
 
         with ui.row().classes("items-center gap-4 flex-wrap"):
             parallel = ui.number("Run at once", value=settings.max_parallel,

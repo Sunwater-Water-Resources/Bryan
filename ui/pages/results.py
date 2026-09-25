@@ -34,6 +34,7 @@ from core.paths import cell_text
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
 from state import STATE
+from widgets import OUTPUT_FOLDER, path_input
 
 # The order the result types are offered in; volume windows follow.
 TYPE_ORDER = ("inflow", "level", "outflow")
@@ -323,8 +324,9 @@ class _ResultsView:
                      "post-processing already produces."
                      ).classes("text-xs text-muted")
 
-            folder_input = ui.input("Output folder", value=str(folder or "")
-                                    ).classes("w-full").props("dense")
+            folder_input = path_input("Output folder", str(folder or ""),
+                                      expect=OUTPUT_FOLDER,
+                                      on_commit=lambda _: refresh_preview())
             name_input = ui.input("Base name", value=base
                                   ).classes("w-full").props("dense")
 
@@ -395,8 +397,7 @@ class _ResultsView:
                 ui.notify("Export finished")
 
             run_button.on_click(export)
-            for element in (folder_input, name_input):
-                element.on("blur", refresh_preview)
+            name_input.on("blur", refresh_preview)
             drop.on_value_change(refresh_preview)
             refresh_preview()
         dialog.open()

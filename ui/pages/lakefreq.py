@@ -25,6 +25,7 @@ from core import dam as dams, events, lakefreq, study as studies
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
 from state import STATE
+from widgets import OUTPUT_FOLDER, path_input, path_list
 
 MONTHS = {index + 1: name for index, name in enumerate(lakefreq.RECORD.MONTH_NAMES)}
 
@@ -103,6 +104,14 @@ class _LakeLevelsView:
         else:
             self.redraw()
 
+    def _path_base(self) -> dict:
+        """What this page's relative paths are read from: the study's folder, or
+        the sims_config.json's without a study."""
+        if self.study is not None:
+            return {"base": self.study.folder, "base_name": "the study folder"}
+        return {"base": self.config_path.parent,
+                "base_name": "the sims_config.json folder"}
+
     def _study_record(self) -> None:
         """The study's gauge exports, or this analysis's own record.
 
@@ -128,13 +137,9 @@ class _LakeLevelsView:
                       on_click=lambda: ui.navigate.to("/study")) \
                 .props("flat dense no-caps").mark("lake-edit-dam")
             return
-        ui.textarea("Level exports or a homogenised series, one per line",
-                    value="\n".join(files),
-                    on_change=lambda e: self.set(
-                        "record", "files",
-                        [line.strip() for line in (e.value or "").splitlines()
-                         if line.strip()], reread=True)) \
-            .classes("w-full").props("autogrow dense").mark("lake-files")
+        path_list("Level exports or a homogenised series, one per line", files,
+                  **self._path_base(), mark="lake-files",
+                  on_commit=lambda lines: self.set("record", "files", lines, reread=True))
         if files and not dams.gauges(dams.settings(self.study)):
             ui.button("Make these the study's gauge exports", icon="upload",
                       on_click=self._make_study_gauges) \
@@ -236,19 +241,15 @@ class _LakeLevelsView:
             if self.study is not None:
                 self._study_record()
             else:
-                ui.textarea(
-                    "Hydstra / WMIP exports, one per line, earliest gauge first",
-                    value="\n".join(settings["record"]["files"]),
-                    on_change=lambda e: self.set(
-                        "record", "files",
-                        [line.strip() for line in (e.value or "").splitlines()
-                         if line.strip()],
-                        reread=True),
-                ).classes("w-full").props("autogrow dense").mark("lake-files")
-            ui.input("…or an annual maximum CSV", value=settings["record"]["ams_csv"],
-                     on_change=lambda e: self.set("record", "ams_csv", e.value or "",
-                                                  reread=True)
-                     ).classes("w-full").props("dense")
+                path_list("Hydstra / WMIP exports, one per line, earliest gauge first",
+                          settings["record"]["files"], **self._path_base(),
+                          mark="lake-files",
+                          on_commit=lambda lines: self.set("record", "files", lines,
+                                                           reread=True))
+            path_input("…or an annual maximum CSV", settings["record"]["ams_csv"],
+                       **self._path_base(), suffixes=(".csv",), mark="lake-ams-csv",
+                       on_commit=lambda text: self.set("record", "ams_csv", text or "",
+                                                       reread=True))
             ui.label("Relative paths are read from the study's folder."
                      if self.study is not None else
                      "Relative paths are read from the sims_config.json folder."
@@ -537,8 +538,8 @@ class _LakeLevelsView:
                      "6.3 x 4.0 in at 300 dpi, for an A4 page. Uses the fitted "
                      "curves when they are current, and fits them first when not."
                      ).classes("text-xs text-muted")
-            folder_input = ui.input("Output folder", value=str(folder)
-                                    ).classes("w-full").props("dense")
+            folder_input = path_input("Output folder", str(folder), expect=OUTPUT_FOLDER,
+                                      on_commit=lambda _: refresh())
             name_input = ui.input("Base name", value=name).classes("w-full").props("dense")
             with_design = ui.checkbox("Include the design floods",
                                       value=bool(self.settings["design"]["include"]))
@@ -596,8 +597,7 @@ class _LakeLevelsView:
             with ui.row().classes("justify-end gap-2 w-full"):
                 ui.button("Close", on_click=dialog.close).props("flat")
                 run_button = ui.button("Export", on_click=export).mark("export-run")
-            for element in (folder_input, name_input):
-                element.on("blur", refresh)
+            name_input.on("blur", refresh)
             with_design.on_value_change(refresh)
             refresh()
         dialog.open()

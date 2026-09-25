@@ -42,6 +42,10 @@ leaves it closed, with the reason on the page.
 runs, each opened with one click, or any other by path, with **Add to study** to
 name it as one of the study's runs.
 
+**Path boxes** — every path box says under it the full path it resolves to,
+whether it is there and of the right kind, and what a relative path is relative
+to; **Browse...** lists this computer's folders and the files the box wants.
+
 **Runs panel** — down the left of every page: the study's runs with a count of
 their rows in each state, each opened with one click without leaving the page.
 Folds to a strip; the run name in the menu bar toggles it.
