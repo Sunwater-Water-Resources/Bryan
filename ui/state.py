@@ -75,11 +75,13 @@ class AppState:
             show_console=self.settings.show_consoles,
         )
         self.active_run_id: str | None = None
-        # The Report page's study file - the level above one sims config. Not
-        # reopened at start-up: the page offers the last one instead, because a
-        # study on an external disk that is not plugged in should not stop the
-        # window opening.
+        # The study file - the level above one sims config, opened on the Study
+        # page. Reopened at start-up by reopen_last_study, in a thread with a time
+        # limit: a study on a disk that is not plugged in, or on a network share
+        # that does not answer, must not stop the window opening. study_problem
+        # then says why no study is open.
         self.study = None
+        self.study_problem = ""
         self._lock = threading.Lock()
 
     # -- project ----------------------------------------------------------
@@ -114,12 +116,52 @@ class AppState:
         study = (studies.new_study(path, name) if create
                  else studies.load_study(path))
         self.study = study
+        self.study_problem = ""
         self.settings.remember_study(study.path)
         return study
 
     def close_study(self) -> None:
         self.study = None
+        self.study_problem = ""
         self.settings.remember_study("")
+
+    def reopen_last_study(self, timeout: float = 5.0):
+        """Open the study that was open when the launcher last closed.
+
+        Without it every page that reads the study - PMF, Figures, Lake record -
+        said "open a study first" after each restart. The file is read in a
+        thread and given ``timeout`` seconds, so an unplugged disk or a network
+        share that does not answer costs a few seconds at most, and the Study
+        page then says why nothing is open. The path stays the last study
+        either way, to be reopened when the disk is back.
+        """
+        from core import study as studies
+
+        path = self.settings.last_study
+        if not path:
+            return None
+        found: dict = {}
+
+        def load() -> None:
+            try:
+                found["study"] = studies.load_study(path)
+            except Exception as exc:        # noqa: BLE001 - reported, never raised
+                found["error"] = exc
+
+        worker = threading.Thread(target=load, daemon=True)
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            self.study_problem = (f"The last study, {path}, did not answer within "
+                                  f"{timeout:g} s. Is its disk or network share "
+                                  f"connected?")
+            return None
+        if "error" in found:
+            self.study_problem = f"The last study could not be reopened: {found['error']}"
+            return None
+        self.study = found["study"]
+        self.study_problem = ""
+        return self.study
 
     def apply_settings(self) -> None:
         self.settings.save()

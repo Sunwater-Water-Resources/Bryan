@@ -31,6 +31,11 @@ batch files set as `VENV_PY` and `PYFILE`.
 
 ## What it does
 
+**Study** — the study file (`bryan_study.json`) that Report, PMF, Figures and
+Lake record read: open or create it, and see what it holds. The last one open is
+reopened when the launcher starts, given five seconds so an unplugged disk only
+leaves it closed, with the reason on the page.
+
 **Select** — the sims list as a table, filtered by group. Where there is no
 `Group` column, one is derived by stripping the duration from the output name,
 so the durations of a case collapse into one row of the filter.

@@ -61,6 +61,10 @@ def main() -> None:
 
     pages.register_all()
 
+    # The study the launcher last had open. Time-limited: an unplugged disk only
+    # leaves it closed, with the reason on the Study page.
+    STATE.reopen_last_study()
+
     if args.config:
         path = Path(args.config).expanduser()
         if not path.is_file():

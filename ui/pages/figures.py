@@ -17,7 +17,7 @@ from pathlib import Path
 from nicegui import app, run, ui
 
 from core import figurechart, figures, study as studies
-from layout import page_frame, severity_banner
+from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
 
@@ -55,11 +55,7 @@ class _FiguresView:
 
     def build(self) -> None:
         if self.study is None:
-            with ui.card().classes("w-full items-center p-8"):
-                ui.icon("description").classes("text-5xl text-muted")
-                ui.label("Open a study first - figures are kept in the study file."
-                         ).classes("text-muted")
-                ui.button("Go to Report", on_click=lambda: ui.navigate.to("/report"))
+            no_study("Figures are kept in the study file.")
             return
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(f"Figures are kept in {self.study.path}").classes("text-xs text-muted")

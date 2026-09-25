@@ -34,7 +34,7 @@ from nicegui import app, run, ui
 
 from core import awap, lakerecord, wordtable
 from core.paths import clean_path_text
-from layout import page_frame, severity_banner
+from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
 
@@ -66,11 +66,7 @@ class _LakeRecordView:
 
     def build(self) -> None:
         if self.study is None:
-            with ui.card().classes("w-full items-center p-8"):
-                ui.icon("description").classes("text-5xl text-muted")
-                ui.label("Open a study first - the lake record is kept in the study file."
-                         ).classes("text-muted")
-                ui.button("Go to Report", on_click=lambda: ui.navigate.to("/report"))
+            no_study("The lake record is kept in the study file.")
             return
         ui.label(f"Kept in {self.study.path}; paths are stored relative to it."
                  ).classes("text-xs text-muted")
@@ -271,7 +267,7 @@ class _LakeRecordView:
                                      "when it keeps the evaporation", h, "evaporation")
                 ui.input("Pan factors, Jan to Dec",
                          value=" ".join(f"{v:g}" for v in h["pan_factors"])) \
-                    .classes("w-80").props("dense") \
+                    .classes("w-[28rem]").props("dense") \
                     .on("blur", lambda e: self._set_pan(e.sender.value))
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 ui.input("Longest step", value=h["step"]).classes("w-28").props("dense") \
