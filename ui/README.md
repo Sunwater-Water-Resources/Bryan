@@ -25,9 +25,11 @@ python ui\main.py [sims_config.json] [--port 8081]
 ```
 
 Or drop a `run_ui.bat` beside the model's existing `*_sims_*.bat` files — see
-`Manual/SubDocs/ui.md` for the template. On the Simulations page, set the
-interpreter and `Main.py` that Bryan should be run with: the same pair the
-batch files set as `VENV_PY` and `PYFILE`.
+`Manual/SubDocs/ui.md` for the template. In the settings panel (the gear in the
+menu bar), set the interpreter and `Main.py` that Bryan should be run with: the
+same pair the batch files set as `VENV_PY` and `PYFILE`. **Check setup** there
+confirms Bryan's interpreter has what it needs, and writes the answer to
+`~/bryan_setup_check.txt`.
 
 ## What it does
 

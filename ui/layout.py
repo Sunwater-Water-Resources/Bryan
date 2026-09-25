@@ -59,11 +59,20 @@ def page_frame(title: str):
                     .props("flat color=white dense no-caps")
                 if title.startswith(label):
                     button.style(f"border-bottom:2px solid {BRAND_CYAN}; border-radius:0")
-        project = STATE.project
-        ui.label(project.name if project else "no sims list open") \
-            .classes("mono").style(f"color:{ON_INK_MUTED}; font-size:12px")
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            project = STATE.project
+            ui.label(project.name if project else "no sims list open") \
+                .classes("mono").style(f"color:{ON_INK_MUTED}; font-size:12px")
+            ui.button(icon="settings", on_click=_open_settings) \
+                .props("flat round dense color=white").mark("open-settings") \
+                .tooltip("Settings, and Check setup")
     with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
         yield
+
+
+def _open_settings() -> None:
+    from settingspanel import open_settings       # it imports STATE, as this does
+    open_settings()
 
 
 def require_project():

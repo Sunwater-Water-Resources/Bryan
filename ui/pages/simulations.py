@@ -27,7 +27,6 @@ def simulations_page() -> None:
             if STATE.study is not None:
                 _add_to_study_card()
             _summary_card()
-        _bryan_card()
 
 
 def _open_run(path) -> None:
@@ -139,57 +138,6 @@ def _open_card() -> None:
                 ui.link(entry, "#").on(
                     "click", lambda _, target=entry: do_open(target)
                 ).classes("text-sm")
-
-
-def _bryan_card() -> None:
-    settings = STATE.settings
-    with ui.card().classes("w-full"):
-        ui.label("Bryan").classes("text-lg font-bold")
-        ui.label("The UI shells out to Bryan rather than importing it, so the "
-                 "environment that reproduces study results is left alone. "
-                 "These are the two values the per-model .bat files set as "
-                 "VENV_PY and PYFILE.").classes("text-sm text-body")
-
-        python_input = ui.input("Python interpreter",
-                                value=settings.bryan_python).classes("w-full")
-        main_input = ui.input("Main.py", value=settings.bryan_main).classes("w-full")
-
-        with ui.row().classes("items-center gap-4 flex-wrap"):
-            parallel = ui.number("Run at once", value=settings.max_parallel,
-                                 min=1, max=16, step=1).classes("w-32")
-            poll = ui.number("Refresh (s)", value=settings.poll_seconds,
-                             min=0.5, max=30, step=0.5).classes("w-32")
-            groups = ui.switch("Keep groups together",
-                               value=settings.keep_groups_together)
-            consoles = ui.switch("Show Bryan console windows",
-                                 value=settings.show_consoles)
-
-        ui.label("Running several at once rarely helps: reservoir routing "
-                 "takes seconds, and a Monte Carlo simulation already drives "
-                 "thousands of model runs one after another. More processes "
-                 "mostly multiply memory and storm files. The per-chunk time "
-                 "estimate on the Run page is the thing to judge it by."
-                 ).classes("text-xs text-muted")
-
-        def save() -> None:
-            settings.bryan_python = python_input.value.strip()
-            settings.bryan_main = main_input.value.strip()
-            settings.max_parallel = int(parallel.value or 1)
-            settings.poll_seconds = float(poll.value or 2.0)
-            settings.keep_groups_together = bool(groups.value)
-            settings.show_consoles = bool(consoles.value)
-            STATE.apply_settings()
-            problems = settings.problems()
-            if problems:
-                ui.notify("; ".join(problems), type="warning", timeout=0,
-                          close_button=True)
-            else:
-                ui.notify("Saved", type="positive")
-
-        ui.button("Save", on_click=save).props("color=primary")
-
-        for problem in settings.problems():
-            severity_banner("warn", problem)
 
 
 def _summary_card() -> None:

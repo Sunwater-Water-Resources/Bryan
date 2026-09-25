@@ -34,6 +34,12 @@ if errorlevel 1 pause
 
 The two ```--bryan-*``` values are the same pair the ordinary batch files set as ```VENV_PY``` and ```PYFILE```. They are saved, so they only need giving once.
 
+### Settings, and Check setup
+
+The **gear** at the right of the menu bar opens this computer's settings: Bryan's interpreter and ```Main.py```, the folder of AWAP grids, how many runs at once, and whether Bryan's console windows show. They are kept in ```.bryan_ui.json``` in your home folder, never in a study, since they differ between computers.
+
+**Check setup** asks Bryan's interpreter which of numpy, scipy, pandas, matplotlib, openpyxl and pyarrow it imports, and at which version; looks for ```Main.py```, and for the model executable the open sims list's model config names (```model_exe```: ```urbs32.exe```); and lists the launcher's own packages. What is missing is said with the command that installs it. The result is also written to ```bryan_setup_check.txt``` in your home folder, to send on when setting up on another computer goes wrong. It uses the values in the panel, saved or not, so a new interpreter can be tried before it is kept.
+
 ## The study
 
 A dam's design flood study spans several runs - the RFSL and FSL sims lists are separate sims_config.json files, a sensitivity is another, and the PMF ensemble another again - so what is about the dam and its report is kept one level above them, in a **study file**: ```bryan_study.json```, at the top of the study folder. The Report, PMF, Figures and Lake record pages all read it.
@@ -277,7 +283,7 @@ A **lake level** loading is converted to an AEP by reading it off the level freq
 
 ### Extracting the hydrographs
 
-The page chooses events; pulling out their hydrographs and plotting them is one command, shown on the page under *Extract the hydrographs and plot them* once the selection is saved. Press **Run** beside it: the page runs the command with Bryan's interpreter (set on the Simulations page), and shows each plot as it is written, any warning about the rebuilt hyetograph, and the log. The command itself is shown with absolute paths and Bryan's interpreter, so the **copy button** gives one that also works pasted into any console:
+The page chooses events; pulling out their hydrographs and plotting them is one command, shown on the page under *Extract the hydrographs and plot them* once the selection is saved. Press **Run** beside it: the page runs the command with Bryan's interpreter (set in the settings panel), and shows each plot as it is written, any warning about the rebuilt hyetograph, and the log. The command itself is shown with absolute paths and Bryan's interpreter, so the **copy button** gives one that also works pasted into any console:
 
 ```bat
 C:\...\env\python.exe -u C:\...\Bryan\util\RepresentativeEvents.py ^
