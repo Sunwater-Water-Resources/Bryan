@@ -147,3 +147,14 @@ def test_callide_homogenises_to_the_byte_as_the_original_did(tmp_path):
     with gzip.open(original / "trace.csv.gz") as theirs, \
             gzip.open(tmp_path / "bryan" / "rfsl" / "trace.csv.gz") as ours:
         assert theirs.read() == ours.read()
+
+
+def test_an_analysis_takes_its_own_water_year_or_the_homogenisation_s():
+    """The antecedent storage and the inflow record may each override the water
+    year the launcher shares across the study; with none given, they follow the
+    homogenisation, as they always did."""
+    homogenise = {"water_year_start": 10}
+    assert jobs.water_year_start({}, homogenise) == 10
+    assert jobs.water_year_start({"water_year_start": None}, homogenise) == 10
+    assert jobs.water_year_start({"water_year_start": 7}, homogenise) == 7
+    assert jobs.water_year_start({"water_year_start": "7"}, homogenise) == 7

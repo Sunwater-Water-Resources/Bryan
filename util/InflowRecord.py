@@ -13,6 +13,7 @@ homogenisation job and how to read the inflow:
       "smoothing": "1h",                          # blank for the native intervals
       "durations_h": [24, 36, 48, 72],
       "catchment_km2": 519,                       # for runoff depths
+      "water_year_start": 10,                     # optional: the homogenisation job's
       "rainfall": "lake_record/rainfall.csv",     # optional: rain beside each volume
       "top_events": 10, "before_days": 3, "after_days": 7,
       "events": [{"name": "Jan 2013", "start": "2013-01-20", "end": "2013-02-05"}],
@@ -66,7 +67,7 @@ def run(job: dict, folder: Path) -> dict:
             rain = pd.read_csv(path, comment="#", parse_dates=["date"])
             rainfall = rain.set_index("date")["rain_mm"].astype(float).sort_index()
     durations = [int(d) for d in job.get("durations_h") or inflow.DURATIONS_H]
-    start_month = int(hjob["water_year_start"])
+    start_month = jobs.water_year_start(job, hjob)
     ams = inflow.annual_maxima(frame, durations, start_month,
                                catchment_km2=job.get("catchment_km2"), rainfall=rainfall)
 
@@ -100,7 +101,8 @@ def run(job: dict, folder: Path) -> dict:
         "settings": {"evaporation": with_evaporation,
                      "recession_correction": bool(job.get("recession_correction", True)),
                      "smoothing": window, "durations_h": durations,
-                     "catchment_km2": job.get("catchment_km2")},
+                     "catchment_km2": job.get("catchment_km2"),
+                     "water_year_start": start_month},
         "years": int(len(ams)), "complete_years": int(ams["Complete"].sum()),
         "largest": [{"period": row["Period"], "peak_m3s": float(row["Peak_inflow_m3s"]),
                      "at": f"{pd.Timestamp(row['Peak_time']):%Y-%m-%d %H:%M}"}

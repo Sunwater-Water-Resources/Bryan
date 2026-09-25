@@ -3,6 +3,7 @@
     {
       "homogenise": "homogenise_job.json",       # or the job itself, inline
       "targets": ["rfsl", "fsl"],                 # which homogenised ratings; all if absent
+      "water_year_start": 10,                     # optional: the homogenisation job's
       "rainfall": "rainfall/cld_rain.csv",        # date,rain_mm - day D is the 24 h to 9 am on D
       "ifd": "ifd/ifd_cld.csv",                   # duration_h x "1 in X" columns, depths in mm
       "settings": {"durations_d": [1, 2, 3, 4, 5],
@@ -172,12 +173,14 @@ def run(job: dict, folder) -> dict:
     name_pattern = job.get("config_name") or CONFIG_NAME
 
     inputs = homogenise_jobs.load_inputs(hjob)
-    derived, summary = None, {"notes": list(inputs.notes), "targets": []}
+    start_month = homogenise_jobs.water_year_start(job, hjob)
+    derived, summary = None, {"notes": list(inputs.notes), "targets": [],
+                              "water_year_start": start_month}
     for name in wanted:
         result, rating, derived = homogenise_jobs.run_target(hjob, inputs, targets[name],
                                                             derived)
         fsv = float(inputs.volume_of_level(rating.fsl))
-        ams = peaks.annual_maxima(result, start_month=int(hjob["water_year_start"]))
+        ams = peaks.annual_maxima(result, start_month=start_month)
         daily_volume = antecedent.daily_volume_at_9am(result)
         with applied(settings):
             table = antecedent.antecedent_series(ams, rain, ifd, daily_volume)
