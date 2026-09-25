@@ -17,6 +17,7 @@ from pathlib import Path
 
 from nicegui import run, ui
 
+import address
 from core import runstatus
 from core.config import ConfigError
 from core.palette import SURFACE, WATER, WATER_SOFT
@@ -116,7 +117,7 @@ class RunsPanel:
                                      and not is_open else "")) \
             .style(look).mark(f"panel-run-{name}")
         if found and not is_open:
-            entry.on("click", lambda _, p=path: self._load(p))
+            entry.on("click", lambda _, p=path, n=name: self._load(p, n))
         with entry:
             ui.label(name).classes("text-sm " + ("font-bold text-ink" if is_open
                                                  else "text-body"))
@@ -172,14 +173,19 @@ class RunsPanel:
 
     # -- loading a run ---------------------------------------------------------
 
-    def _load(self, path) -> None:
+    def _load(self, path, name="") -> None:
         try:
             project = STATE.open_project(path)
         except (ConfigError, FileNotFoundError, OSError) as exc:
             ui.notify(str(exc), type="negative", timeout=0, close_button=True)
             return
         ui.notify(f"Opened {project.name}", type="positive")
-        ui.navigate.reload()
+        # The same page with the new run in its address, which would otherwise
+        # name the old one and open it again.
+        if name:
+            ui.navigate.to(address.switch_run_to(name))
+        else:
+            ui.navigate.reload()
 
 
 def _resolved(path) -> Path:

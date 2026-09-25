@@ -29,6 +29,7 @@ from nicegui import app, run
 from core import events, eventchart, hydrographs, results
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
+import address
 from state import STATE
 
 TYPE_LABELS = {"level": "Lake level", "inflow": "Peak inflow",
@@ -111,7 +112,8 @@ class _EventsView:
     def __init__(self, project, available) -> None:
         self.project = project
         self.available = available            # group -> [EventSource]
-        self.group = next(iter(available), None)
+        named = address.param("group")
+        self.group = named if named in available else next(iter(available), None)
         self.result_type = "level"
         self.order = events.EVENTS.DELTA_Z
         # How close counts as the same result, per result type and in the units
@@ -270,6 +272,7 @@ class _EventsView:
 
     def _load_group(self, group) -> None:
         self.group = group
+        address.keep(group=group)
         self._curve = None
         self._curves = {}
         sources = self._sources()

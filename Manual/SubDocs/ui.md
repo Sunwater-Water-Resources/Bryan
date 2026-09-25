@@ -82,6 +82,10 @@ Down the left of every page, the **runs panel** lists the study's runs with how 
 
 The sums are kept for five minutes, or until the run's sims list or config changes, and the open run's are replaced whenever the Select page judges its rows; the refresh button judges every run again, after a run finishes, say. Sums not kept yet are worked out after the page has drawn, so a slow disk never holds up a page. The arrow folds the panel to a strip, as does clicking the run name at the right of the menu bar; it stays as you left it.
 
+### Addresses
+
+A page's address carries what it is showing, so **Back** returns to it and a view can be bookmarked or sent: ```/results?run=E013+RFSL&group=RFSL_Design_GWL1p3&type=Peak+lake+level```. Every page names the open run by the study's name for it, and an address naming another study run opens that one first - a link sent to a colleague opens the run it was made on, not whichever one they last had open. The Results page keeps its group, result type and tab; the Ensemble and Events pages their group (and the Ensemble page its result); the Select page its group and status filters; the Report page the table last opened, which ```?table=``` opens and scrolls to. The address is replaced as the view changes rather than added to, so **Back** goes to the previous page, not the previous tick box.
+
 ## Choosing simulations
 
 The **Select** page lists the simulation list as a table, filtered by group.

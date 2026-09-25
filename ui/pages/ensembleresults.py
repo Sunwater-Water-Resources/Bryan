@@ -23,6 +23,7 @@ from nicegui import ui
 from core import enbresults, ensemble, pmfchart, resultchart, results
 from core.results import format_aep
 from layout import open_run_name, page_frame, require_project, severity_banner
+import address
 from clipboard import copy_buttons, table_from_rows
 from core import staleness
 from state import STATE
@@ -80,8 +81,9 @@ def _cell(value, result) -> str:
 class _EnsembleView:
     def __init__(self, available) -> None:
         self.available = available       # group key -> [enbresults.Source]
-        self.group = next(iter(available))
-        self.result = "level"
+        named, result = address.param("group"), address.param("type")
+        self.group = named if named in available else next(iter(available))
+        self.result = result if result in RESULT_OPTIONS else "level"
         self.show_envelope = True
         self.show_markup = True
         self.aep = None
@@ -168,6 +170,7 @@ class _EnsembleView:
 
     def _load(self, group) -> None:
         self.group = group
+        address.keep(group=group, type=self.result)
         try:
             self.database = enbresults.load(self.available[group])
             self.error = ""
@@ -192,6 +195,7 @@ class _EnsembleView:
 
     def _on_result(self, event) -> None:
         self.result = event.value
+        address.keep(type=self.result)
         self.refresh()
 
     def _on_envelope(self, event) -> None:
