@@ -62,8 +62,7 @@ def page_frame(title: str):
                 if title.startswith(label):
                     button.style(f"border-bottom:2px solid {BRAND_CYAN}; border-radius:0")
         with ui.row().classes("items-center gap-2 no-wrap"):
-            project = STATE.project
-            ui.label(project.name if project else "no sims list open") \
+            ui.label(open_run_name()) \
                 .classes("mono cursor-pointer").style(f"color:{ON_INK_MUTED}; font-size:12px") \
                 .on("click", panel.toggle).mark("header-run") \
                 .tooltip("Show or fold the runs panel")
@@ -72,6 +71,18 @@ def page_frame(title: str):
                 .tooltip("Settings, and Check setup")
     with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
         yield
+
+
+def open_run_name() -> str:
+    """The open sims list by the study's name for it ("E013 RFSL"), else its file."""
+    project = STATE.project
+    if project is None:
+        return "no sims list open"
+    if STATE.study is not None:
+        name = STATE.study.run_named_for(project.config.config_path)
+        if name:
+            return name
+    return project.name
 
 
 def _open_settings() -> None:
