@@ -19,6 +19,7 @@ from nicegui import app, run, ui
 
 from core import reporttables, staleness, study as studies, wordtable
 from layout import no_study, page_frame, severity_banner
+import address
 from clipboard import copy_table
 from state import STATE
 
@@ -43,6 +44,7 @@ class _ReportView:
         self.stale: dict = {}           # table id -> what is out of date in its results
         self.body = None
         self.cards: dict = {}           # table id -> its card's parts
+        self._went_to = False           # the address's table shown, once
         self.open: set = (STATE.settings.open_tables_for(self.study.path)
                           if self.study is not None else set())
 
@@ -166,6 +168,10 @@ class _ReportView:
         self._contents()
         for spec in self.study.tables:
             self._table_card(spec)
+        named = address.param("table")           # /report?table=... opens and shows it
+        if named in self.cards and not self._went_to:
+            self._went_to = True
+            ui.timer(0.3, lambda: self._go_to(named), once=True)
 
     def _contents(self) -> None:
         with ui.card().classes("w-full gap-1").mark("table-contents"):
@@ -282,6 +288,11 @@ class _ReportView:
             self._draw_body(table_id)
         if remember:
             STATE.settings.remember_open_tables(self.study.path, self.open)
+            # The address names the table last opened, so it can be sent.
+            if on:
+                address.keep(table=table_id)
+            elif address.param("table") == table_id:
+                address.keep(table="")
 
     def _open_all(self, on: bool) -> None:
         for table_id in list(self.cards):

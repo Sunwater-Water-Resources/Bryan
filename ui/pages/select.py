@@ -9,10 +9,13 @@ from core.launcher import LaunchError
 from core.paths import cell_text
 from core.runplan import describe
 from layout import STATE_COLOUR, page_frame, require_project, severity_banner
+import address
 from state import STATE
 
 ALL_GROUPS = "(all groups)"
 ALL_STATES = "(any state)"
+STATUS_FILTERS = (ALL_STATES, completion.NOT_RUN, completion.STALE, completion.INCOMPLETE,
+                  completion.UP_TO_DATE, completion.NEEDS_PRIOR)
 
 # Columns worth showing before the rest; everything else follows.
 LEAD_COLUMNS = ("Output file", "Duration", "Method", "GWL", "Output suffix",
@@ -30,8 +33,9 @@ def select_page() -> None:
 class _SelectView:
     def __init__(self, project) -> None:
         self.project = project
-        self.group_filter = ALL_GROUPS
-        self.state_filter = ALL_STATES
+        named, state = address.param("group"), address.param("status")
+        self.group_filter = named if named in project.groups() else ALL_GROUPS
+        self.state_filter = state if state in STATUS_FILTERS else ALL_STATES
         self.search = ""
         self.table = None
         self.summary = None
@@ -66,12 +70,9 @@ class _SelectView:
         with ui.card().classes("w-full"):
             with ui.row().classes("items-center gap-4 flex-wrap"):
                 ui.select([ALL_GROUPS] + self.project.groups(),
-                          value=ALL_GROUPS, label="Group",
+                          value=self.group_filter, label="Group",
                           on_change=self._on_group).classes("min-w-72")
-                ui.select([ALL_STATES, completion.NOT_RUN, completion.STALE,
-                           completion.INCOMPLETE, completion.UP_TO_DATE,
-                           completion.NEEDS_PRIOR],
-                          value=ALL_STATES, label="Status",
+                ui.select(list(STATUS_FILTERS), value=self.state_filter, label="Status",
                           on_change=self._on_state).classes("min-w-48")
                 ui.input("Search output name",
                          on_change=self._on_search).classes("min-w-64").props("clearable")
@@ -146,10 +147,12 @@ class _SelectView:
 
     def _on_group(self, event) -> None:
         self.group_filter = event.value
+        address.keep(group=event.value if event.value != ALL_GROUPS else "")
         self.refresh()
 
     def _on_state(self, event) -> None:
         self.state_filter = event.value
+        address.keep(status=event.value if event.value != ALL_STATES else "")
         self.refresh()
 
     def _on_search(self, event) -> None:

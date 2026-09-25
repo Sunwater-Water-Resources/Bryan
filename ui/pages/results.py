@@ -29,6 +29,7 @@ from pathlib import Path
 from nicegui import run as nicerun
 from nicegui import ui
 
+import address
 from core import critexport, grouping, overlay, results, resultchart, staleness
 from core.paths import cell_text
 from layout import open_run_name, page_frame, require_project, severity_banner
@@ -58,17 +59,26 @@ def results_page() -> None:
 
         durations = _ResultsView(project, available)
         groups = _GroupView(project, available)
+        tab = address.param("tab", "Durations")
+        tab = tab if tab in ("Durations", "Groups") else "Durations"
         with ui.tabs().classes("w-full").mark("result-tabs") as tabs:
             ui.tab("Durations")
             ui.tab("Groups")
-        with ui.tab_panels(tabs, value="Durations").classes("w-full"):
+        with ui.tab_panels(tabs, value=tab).classes("w-full"):
             with ui.tab_panel("Durations").classes("p-0"):
                 durations.build()
             with ui.tab_panel("Groups").classes("p-0"):
                 groups.build()
-        tabs.on_value_change(
-            lambda event: groups.activate(durations.key)
-            if event.value == "Groups" else None)
+
+        def on_tab(event) -> None:
+            address.keep(tab=event.value if event.value != "Durations" else "")
+            if event.value == "Groups":
+                groups.activate(durations.key)
+
+        tabs.on_value_change(on_tab)
+        tabs.set_value(tab)
+        if tab == "Groups":                  # opened on it from its address
+            ui.timer(0.1, lambda: groups.activate(durations.key), once=True)
 
 
 def scan(project) -> dict:
@@ -124,8 +134,10 @@ class _ResultsView:
     def __init__(self, project, available) -> None:
         self.project = project
         self.available = available   # group key -> {result key: [CurveSource]}
-        self.group = next(iter(available), None)
-        self.key = None
+        # What the address names, where this sims list has it.
+        named = address.param("group")
+        self.group = named if named in available else next(iter(available), None)
+        self.key = address.param("type") or None
         self.selected = set()        # labels
         self.show_envelope = True
         self.show_markup = True
@@ -241,6 +253,7 @@ class _ResultsView:
         self._draw_types()
         self._draw_curves()
         self._draw_stale()
+        address.keep(group=self.group, type=self.key)
         self.refresh()
 
     def _sources(self) -> list:
@@ -305,6 +318,7 @@ class _ResultsView:
 
     def _on_type(self, event) -> None:
         self.key = event.value
+        address.keep(type=self.key)
         sources = self.available.get(self.group, {}).get(self.key, [])
         self.selected = {source.label for source in sources}
         self.aep_from = self.aep_to = self._range_aeps = None

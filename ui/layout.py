@@ -45,8 +45,11 @@ STATE_COLOUR = {
 
 @contextmanager
 def page_frame(title: str):
+    import address
     from runspanel import runs_panel               # it draws with STATE_COLOUR, from here
     theme.apply()
+    # The run the address names, opened before anything is drawn from it.
+    problem = address.follow_run()
     panel = runs_panel()
     # The same bar Judith's window carries: the name, what the tool is for, and on
     # the right what is open.
@@ -70,7 +73,18 @@ def page_frame(title: str):
                 .props("flat round dense color=white").mark("open-settings") \
                 .tooltip("Settings, and Check setup")
     with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
+        if problem:
+            severity_banner("warn", problem)
+        address.keep_run(study_run_name())
         yield
+
+
+def study_run_name() -> str:
+    """The study's name for the open sims list, or '' when it is not a study run."""
+    project = STATE.project
+    if project is None or STATE.study is None:
+        return ""
+    return STATE.study.run_named_for(project.config.config_path) or ""
 
 
 def open_run_name() -> str:
@@ -78,11 +92,7 @@ def open_run_name() -> str:
     project = STATE.project
     if project is None:
         return "no sims list open"
-    if STATE.study is not None:
-        name = STATE.study.run_named_for(project.config.config_path)
-        if name:
-            return name
-    return project.name
+    return study_run_name() or project.name
 
 
 def _open_settings() -> None:
