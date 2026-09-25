@@ -119,16 +119,11 @@ class _LakeRecordView:
                      "series is kept in the study folder and ships with the model; the "
                      "grids stay on this computer, so anyone without them uses the series "
                      "as it is.").classes("text-xs text-muted")
+            polygon = (f", where {r['field']} is {r['value']}" if r["field"] else
+                       ", every polygon")
+            ui.label(f"Catchment: {r['shapefile'] or 'not given'}{polygon} - one of the dam "
+                     f"inputs above.").classes("text-sm text-body").mark("rain-catchment")
             with ui.row().classes("w-full gap-2 no-wrap"):
-                with ui.column().classes("grow gap-1"):
-                    self._path_input("Catchment shapefile (.shp)", r, "shapefile",
-                                     mark="rain-shapefile")
-                    with ui.row().classes("w-full gap-2 no-wrap"):
-                        ui.input("Field (blank: every polygon)", value=r["field"]) \
-                            .classes("grow").props("dense") \
-                            .on("blur", lambda e: self._set(r, "field", e.sender.value.strip()))
-                        ui.input("equal to", value=r["value"]).classes("grow").props("dense") \
-                            .on("blur", lambda e: self._set(r, "value", e.sender.value.strip()))
                 with ui.column().classes("grow gap-1"):
                     ui.input("Folder of daily grids on this computer (yours, not the "
                              "study's)", value=STATE.settings.awap_folder) \
@@ -224,61 +219,60 @@ class _LakeRecordView:
     # -- the record, shared by steps 2-4 -------------------------------------------
 
     def _record_card(self) -> None:
-        """What steps 2, 3 and 4 all read, set once at the top of the page.
+        """The dam inputs the steps read, shown - they are edited on the Study page.
 
-        Kept under ``"homogenise"`` in the study file, where the scripts and every
-        existing study already have it; only where it is shown has moved.
+        Each with whether it is there, so a missing file is seen before a step is
+        run rather than after.
         """
         h = self.section["homogenise"]
+        r, i = self.section["rainfall"], self.section["inflow"]
         with ui.card().classes("w-full").mark("record-card"):
-            ui.label(lakerecord.RECORD_CARD).classes("text-lg font-bold")
-            ui.label("The recorded lake levels and what turns them into storage and "
-                     "release. Steps 2, 3 and 4 all read these; step 1 does not.") \
+            with ui.row().classes("w-full items-center justify-between no-wrap"):
+                ui.label(lakerecord.RECORD_CARD).classes("text-lg font-bold")
+                ui.button("Edit on the Study page", icon="edit",
+                          on_click=lambda: ui.navigate.to("/study")) \
+                    .props("flat dense no-caps").mark("edit-dam")
+            ui.label("The recorded lake levels, what turns them into storage and release, "
+                     "and the catchment. Every step below reads some of these.") \
                 .classes("text-xs text-muted")
-            ui.textarea("Gauge exports (WMIP / Hydstra), one per line, in the order the gauges "
-                        "operated", value="\n".join(h["gauges"])) \
-                .classes("w-full").props("dense autogrow").mark("gauges") \
-                .on("blur", lambda e: self._set(h, "gauges", [
-                    lakerecord.keep_path(self.study, line)
-                    for line in str(e.sender.value).splitlines() if line.strip()]))
+            gauges = [g for g in h["gauges"] if str(g).strip()]
+            rows = [(f"Gauge export {n + 1}" if len(gauges) > 1 else "Gauge export", g)
+                    for n, g in enumerate(gauges)] or [("Gauge exports", "")]
             overlay = h.get("overlay")
-            with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                ui.checkbox("Overlay gauge below a level", value=bool(overlay),
-                            on_change=lambda e: self._toggle_overlay(e.value))
-                if overlay:
-                    with ui.element("div").classes("grow"):
-                        self._path_input("Overlay gauge export", overlay, "file")
-                    ui.input("below (m)", value=f"{overlay.get('below', '')}") \
-                        .classes("w-28").props("dense") \
-                        .on("blur", lambda e: self._set(overlay, "below", _float(e.sender.value)))
-                    ui.input("reconnect margin (m)",
-                             value=f"{overlay.get('reconnect_margin', 0.10)}") \
-                        .classes("w-40").props("dense") \
-                        .on("blur", lambda e: self._set(overlay, "reconnect_margin",
-                                                        _float(e.sender.value, 0.10)))
-            with ui.row().classes("w-full gap-2 no-wrap"):
-                for key, label in (("storage", "Storage table (.els: EL, A, V)"),
-                                   ("register", "Rating register (.xlsx)")):
-                    with ui.element("div").classes("grow"):
-                        self._path_input(label, h, key, mark=f"record-{key}")
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
-                with ui.element("div").classes("grow"):
-                    self._path_input("Evaporation (SILO Data Drill) - steps 2 and 3, and 4 "
-                                     "when it keeps the evaporation", h, "evaporation")
-                ui.input("Pan factors, Jan to Dec",
-                         value=" ".join(f"{v:g}" for v in h["pan_factors"])) \
-                    .classes("w-[28rem]").props("dense") \
-                    .on("blur", lambda e: self._set_pan(e.sender.value))
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+            if overlay:
+                rows.append((f"Overlay gauge, below {overlay.get('below')} m",
+                             overlay.get("file")))
+            rows += [("Storage table", h["storage"]), ("Rating register", h["register"]),
+                     ("Evaporation (SILO)", h["evaporation"]),
+                     ("Catchment shapefile", r["shapefile"])]
+            with ui.element("div").classes("w-full grid gap-x-4 gap-y-0") \
+                    .style("grid-template-columns: 15rem 1fr"):
+                for label, value in rows:
+                    ui.label(label).classes("text-sm text-muted")
+                    self._file_state(value)
+                ui.label("Catchment area").classes("text-sm text-muted")
+                ui.label(f"{i['catchment_km2']:g} km2" if i["catchment_km2"] else "not given") \
+                    .classes("text-sm text-body")
+                ui.label("Water year starts").classes("text-sm text-muted")
+                ui.label(lakerecord.MONTHS[int(h["water_year_start"]) - 1]) \
+                    .classes("text-sm text-body").mark("record-water-year")
+            with ui.row().classes("w-full items-end gap-2 no-wrap pt-2"):
                 ui.input("Longest step", value=h["step"]).classes("w-28").props("dense") \
                     .on("blur", lambda e: self._set(h, "step", e.sender.value.strip() or "1h"))
-                ui.select({month + 1: name for month, name in enumerate(lakerecord.MONTHS)},
-                          value=int(h["water_year_start"]), label="Water year starts",
-                          on_change=lambda e: self._set(h, "water_year_start", e.value)) \
-                    .classes("w-40").props("dense")
-                ui.label("Gaps longer than the longest step are filled; the water year "
-                         "labels every annual maximum the steps below report.") \
-                    .classes("text-xs text-muted")
+                ui.label("Gaps in the level record longer than this are filled, for "
+                         "steps 2 to 4.").classes("text-xs text-muted")
+
+    def _file_state(self, value) -> None:
+        """A dam input's path, and whether it is there."""
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            if not str(value or "").strip():
+                ui.label("not given").classes("text-sm text-muted")
+                return
+            path = lakerecord.path_of(self.study, value)
+            found = path is not None and path.is_file()
+            ui.label(str(value)).classes("mono text-sm text-body")
+            ui.label("found" if found else "not found") \
+                .classes(f"text-xs {'text-positive' if found else 'text-negative'}")
 
     # -- 2. homogenisation ---------------------------------------------------------
 
@@ -288,7 +282,7 @@ class _LakeRecordView:
             ui.label("2. Homogenisation").classes("text-lg font-bold")
             ui.label("The recorded levels, re-routed through each target rating: the net "
                      "inflow is derived against the rating in force at each step (the "
-                     "register), then routed through the target. It reads the record at "
+                     "register), then routed through the target. It reads the dam inputs at "
                      "the top of the page.").classes("text-xs text-muted")
             ui.checkbox("Recession correction", value=bool(h["recession_correction"]),
                         on_change=lambda e: self._set(h, "recession_correction", e.value))
@@ -303,19 +297,6 @@ class _LakeRecordView:
             self.h_box = ui.column().classes("w-full")
             self._draw_homogenised(lakerecord.last_summary(self.study, self.section,
                                                            "homogenise"))
-
-    def _toggle_overlay(self, on) -> None:
-        self.section["homogenise"]["overlay"] = ({"file": "", "below": None,
-                                                  "reconnect_margin": 0.10} if on else None)
-        self.save()
-        ui.navigate.reload()
-
-    def _set_pan(self, text) -> None:
-        values = [_float(token) for token in str(text).replace(",", " ").split()]
-        if len(values) != 12 or None in values:
-            ui.notify("Give twelve pan factors, January to December", type="warning")
-            return
-        self._set(self.section["homogenise"], "pan_factors", values)
 
     def _draw_targets(self) -> None:
         targets = self.section["homogenise"]["targets"]
@@ -517,7 +498,7 @@ class _LakeRecordView:
             ui.label("Step 2's derived inflow - the change in storage plus the release "
                      "through the rating in force at each step - as each water year's peak "
                      "inflow and largest burst volumes, and as event hydrographs for "
-                     "calibration. It reads the record at the top of the page, but none "
+                     "calibration. It reads the dam inputs at the top of the page, but none "
                      "of step 2's target ratings.") \
                 .classes("text-xs text-muted")
             ui.label("On a recession above full supply the balance often goes negative: the "
@@ -540,9 +521,10 @@ class _LakeRecordView:
                          value=" ".join(f"{d:g}" for d in i["durations_h"])) \
                     .classes("w-40").props("dense") \
                     .on("blur", lambda e: self._set_durations(e.sender.value))
-                ui.input("Catchment area (km2)", value=f"{i['catchment_km2'] or ''}") \
-                    .classes("w-40").props("dense").mark("inflow-area") \
-                    .on("blur", lambda e: self._set(i, "catchment_km2", _float(e.sender.value)))
+                ui.label(f"Runoff depths over {i['catchment_km2']:g} km2, the catchment area "
+                         f"in the dam inputs." if i["catchment_km2"] else
+                         "No catchment area in the dam inputs, so no runoff depths.") \
+                    .classes("text-xs text-muted").mark("inflow-area")
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._path_input("Rainfall series, beside each burst (blank: step 1's)",

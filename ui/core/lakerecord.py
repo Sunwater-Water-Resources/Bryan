@@ -40,14 +40,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import dam as dams
 from .bryan import BRYAN_ROOT
 from .paths import atomic_write_json, read_json
 from .study import Study, portable, resolve
 from .wordtable import ReportTable
 
 KEY = "lake_record"
-# The page's card for what steps 2-4 all read, which the step checks point to.
-RECORD_CARD = "The lake level record"
+# Where the dam inputs are edited, which the step checks point to.
+RECORD_CARD = "Dam inputs"
+DAM_HINT = f"(These are the {RECORD_CARD.lower()}, set on the Study page.)"
 HOMOGENISE_SCRIPT = BRYAN_ROOT / "util" / "HomogeniseLakeLevels.py"
 ANTECEDENT_SCRIPT = BRYAN_ROOT / "util" / "AntecedentStorage.py"
 INFLOW_SCRIPT = BRYAN_ROOT / "util" / "InflowRecord.py"
@@ -82,18 +84,26 @@ DEFAULTS = {
 # -- settings ---------------------------------------------------------------------
 
 def settings(study: Study) -> dict:
-    """The study's section, completed with the defaults, one level deep."""
+    """The study's section, completed with the defaults, one level deep, with the
+    dam inputs (``core/dam.py``) laid over it where the jobs read them.
+
+    The dam inputs are edited on the Study page and kept under ``"dam"``; the
+    copies in this section are only what the jobs read, and what an older
+    launcher finds.
+    """
     stored = study.extra.get(KEY) or {}
     out = copy.deepcopy(DEFAULTS)
     for step, defaults in out.items():
         defaults.update(copy.deepcopy(stored.get(step) or {}))
     out["antecedent"]["settings"] = {**DEFAULTS["antecedent"]["settings"],
                                      **(out["antecedent"].get("settings") or {})}
-    return out
+    return dams.write_through(out, dams.settings(study))
 
 
 def store(study: Study, section: dict) -> None:
-    study.extra[KEY] = section
+    """Keep the section, with the dam inputs as they are now - a page opened before
+    they were changed on the Study page must not write the old ones back."""
+    study.extra[KEY] = dams.write_through(section, dams.settings(study))
 
 
 def keep_path(study: Study, text) -> str:
@@ -199,6 +209,8 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
     if step == "rainfall":
         r = section["rainfall"]
         need("Catchment shapefile", r["shapefile"])
+        if out:
+            out.append(DAM_HINT)
         if not str(grids or "").strip():
             out.append("Folder of daily grids on this computer: not given")
         elif not Path(grids).is_dir():
@@ -216,7 +228,7 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
         if h.get("overlay"):
             need("Overlay gauge", h["overlay"].get("file"))
         if out:
-            out.append(f"(These are in '{RECORD_CARD}', at the top of the page.)")
+            out.append(DAM_HINT)
     if step in ("homogenise", "antecedent"):
         if not h["targets"]:
             out.append("Target ratings: none given")
