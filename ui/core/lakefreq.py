@@ -24,6 +24,7 @@ page and the export cannot disagree about which maxima went in.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -32,6 +33,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import dam as dams
+from . import study as studies
 from .bryan import BRYAN_ROOT, lake_level_record
 from .palette import BODY, MUTED, PALETTE, SURFACE
 from .paths import atomic_write_json, clean_path_text, normalise_sep, read_json
@@ -39,6 +42,13 @@ from .paths import atomic_write_json, clean_path_text, normalise_sep, read_json
 RECORD = lake_level_record()
 
 SETTINGS_NAME = "lake_frequency.json"
+
+# With a study open, what of the settings the study keeps: they are about the
+# dam's record. The level record itself is the study's dam inputs, and the water
+# year the study's unless overridden; the design comparison and exports stay here.
+STUDY_KEY = "lake_levels"
+STUDY_FIELDS = ("min_coverage", "include_incomplete", "carryover_days", "tie_tolerance",
+                "fsl", "fsl_label", "reference_levels", "fit", "axes")
 CACHE_FOLDER = "_lake_frequency"
 SCRIPT = BRYAN_ROOT / "util" / "LakeLevelFrequency.py"
 
@@ -97,21 +107,123 @@ def complete(settings: dict | None) -> dict:
     return out
 
 
-def load_settings(config_path) -> dict:
-    return complete(read_json(settings_path(config_path), default={}) or {})
+def load_settings(config_path, study=None) -> dict:
+    """The page's settings: this sims list's own, or, with a study open, the study's.
+
+    With a study, the level record is the study's gauge exports (``core/dam.py``)
+    or this analysis's own - a homogenised series, say (``record_source``) -
+    the water year is the study's unless the analysis overrides it
+    (``"water_year"``), and the fit and annual-maximum settings are kept in the
+    study (``STUDY_KEY``) - they are about the dam's record, not a run. The design
+    flood comparison and the exports stay with the sims list: they name its runs.
+    A study that has no Lake levels settings yet starts from this sims list's.
+    """
+    settings = complete(read_json(settings_path(config_path), default={}) or {})
+    if study is None:
+        return settings
+    base = settings_path(config_path).parent
+    part = study.extra.get(STUDY_KEY)
+    if not isinstance(part, dict):
+        part = _study_part(settings, study, base)
+    for key in STUDY_FIELDS:
+        if key in part:
+            settings[key] = copy.deepcopy(part[key])
+    dam = dams.settings(study)
+    source = part.get("record_source") or DAM_RECORD
+    files = dams.gauges(dam) if source == DAM_RECORD else part.get("files") or []
+    settings["record"] = {
+        "files": [str(studies.resolve(study.folder, item)) for item in files],
+        "ams_csv": (str(studies.resolve(study.folder, part["ams_csv"]))
+                    if part.get("ams_csv") else ""),
+        "level_column": part.get("level_column", ""),
+    }
+    settings["record_source"] = source
+    settings["water_year"] = part.get("water_year")
+    settings["water_year_start"] = int(part.get("water_year") or dam["water_year_start"])
+    return settings
 
 
-def save_settings(config_path, settings: dict) -> Path:
-    """Write the settings, keeping paths inside the project relative to it."""
+# Where the Lake levels record comes from, with a study open. The study's gauge
+# exports are the recorded levels; a dam whose spillway changed is compared on a
+# homogenised series instead (Callide's is _FFA/CLD_FSL_homogenised.csv), which is
+# this analysis's own. A homogenised series is written in the gauges' export
+# layout, so the two cannot be told apart from the file - the source is said.
+DAM_RECORD = "dam"
+OWN_RECORD = "own"
+
+
+def _study_part(settings: dict, study, base: Path) -> dict:
+    """The study's share of the settings, as a sims list's settings give it.
+
+    A list that names a record keeps it as its own - it may be a homogenised
+    series, and swapping it for the raw gauges would change the analysis.
+    """
+    part = {key: copy.deepcopy(settings[key]) for key in STUDY_FIELDS}
+    files = [resolve(base, text) for text in settings["record"]["files"] if str(text).strip()]
+    part["record_source"] = OWN_RECORD if files else DAM_RECORD
+    part["files"] = [studies.portable(study.folder, str(path)) for path in files]
+    ams_csv = resolve(base, settings["record"]["ams_csv"])
+    part["ams_csv"] = studies.portable(study.folder, str(ams_csv)) if ams_csv else ""
+    part["level_column"] = settings["record"]["level_column"]
+    shared = int(dams.settings(study)["water_year_start"])
+    own = int(settings["water_year_start"])
+    part["water_year"] = None if own == shared else own
+    return part
+
+
+def make_study_gauges(settings: dict, study) -> str:
+    """Make this analysis's own record the study's gauge exports, and read those.
+
+    For a record that is the recorded levels (Kroombit's 130360A), not a
+    homogenised series - which is why it is asked for, never done unasked.
+    Returns what was done, to be said.
+    """
+    files = [path for path in settings["record"]["files"] if str(path).strip()]
+    dam = dams.settings(study)
+    dam["gauges"] = [studies.portable(study.folder, path) for path in files]
+    dams.store(study, dam)
+    settings["record_source"] = DAM_RECORD
+    return (f"{', '.join(Path(path).name for path in files)} are now the study's gauge "
+            f"exports, which every analysis of the lake level record reads.")
+
+
+def save_settings(config_path, settings: dict, study=None) -> Path:
+    """Write the settings, keeping paths inside the project relative to it.
+
+    With a study, its share goes to the study as well. ``lake_frequency.json`` is
+    still written whole, so a launcher that has not been updated finds what it
+    always did.
+    """
     base = settings_path(config_path).parent
     stored = complete(settings)
     stored["record"] = dict(stored["record"])
+    if study is not None:
+        # With a study, a path in the record is relative to the study; this file's
+        # are relative to the sims list, so they go in as full paths first.
+        stored["record"]["files"] = [str(studies.resolve(study.folder, text))
+                                     for text in stored["record"]["files"]
+                                     if str(text).strip()]
+        if stored["record"]["ams_csv"]:
+            stored["record"]["ams_csv"] = str(studies.resolve(study.folder,
+                                                              stored["record"]["ams_csv"]))
     stored["record"]["files"] = [portable(base, text)
                                  for text in stored["record"]["files"] if str(text).strip()]
     stored["record"]["ams_csv"] = portable(base, stored["record"]["ams_csv"])
     stored["export"]["folder"] = portable(base, stored["export"]["folder"])
     path = settings_path(config_path)
     atomic_write_json(path, stored)
+    if study is not None:
+        part = {key: copy.deepcopy(settings[key]) for key in STUDY_FIELDS}
+        part["ams_csv"] = (studies.portable(study.folder, settings["record"]["ams_csv"])
+                           if settings["record"]["ams_csv"] else "")
+        part["level_column"] = settings["record"]["level_column"]
+        part["water_year"] = settings.get("water_year")
+        part["record_source"] = settings.get("record_source") or DAM_RECORD
+        part["files"] = ([studies.portable(study.folder, text)
+                          for text in settings["record"]["files"] if str(text).strip()]
+                         if part["record_source"] == OWN_RECORD else [])
+        study.extra[STUDY_KEY] = part
+        study.save()
     return path
 
 

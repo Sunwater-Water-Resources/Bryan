@@ -330,6 +330,12 @@ With **Compare with the Monte Carlo results** on, the level curves of the chosen
 
 Everything on the page is saved to ```lake_frequency.json``` beside the sims_config.json as it changes, with paths inside the project stored relative to it, so the analysis can be handed on with the project. Fitted results go to ```_lake_frequency/``` and are reused whenever the settings and the input files are unchanged.
 
+**With a study open**, what is about the dam's record is the study's: the water year (unless **Water year starts** here says otherwise) and the annual maximum and curve settings (coverage, carry-over, full supply, reference levels, the curve form and its fit) are kept in the study. The design flood comparison and the exports stay in ```lake_frequency.json```: they name this sims list's runs.
+
+The **level record** is either the study's gauge exports (its [dam inputs](#daminputs), changed on the Study page) or **its own record**. Its own is for a dam compared on a homogenised series - Callide's reads ```_FFA/CLD_FSL_homogenised.csv``` - because a series re-routed through one rating is not the recorded levels. A homogenised series is written in the gauges' export layout, so the page cannot tell the two apart and the choice is yours. A sims list that already names a record keeps it as its own; where that record is the recorded levels and the study has no gauge exports yet, **Make these the study's gauge exports** moves them into the dam inputs, for every analysis to read.
+
+A study with no Lake levels settings yet starts from this sims list's. ```lake_frequency.json``` is still written whole, so a launcher that has not been updated finds what it always did.
+
 ## Report tables
 
 The **Report** page fills the design flood report's result tables from the runs, so a revised rating means re-running the groups and copying the tables again rather than re-typing them.

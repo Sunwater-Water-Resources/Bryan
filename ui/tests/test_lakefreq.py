@@ -247,3 +247,85 @@ def test_the_curve_options_reach_the_job_and_old_settings_get_the_defaults(proje
     assert job["fit"]["upper_join"] == "fsl" and job["fit"]["plateau_tolerance"] == 0.0
     assert set(lakefreq.UPPER_JOIN_LABELS) == {"free", "fsl"}
 
+
+
+# -- with a study open: the record, water year and curve settings are the study's ------------
+
+@pytest.fixture
+def with_study(project):
+    """The project's own settings saved as the page left them, and an empty study."""
+    from core import study as studies
+    config = project.config.config_path
+    settings = settings_for(project, water_year_start=7)
+    settings["fit"]["plateau_tolerance"] = 0.35
+    lakefreq.save_settings(config, settings)
+    study = studies.new_study(config.parent.parent / "bryan_study.json", "Dam")
+    return config, study
+
+
+def test_without_a_study_the_page_keeps_its_own_settings(project):
+    config = project.config.config_path
+    lakefreq.save_settings(config, settings_for(project))
+    assert lakefreq.load_settings(config, None)["record"]["files"] == ["gauge/HW.csv"]
+
+
+def test_a_sims_list_that_names_a_record_keeps_it_as_its_own(with_study):
+    """It may be a homogenised series (Callide's E011 reads _FFA/CLD_FSL_homogenised.csv),
+    and swapping it for the study's raw gauges would change the analysis."""
+    config, study = with_study
+    settings = lakefreq.load_settings(config, study)
+    assert settings["record_source"] == lakefreq.OWN_RECORD
+    assert Path(settings["record"]["files"][0]) == (config.parent / "gauge" / "HW.csv").resolve()
+    assert settings["fit"]["plateau_tolerance"] == 0.35 and settings["fsl"] == FSL
+    # July was this list's; the study's default is October, so July is an override
+    assert settings["water_year"] == 7 and settings["water_year_start"] == 7
+
+
+def test_the_record_becomes_the_study_s_gauges_only_when_asked(with_study):
+    from core import dam as dams
+    config, study = with_study
+    settings = lakefreq.load_settings(config, study)
+    assert dams.gauges(dams.settings(study)) == []                 # nothing done unasked
+    done = lakefreq.make_study_gauges(settings, study)
+    assert "HW.csv" in done
+    assert dams.settings(study)["gauges"] == ["project/gauge/HW.csv"]   # relative to the study
+    assert settings["record_source"] == lakefreq.DAM_RECORD
+
+
+def test_a_sims_list_without_a_record_reads_the_study_s_gauges(project):
+    from core import dam as dams, study as studies
+    config = project.config.config_path
+    study = studies.new_study(config.parent.parent / "bryan_study.json", "Dam")
+    dam = dams.settings(study)
+    dam["gauges"] = ["project/gauge/HW.csv"]
+    dams.store(study, dam)
+    settings = lakefreq.load_settings(config, study)
+    assert settings["record_source"] == lakefreq.DAM_RECORD
+    assert Path(settings["record"]["files"][0]) == (config.parent / "gauge" / "HW.csv").resolve()
+
+
+def test_saving_keeps_the_study_s_share_in_the_study_and_the_rest_here(with_study):
+    from core import study as studies
+    config, study = with_study
+    settings = lakefreq.load_settings(config, study)
+    settings["fit"]["degree"] = 3
+    settings["water_year"], settings["water_year_start"] = None, 10     # the study's
+    settings["export"]["name"] = "KRO"
+    lakefreq.save_settings(config, settings, study)
+
+    part = studies.load_study(study.path).extra[lakefreq.STUDY_KEY]
+    assert part["fit"]["degree"] == 3 and part["water_year"] is None
+    assert part["record_source"] == lakefreq.OWN_RECORD
+    assert part["files"] == ["project/gauge/HW.csv"]                 # relative to the study
+    assert "export" not in part and "design" not in part
+    own = json.loads(lakefreq.settings_path(config).read_text(encoding="utf-8"))
+    assert own["export"]["name"] == "KRO"
+    assert own["fit"]["degree"] == 3                   # still whole, for older launchers
+    assert own["record"]["files"] == ["gauge/HW.csv"]  # relative to the sims list
+
+
+def test_the_study_s_settings_make_a_job_the_record_can_be_read_with(with_study, project):
+    config, study = with_study
+    plan = lakefreq.build_job(config, lakefreq.load_settings(config, study))
+    assert plan.can_read and plan.job["water_year_start"] == 7
+    assert lakefreq.read_view(plan.job).ams is not None

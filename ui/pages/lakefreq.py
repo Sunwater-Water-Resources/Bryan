@@ -21,7 +21,7 @@ from pathlib import Path
 
 from nicegui import app, run, ui
 
-from core import events, lakefreq
+from core import dam as dams, events, lakefreq, study as studies
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
 from state import STATE
@@ -72,7 +72,10 @@ class _LakeLevelsView:
     def __init__(self, project) -> None:
         self.project = project
         self.config_path = project.config.config_path
-        self.settings = lakefreq.load_settings(self.config_path)
+        # With a study open, the record, the water year and the fit settings are
+        # the study's; without one, this sims list's own (lake_frequency.json).
+        self.study = STATE.study
+        self.settings = lakefreq.load_settings(self.config_path, self.study)
         self.groups = events.sources_by_group(project)
         if self.settings["design"]["group"] not in self.groups and self.groups:
             self.settings["design"]["group"] = next(iter(self.groups))
@@ -87,9 +90,9 @@ class _LakeLevelsView:
 
     def save(self) -> None:
         try:
-            lakefreq.save_settings(self.config_path, self.settings)
+            lakefreq.save_settings(self.config_path, self.settings, self.study)
         except OSError as exc:
-            ui.notify(f"Could not save {lakefreq.SETTINGS_NAME}: {exc}", type="warning")
+            ui.notify(f"Could not save the Lake levels settings: {exc}", type="warning")
 
     def set(self, section, key, value, *, reread=False) -> None:
         target = self.settings if section is None else self.settings[section]
@@ -100,14 +103,100 @@ class _LakeLevelsView:
         else:
             self.redraw()
 
+    def _study_record(self) -> None:
+        """The study's gauge exports, or this analysis's own record.
+
+        Its own is for a dam compared on a homogenised series - Callide's - which
+        is written in the gauges' layout and so cannot be told from them.
+        """
+        settings = self.settings
+        source = settings.get("record_source") or lakefreq.DAM_RECORD
+        ui.toggle({lakefreq.DAM_RECORD: "The study's gauge exports",
+                   lakefreq.OWN_RECORD: "Its own record"},
+                  value=source, on_change=lambda e: self._set_source(e.value)) \
+            .props("dense no-caps").mark("lake-record-source")
+        files = settings["record"]["files"]
+        if source == lakefreq.DAM_RECORD:
+            if files:
+                for path in files:
+                    ui.label(Path(path).name).classes("mono text-sm text-body") \
+                        .tooltip(path)
+            else:
+                ui.label("The study's dam inputs have no gauge exports.") \
+                    .classes("text-sm text-muted")
+            ui.button("Edit on the Study page", icon="edit",
+                      on_click=lambda: ui.navigate.to("/study")) \
+                .props("flat dense no-caps").mark("lake-edit-dam")
+            return
+        ui.textarea("Level exports or a homogenised series, one per line",
+                    value="\n".join(files),
+                    on_change=lambda e: self.set(
+                        "record", "files",
+                        [line.strip() for line in (e.value or "").splitlines()
+                         if line.strip()], reread=True)) \
+            .classes("w-full").props("autogrow dense").mark("lake-files")
+        if files and not dams.gauges(dams.settings(self.study)):
+            ui.button("Make these the study's gauge exports", icon="upload",
+                      on_click=self._make_study_gauges) \
+                .props("flat dense no-caps").mark("lake-make-gauges") \
+                .tooltip("Only for the recorded levels - not a homogenised series")
+
+    def _set_source(self, source) -> None:
+        self.settings["record_source"] = source
+        if source == lakefreq.DAM_RECORD:
+            self.settings["record"]["files"] = [
+                str(studies.resolve(self.study.folder, item))
+                for item in dams.gauges(dams.settings(self.study))]
+        self.save()
+        ui.navigate.reload()
+
+    def _make_study_gauges(self) -> None:
+        done = lakefreq.make_study_gauges(self.settings, self.study)
+        self.save()
+        ui.notify(done, type="positive", multi_line=True)
+        ui.navigate.reload()
+
+    def _water_year_select(self) -> None:
+        """The water year: with a study, its own or the study's; else this list's."""
+        settings = self.settings
+        if self.study is None:
+            ui.select(MONTHS, value=int(settings["water_year_start"]),
+                      label="Water year starts",
+                      on_change=lambda e: self.set(None, "water_year_start", int(e.value),
+                                                   reread=True)
+                      ).classes("w-full").props("dense")
+            return
+        shared = int(dams.settings(self.study)["water_year_start"])
+        options = {0: f"{MONTHS[shared]} (the study's)", **MONTHS}
+        ui.select(options, value=int(settings.get("water_year") or 0),
+                  label="Water year starts",
+                  on_change=lambda e: self._set_water_year(int(e.value), shared)) \
+            .classes("w-full").props("dense").mark("lake-water-year")
+        if settings.get("water_year") and int(settings["water_year"]) != shared:
+            ui.label(f"The study's water year starts in {MONTHS[shared]}; this analysis "
+                     f"labels its annual maxima from {MONTHS[int(settings['water_year'])]}, "
+                     f"so they are not the same years as the Lake record's.") \
+                .classes("text-xs text-body").mark("lake-water-year-note")
+
+    def _set_water_year(self, value, shared) -> None:
+        self.settings["water_year"] = value or None
+        self.set(None, "water_year_start", value or shared, reread=True)
+
     def plan(self) -> lakefreq.JobPlan:
         return lakefreq.build_job(self.config_path, self.settings, self.groups)
 
     # -- layout ------------------------------------------------------------
 
     def build(self) -> None:
-        ui.label(f"Settings are kept in {lakefreq.settings_path(self.config_path)}"
-                 ).classes("text-xs text-muted")
+        if self.study is not None:
+            ui.label(f"The record, water year and curve settings are the study's "
+                     f"({self.study.path}); the design flood comparison and exports are "
+                     f"this sims list's ({lakefreq.settings_path(self.config_path)}).") \
+                .classes("text-xs text-muted")
+        else:
+            ui.label(f"Settings are kept in {lakefreq.settings_path(self.config_path)}. "
+                     f"Open a study to share the record with its other analyses.") \
+                .classes("text-xs text-muted").mark("lake-own-settings")
         with ui.row().classes("w-full items-start gap-4 no-wrap"):
             with ui.column().classes("w-96 shrink-0 gap-2"):
                 self._inputs()
@@ -144,28 +233,30 @@ class _LakeLevelsView:
         settings = self.settings
         with ui.card().classes("w-full").props("flat bordered"):
             ui.label("Level record").classes("font-bold")
-            ui.textarea(
-                "Hydstra / WMIP exports, one per line, earliest gauge first",
-                value="\n".join(settings["record"]["files"]),
-                on_change=lambda e: self.set(
-                    "record", "files",
-                    [line.strip() for line in (e.value or "").splitlines() if line.strip()],
-                    reread=True),
-            ).classes("w-full").props("autogrow dense")
+            if self.study is not None:
+                self._study_record()
+            else:
+                ui.textarea(
+                    "Hydstra / WMIP exports, one per line, earliest gauge first",
+                    value="\n".join(settings["record"]["files"]),
+                    on_change=lambda e: self.set(
+                        "record", "files",
+                        [line.strip() for line in (e.value or "").splitlines()
+                         if line.strip()],
+                        reread=True),
+                ).classes("w-full").props("autogrow dense").mark("lake-files")
             ui.input("…or an annual maximum CSV", value=settings["record"]["ams_csv"],
                      on_change=lambda e: self.set("record", "ams_csv", e.value or "",
                                                   reread=True)
                      ).classes("w-full").props("dense")
-            ui.label("Relative paths are read from the sims_config.json folder."
+            ui.label("Relative paths are read from the study's folder."
+                     if self.study is not None else
+                     "Relative paths are read from the sims_config.json folder."
                      ).classes("text-xs text-muted")
 
         with ui.card().classes("w-full").props("flat bordered"):
             ui.label("Annual maxima").classes("font-bold")
-            ui.select(MONTHS, value=int(settings["water_year_start"]),
-                      label="Water year starts",
-                      on_change=lambda e: self.set(None, "water_year_start", int(e.value),
-                                                   reread=True)
-                      ).classes("w-full").props("dense")
+            self._water_year_select()
             with ui.row().classes("w-full no-wrap gap-2"):
                 ui.number("Carry-over window (days)", value=settings["carryover_days"],
                           min=0, step=0.5, format="%g",

@@ -167,3 +167,34 @@ async def test_a_band_from_too_few_resamples_is_warned_about(user, opened):
     await user.open("/lake-levels")
     await series_names(user, "Fit to all maxima")
     await user.should_see("only 100 of 400 resamples could be fitted")
+
+
+@pytest.mark.asyncio
+async def test_with_a_study_the_list_s_record_is_kept_and_can_become_the_study_s(
+        user, opened):
+    """Kroombit's case: the gauge export was typed here before the study kept one.
+    With the study open the page still reads it, as this analysis's own record,
+    and one button makes it the study's gauge exports."""
+    from core import dam as dams, study as studies
+    from state import STATE
+    study = studies.new_study(opened.parent.parent / "bryan_study.json", "Dam")
+    STATE.study = study
+    try:
+        await user.open("/lake-levels")
+        await user.should_see(marker="lake-record-source")
+        await user.should_see(marker="lake-water-year")
+        await series_names(user, "Storm-driven maxima")          # the record is read
+        user.find(marker="lake-make-gauges").click()
+        await user.should_see(marker="lake-edit-dam")
+        assert dams.gauges(dams.settings(studies.load_study(study.path)))
+    finally:
+        STATE.study = None
+
+
+@pytest.mark.asyncio
+async def test_without_a_study_the_page_says_where_its_settings_are(user, opened):
+    from state import STATE
+    STATE.study = None
+    await user.open("/lake-levels")
+    await user.should_see(marker="lake-own-settings")
+    await user.should_see("Open a study to share the record")
