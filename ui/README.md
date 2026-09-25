@@ -25,7 +25,7 @@ python ui\main.py [sims_config.json] [--port 8081]
 ```
 
 Or drop a `run_ui.bat` beside the model's existing `*_sims_*.bat` files — see
-`Manual/SubDocs/ui.md` for the template. On the Project page, set the
+`Manual/SubDocs/ui.md` for the template. On the Simulations page, set the
 interpreter and `Main.py` that Bryan should be run with: the same pair the
 batch files set as `VENV_PY` and `PYFILE`.
 
@@ -35,6 +35,10 @@ batch files set as `VENV_PY` and `PYFILE`.
 Lake record read: open or create it, and see what it holds. The last one open is
 reopened when the launcher starts, given five seconds so an unplugged disk only
 leaves it closed, with the reason on the page.
+
+**Simulations** — which sims_config.json the run pages work on: the study's
+runs, each opened with one click, or any other by path, with **Add to study** to
+name it as one of the study's runs.
 
 **Select** — the sims list as a table, filtered by group. Where there is no
 `Group` column, one is derived by stripping the duration from the output name,

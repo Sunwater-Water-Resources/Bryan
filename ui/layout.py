@@ -13,7 +13,7 @@ from state import STATE
 
 NAV = [
     ("Study", "/study"),
-    ("Project", "/"),
+    ("Simulations", "/"),
     ("Select", "/select"),
     ("Run", "/run"),
     ("Results", "/results"),
@@ -60,7 +60,7 @@ def page_frame(title: str):
                 if title.startswith(label):
                     button.style(f"border-bottom:2px solid {BRAND_CYAN}; border-radius:0")
         project = STATE.project
-        ui.label(project.name if project else "no project open") \
+        ui.label(project.name if project else "no sims list open") \
             .classes("mono").style(f"color:{ON_INK_MUTED}; font-size:12px")
     with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
         yield
@@ -73,7 +73,7 @@ def require_project():
     with ui.card().classes("w-full items-center p-8"):
         ui.icon("folder_open").classes("text-5xl text-muted")
         ui.label("Open a sims_config.json first.").classes("text-muted")
-        ui.button("Go to Project", on_click=lambda: ui.navigate.to("/"))
+        ui.button("Go to Simulations", on_click=lambda: ui.navigate.to("/"))
     return None
 
 
