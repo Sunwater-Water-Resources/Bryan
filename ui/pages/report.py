@@ -18,7 +18,7 @@ import copy
 from nicegui import app, run, ui
 
 from core import reporttables, staleness, study as studies, wordtable
-from layout import no_study, page_frame, severity_banner
+from layout import confirm, no_study, page_frame, severity_banner
 import address
 from clipboard import copy_table
 from state import STATE
@@ -125,8 +125,9 @@ class _ReportView:
                     ui.label(entry["sims_config"]).classes("mono text-xs grow")
                     ui.label(groups).classes(f"text-xs {colour}")
                     ui.button(icon="delete",
-                              on_click=lambda _, n=entry["name"]: self._remove_run(n)) \
-                        .props("flat dense round").tooltip("Remove from the study")
+                              on_click=lambda _, n=entry["name"]: self._ask_remove_run(n)) \
+                        .props("flat dense round").tooltip("Remove from the study") \
+                        .mark(f"remove-run-{entry['name']}")
 
     def _rename_run(self, old, new) -> None:
         if not new or new == old:
@@ -138,6 +139,16 @@ class _ReportView:
             return
         self.save()
         self.redraw()
+
+    def _ask_remove_run(self, name) -> None:
+        readers = [spec.get("title") or spec.get("id") for spec in self.study.tables
+                   if any(source.get("run") == name
+                          for source in studies.table_sources(spec))]
+        detail = ("Its sims list and results are not touched. "
+                  + (f"These tables read it, and would be left naming a run that is not "
+                     f"there: {', '.join(readers)}." if readers else ""))
+        confirm(f"Remove the run {name} from the study?", detail,
+                lambda: self._remove_run(name))
 
     def _remove_run(self, name) -> None:
         orphans = self.study.remove_run(name)
@@ -221,7 +232,8 @@ class _ReportView:
                               on_click=lambda: self._move(table_id, 1)) \
                         .props("flat dense round").tooltip("Move down")
                     ui.button(icon="delete", on_click=lambda: self._delete(table_id)) \
-                        .props("flat dense round").tooltip("Remove")
+                        .props("flat dense round").tooltip("Remove") \
+                        .mark(f"remove-{table_id}")
             body = ui.column().classes("w-full gap-2")
             body.set_visibility(is_open)
         self.cards[table_id] = {"card": card, "chevron": chevron, "status": status,
@@ -366,21 +378,15 @@ class _ReportView:
 
     def _delete(self, table_id) -> None:
         spec = self.study.table(table_id) or {}
-        with ui.dialog() as dialog, ui.card():
-            ui.label(f"Remove '{spec.get('title') or table_id}' from the study?")
-            ui.label("The results are not touched.").classes("text-sm text-muted")
-            with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
 
-                def remove() -> None:
-                    self.study.remove_table(table_id)
-                    self.built.pop(table_id, None)
-                    self.save()
-                    dialog.close()
-                    self.redraw()
+        def remove() -> None:
+            self.study.remove_table(table_id)
+            self.built.pop(table_id, None)
+            self.save()
+            self.redraw()
 
-                ui.button("Remove", on_click=remove).props("color=negative")
-        dialog.open()
+        confirm(f"Remove '{spec.get('title') or table_id}' from the study?",
+                "The results are not touched.", remove)
 
     def store(self, spec: dict) -> None:
         stored = self.study.put_table(spec)

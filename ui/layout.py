@@ -125,6 +125,23 @@ def no_study(what: str) -> None:
         ui.button("Go to Study", on_click=lambda: ui.navigate.to("/study"))
 
 
+def confirm(question: str, detail: str, action, *, button: str = "Remove") -> None:
+    """Ask before doing something to the study that cannot be undone from here."""
+    with ui.dialog() as dialog, ui.card().classes("max-w-lg").mark("confirm-dialog"):
+        ui.label(question).classes("font-bold")
+        if detail:
+            ui.label(detail).classes("text-sm text-body")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat").mark("confirm-cancel")
+
+            def go() -> None:
+                dialog.close()
+                action()
+
+            ui.button(button, on_click=go).props("color=negative").mark("confirm-yes")
+    dialog.open()
+
+
 def status_chip(state) -> None:
     """A completion state as a coloured chip with its reason on hover."""
     if state is None:

@@ -21,7 +21,7 @@ from nicegui import app, run, ui
 
 from core import ensemble, pmfchart, reporttables, staleness, study as studies
 from core.results import format_aep
-from layout import no_study, page_frame, severity_banner
+from layout import confirm, no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
 
@@ -305,8 +305,9 @@ class _GroupView:
                     ui.toggle({"level": "Level", "inflow": "Inflow", "outflow": "Outflow"},
                               value=self.page.result, on_change=self._on_result) \
                         .props("dense no-caps").mark("pmf-result")
-                    ui.button(icon="delete", on_click=lambda: self.page.remove(self.entry)) \
-                        .props("flat dense round").tooltip("Remove this PMF group")
+                    ui.button(icon="delete", on_click=self._ask_remove) \
+                        .props("flat dense round").tooltip("Remove this PMF group") \
+                        .mark("remove-pmf-group")
             ui.label(f"{self.entry['ensemble']['group']} in {self.entry['ensemble']['run']}; "
                      f"realisations from {self.entry['mc']['group'] or '(none)'} in "
                      f"{self.entry['mc']['run'] or '(none)'}").classes("text-xs text-muted")
@@ -316,6 +317,11 @@ class _GroupView:
                 ui.spinner()
         self.fit_card = ui.card().classes("w-full")
         ui.timer(0.01, self.fill, once=True)
+
+    def _ask_remove(self) -> None:
+        confirm(f"Remove the PMF group '{self.entry.get('label') or '(unlabelled)'}'?",
+                "Its runs and results are not touched; the adopted notional AEP is kept.",
+                lambda: self.page.remove(self.entry))
 
     def _on_result(self, event) -> None:
         self.page.result = event.value
