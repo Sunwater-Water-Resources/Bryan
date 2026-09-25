@@ -4,8 +4,9 @@ Point it at the dam's headwater level record - one or more Hydstra or WMIP
 exports, in the order the gauges operated - or at an annual maximum series
 someone has already derived, and it shows the annual maxima on a frequency
 axis. **Fit curves** runs util/LakeLevelFrequency.py under Bryan's interpreter
-for the curves and their resampled bands, with the Monte Carlo design floods of
-one group laid over them. The figure export is formatted for an A4 report page,
+for the curves alone - seconds, so settings can be tried one after another - with
+the Monte Carlo design floods of one group laid over them; **Resample bands** then
+adds their 90% bands, which takes most of a minute. The figure export is formatted for an A4 report page,
 with or without the design floods; the CSV export is the annual maximum series
 with what produced it written above it.
 
@@ -77,6 +78,7 @@ class _LakeLevelsView:
             self.settings["design"]["group"] = next(iter(self.groups))
         self.view = None
         self.results = None
+        self.banded = False
         self.show_design = True
         self.whole_record = False
         self._pending = None
@@ -113,6 +115,9 @@ class _LakeLevelsView:
                 with ui.row().classes("gap-2 items-center"):
                     self.fit_button = ui.button("Fit curves", icon="show_chart",
                                                 on_click=self.fit).mark("fit-curves")
+                    self.band_button = ui.button("Resample bands", icon="blur_on",
+                                                 on_click=self.resample) \
+                        .props("outline").mark("resample-bands")
                     ui.button("Export figure", icon="image",
                               on_click=self.export_dialog).props("outline")
                     ui.button("Export AMS CSV", icon="table_view",
@@ -337,15 +342,20 @@ class _LakeLevelsView:
             self.table_area.clear()
             return
 
-        self.results = lakefreq.cached_results(self.config_path, plan.job) \
-            if plan.can_fit else None
+        self.results, self.banded = (lakefreq.shown_results(self.config_path, plan.job)
+                                     if plan.can_fit else (None, False))
         with self.messages:
             for problem in plan.fit_problems:
                 severity_banner("warn", problem)
-            if plan.can_fit and self.results is None \
-                    and plan.job["fit"]["form"] != "none":
-                ui.label("The curves have not been fitted for these settings - "
-                         "press Fit curves.").classes("text-sm text-body")
+            if plan.can_fit and plan.job["fit"]["form"] != "none":
+                if self.results is None:
+                    ui.label("The curves have not been fitted for these settings - "
+                             "press Fit curves.").classes("text-sm text-body")
+                elif not self.banded:
+                    ui.label(f"No 90% bands yet - press Resample bands once the curves "
+                             f"look right ({plan.job['fit']['draws']} resamples, of the "
+                             f"order of a minute).").classes("text-sm text-body") \
+                        .mark("no-bands")
             for name, block in ((self.results or {}).get("fits") or {}).items():
                 for problem in (block.get("error"), block.get("warning")):
                     if problem:
@@ -390,22 +400,34 @@ class _LakeLevelsView:
     # -- fitting -------------------------------------------------------------
 
     async def fit(self) -> None:
+        """The curves alone, without resampling: seconds."""
+        await self._run(lakefreq.quick_job, "Fitting the curves")
+
+    async def resample(self) -> None:
+        """The curves and their 90% bands, with the resamples asked for."""
+        await self._run(lambda job: job,
+                        "Resampling for the 90% bands - of the order of a minute")
+
+    async def _run(self, which, message) -> None:
         plan = self.plan()
         problem = lakefreq.interpreter_problem(STATE.settings.bryan_python)
         blockers = plan.problems + plan.fit_problems + ([problem] if problem else [])
         if blockers:
             ui.notify(blockers[0], type="warning")
             return
-        job_path = lakefreq.write_job(self.config_path, plan.job)
-        results = lakefreq.results_path(self.config_path, plan.job)
+        job = which(plan.job)
+        job_path = lakefreq.write_job(self.config_path, job)
+        results = lakefreq.results_path(self.config_path, job)
         argv = lakefreq.command(STATE.settings.bryan_python, job_path, results=results)
-        self.fit_button.set_enabled(False)
+        for button in (self.fit_button, self.band_button):
+            button.set_enabled(False)
         self.spinner.set_visibility(True)
-        ui.notify("Fitting - the resampling takes of the order of a minute")
+        ui.notify(message)
         try:
             done = await _off_thread(lakefreq.run, argv, (results,))
         finally:
-            self.fit_button.set_enabled(True)
+            for button in (self.fit_button, self.band_button):
+                button.set_enabled(True)
             self.spinner.set_visibility(False)
         if not done.ok:
             with self.messages:

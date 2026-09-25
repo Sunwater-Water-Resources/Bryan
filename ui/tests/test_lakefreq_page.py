@@ -106,11 +106,18 @@ async def test_fitting_draws_the_curves_and_the_design_floods(user, opened, monk
     monkeypatch.setattr(STATE.settings, "bryan_python", BRYAN_PYTHON)
     await user.open("/lake-levels")
     await series_names(user, "Storm-driven maxima")
+    # Fit curves: the curves alone, quickly, and no band yet.
     user.find(marker="fit-curves").click()
     names = await series_names(user, "Fit to all maxima", seconds=90)
     assert "Design flood envelope" in names
-    assert any(name.startswith("90% band, all maxima") for name in names)
+    assert not any(name.startswith("90% band") for name in names)
+    await user.should_see(marker="no-bands")
     assert (opened.parent / "_lake_frequency").is_dir()
+
+    # Resample bands: the same curves, now with their bands.
+    user.find(marker="resample-bands").click()
+    await series_names(user, "90% band, all maxima", seconds=90)
+    await user.should_not_see(marker="no-bands")
 
 
 @needs_bryan

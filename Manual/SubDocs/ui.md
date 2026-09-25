@@ -277,7 +277,7 @@ Water years are labelled by the year they end in and **start in the month you ch
 
 ### The curves
 
-**Fit curves** runs ```util/LakeLevelFrequency.py``` with Bryan's interpreter - of the order of a minute for 400 resamples - and the curves appear when it finishes. Two forms are offered:
+**Fit curves** runs ```util/LakeLevelFrequency.py``` with Bryan's interpreter for the curves alone - a few seconds - so settings can be tried one after another and compared on their RMSE. **Resample bands** then adds the 90% bands, which resample the record and refit it each time: of the order of a minute for 400 resamples. The two are kept apart, and the page shows the bands whenever they have been resampled for the settings in force, and the quick fit otherwise. Two forms are offered:
 
 - **Shouldered plateau**: a polynomial shoulder up to full supply, a plateau at full supply over the extent the record gives, and a straight line through the maxima above it. The plateau starts at the most frequent maximum within the **plateau tolerance** of full supply and extends through steps smaller than the **plateau gap**. It cannot be fitted without maxima sitting on full supply and at least three above it, and the page says which is missing.
 - **Logistic**, with its ceiling free - the fallback for a record without a plateau.

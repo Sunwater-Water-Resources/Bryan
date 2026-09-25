@@ -150,6 +150,21 @@ def test_a_band_from_too_few_fitted_resamples_is_flagged():
     assert (block["warning"] is not None) == (block["draws_used"] < 28)
 
 
+def test_no_resamples_fits_the_curves_without_bands():
+    """The page's Fit curves: seconds, so settings can be tried on the curve alone."""
+    table = positions()
+    out = frequency.analyse(table, fsl=FSL, form="shouldered", draws=0,
+                            progress=lambda *_: None)
+    banded = frequency.analyse(table, fsl=FSL, form="shouldered", draws=20,
+                               progress=lambda *_: None)
+    for name in ("all", "storm"):
+        block = out["fits"][name]
+        assert block["curve"] == banded["fits"][name]["curve"]     # the same fit
+        assert block["rmse"] == banded["fits"][name]["rmse"]
+        assert block["band_lo"] is None and block["band_hi"] is None
+        assert block["draws_used"] == 0 and block["warning"] is None
+
+
 def test_the_analysis_records_a_form_it_could_not_fit_instead_of_failing():
     table = positions()
     out = frequency.analyse(table, fsl=FSL + 5, form="shouldered", draws=10,

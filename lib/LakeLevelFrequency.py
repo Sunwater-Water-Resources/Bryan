@@ -423,6 +423,11 @@ def _fit_block(form, z, level, grid_z, fsl, options, draws_of, draws):
         return block
     block.update(params=params, rmse=rmse,
                  curve=evaluate(form, grid_z, params).tolist())
+    if draws <= 0:
+        # The curve alone. The fit takes a fraction of a second and the resampling
+        # most of a minute, so the settings are tried on the curve and the band is
+        # drawn once they are chosen.
+        return block
     try:
         draws_drawn = draws_of()
     except _SKIPPED as exc:
@@ -449,7 +454,8 @@ def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
 
     ``ams`` is ``LakeLevelRecord.with_positions`` output - the maxima that go
     into the curve, already filtered for coverage. ``design_sources`` is a
-    sequence of ``(duration hours, mcdf path)``.
+    sequence of ``(duration hours, mcdf path)``. ``draws=0`` fits the curves
+    without resampling them, so there is no band.
     """
     grid_aep, grid_z = frequency_grid(frequent_aep, rare_aep)
     z = ams["z"].to_numpy(float)
@@ -464,8 +470,8 @@ def analyse(ams: pd.DataFrame, *, fsl=None, form=SHOULDERED,
            "fits": {}, "design": None}
 
     if form != NO_FIT:
-        progress(f"Fitting the {form} form to {len(level)} annual maxima and "
-                 f"resampling {draws} times")
+        progress(f"Fitting the {form} form to {len(level)} annual maxima"
+                 + (f" and resampling {draws} times" if draws > 0 else ""))
         out["fits"]["all"] = _fit_block(
             form, z, level, grid_z, fsl, options,
             lambda: bootstrap_curves(level, grid_z, form, fsl, draws, seed, **options),
