@@ -206,3 +206,34 @@ async def test_a_step_s_own_water_year_is_chosen_on_its_card(user, opened):
     stored = lakerecord.settings(studies.load_study(opened.path))
     assert stored["inflow"]["water_year"] == 7
     assert stored["homogenise"]["water_year"] is None
+
+
+# -- one rating instead of a register ------------------------------------------------------
+
+def test_a_rating_file_in_place_of_a_register_is_one_rating(study):
+    dam = dams.settings(study)
+    assert not dams.single_rating(dam)                       # nothing given
+    dam["register"] = "ratings/RatingCurves.xlsx"
+    assert not dams.single_rating(dam)
+    for name in ("ratings/KRO_OUTFLOW.rat", "ratings/kroombit.sq", "ratings/kro.csv"):
+        dam["register"] = name
+        assert dams.single_rating(dam), name
+
+
+def test_the_single_rating_s_full_supply_reaches_the_job(study):
+    dam = dams.settings(study)
+    dam.update(register="ratings/kroombit.sq", register_fsl=265.8)
+    dams.store(study, dam)
+    job = lakerecord.homogenise_job(study, lakerecord.settings(study))
+    assert job["register"].endswith("kroombit.sq") and job["register_fsl"] == 265.8
+
+
+@pytest.mark.asyncio
+async def test_a_single_rating_asks_for_its_full_supply_level(user, opened):
+    await user.open("/study")
+    await user.should_not_see(marker="dam-register-fsl")
+    await _type(user, "dam-register", str(opened.folder / "ratings" / "kroombit.sq"))
+    await user.should_see(marker="dam-single-rating")
+    await _type(user, "dam-register-fsl", "265.8")
+    stored = dams.settings(studies.load_study(opened.path))
+    assert stored["register"] == "ratings/kroombit.sq" and stored["register_fsl"] == 265.8

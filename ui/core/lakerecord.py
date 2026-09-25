@@ -62,6 +62,7 @@ DEFAULTS = {
     "rainfall": {"shapefile": "", "field": "", "value": "", "pattern": "rain_day_*.nc",
                  "variable": "", "weighting": "area", "output": "lake_record/rainfall.csv"},
     "homogenise": {"gauges": [], "overlay": None, "storage": "", "register": "",
+                   "register_fsl": None,
                    "evaporation": "", "pan_factors": list(CALLIDE_PAN_FACTORS), "step": "1h",
                    "recession_correction": True, "water_year_start": 10,
                    "separation_days": 5, "drop_m": 0.5, "targets": [], "water_year": None,
@@ -186,6 +187,7 @@ def homogenise_job(study: Study, section: dict) -> dict:
                       for t in h["targets"] if t.get("rating")]
     job["out"] = _absolute(study, h["out"])
     job["water_year_start"] = water_year(section, "homogenise")
+    job["register_fsl"] = h.get("register_fsl")
     return job
 
 
@@ -268,7 +270,7 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
         for number, gauge in enumerate(g for g in h["gauges"] if str(g).strip()):
             need(f"Gauge export {number + 1}", gauge)
         need("Storage table (.els)", h["storage"])
-        need("Rating register (.xlsx)", h["register"])
+        need("Ratings (a register, or one rating)", h["register"])
         if step != "inflow" or section["inflow"]["evaporation"]:
             need("Evaporation (SILO)", h["evaporation"])
         if h.get("overlay"):

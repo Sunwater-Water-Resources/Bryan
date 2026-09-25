@@ -200,10 +200,27 @@ class _StudyView:
 
             ui.label("Storage and release").classes("text-sm font-bold pt-1")
             with ui.row().classes("w-full gap-2 no-wrap"):
-                for key, label in (("storage", "Storage table (.els: EL, A, V)"),
-                                   ("register", "Rating register (.xlsx)")):
-                    with ui.element("div").classes("grow"):
-                        self._dam_path(label, dam, dam, key, mark=f"dam-{key}")
+                with ui.element("div").classes("grow"):
+                    self._dam_path("Storage table (.els: EL, A, V)", dam, dam, "storage",
+                                   mark="dam-storage")
+                with ui.element("div").classes("grow"):
+                    self._dam_path("Ratings: a register (.xlsx), or one rating for the "
+                                   "whole record (.rat, level,flow .csv or .sq)",
+                                   dam, dam, "register", mark="dam-register", redraw=True)
+                if dams.single_rating(dam):
+                    ui.input("Its full supply level (m AHD; blank: the file's)",
+                             value=f"{dam['register_fsl']:g}" if dam["register_fsl"] else "") \
+                        .classes("w-64").props("dense").mark("dam-register-fsl") \
+                        .on("blur", lambda e: self._set_dam(dam, "register_fsl",
+                                                            _number(e.sender.value)))
+            if dams.single_rating(dam):
+                ui.label("One rating for the whole record, for a dam whose spillway has "
+                         "not changed. Homogenising then routes the record through much the "
+                         "rating it was made under, so the homogenised levels follow the "
+                         "recorded ones; the antecedent storage and the inflow record are "
+                         "what it is for. A .sq that does not state its full supply level "
+                         "needs it given.").classes("text-xs text-muted") \
+                    .mark("dam-single-rating")
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._dam_path("Evaporation (SILO Data Drill)", dam, dam, "evaporation",
@@ -238,16 +255,17 @@ class _StudyView:
                 ui.label("The water year every analysis labels its annual maxima by.") \
                     .classes("text-xs text-muted")
 
-    def _dam_path(self, label, holder, dam, key, *, mark=""):
+    def _dam_path(self, label, holder, dam, key, *, mark="", redraw=False):
+        """A path input; ``redraw`` for one whose value changes what else is asked."""
         box = ui.input(label, value=holder.get(key) or "").classes("w-full").props("dense")
         box.on("blur", lambda e: self._set_dam(
             holder, key, studies.portable(STATE.study.folder, e.sender.value)
-            if str(e.sender.value).strip() else "", dam=dam))
+            if str(e.sender.value).strip() else "", dam=dam, redraw=redraw))
         if mark:
             box.mark(mark)
         return box
 
-    def _set_dam(self, holder, key, value, *, dam=None) -> None:
+    def _set_dam(self, holder, key, value, *, dam=None, redraw=False) -> None:
         """Change one dam input and save the study - ``dam`` is the whole section
         when ``holder`` is a part of it, such as the overlay gauge."""
         dam = holder if dam is None else dam
@@ -255,6 +273,8 @@ class _StudyView:
             return
         holder[key] = value
         self._save_dam(dam)
+        if redraw:
+            self.redraw()
 
     def _save_dam(self, dam) -> None:
         study = STATE.study
