@@ -142,6 +142,7 @@ class _ResultsView:
         self._floor_kind = None
         self.warning_box = None
         self.table_box = None
+        self.margin_note = None
         self.files_box = None
 
     # -- build ------------------------------------------------------------
@@ -204,9 +205,8 @@ class _ResultsView:
     def _table_card(self) -> None:
         with ui.card().classes("w-full"):
             ui.label("Critical durations").classes("font-bold")
-            ui.label("'margin %' is how far the critical duration beat the "
-                     "runner-up. A few tenths of a percent is sampling noise, "
-                     "not a crossover.").classes("text-xs text-muted")
+            # Worded per result type in _draw_table: metres for level.
+            self.margin_note = ui.label("").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
 
     # -- state ------------------------------------------------------------
@@ -445,9 +445,7 @@ class _ResultsView:
         high = self.aep_to if self.aep_to in aeps else aeps[-1]
         if low > high:
             low, high = high, low
-        kept = comparison.frame.loc[low:high]
-        return results.Comparison(frame=kept, durations=comparison.durations,
-                                  problems=comparison.problems)
+        return comparison.between(low, high)
 
     def _draw_floor(self, analysis) -> None:
         """The noise floor, in the units of the result type.
@@ -492,6 +490,7 @@ class _ResultsView:
 
     def _draw_table(self, comparison, analysis) -> None:
         self.table_box.clear()
+        self.margin_note.set_text(results.margin_note(analysis.margin_kind))
         table = results.table(comparison, analysis)
         with self.table_box:
             if table.empty:
