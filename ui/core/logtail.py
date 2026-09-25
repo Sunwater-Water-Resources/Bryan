@@ -30,6 +30,11 @@ class Tail:
         return self.text.splitlines()
 
 
+def _newlines(text: str) -> str:
+    """Every line ending as "\\n", as a text-mode read would give."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def tail(path, max_bytes: int = DEFAULT_TAIL_BYTES) -> Tail:
     """The last ``max_bytes`` of ``path``, decoded leniently.
 
@@ -52,7 +57,11 @@ def tail(path, max_bytes: int = DEFAULT_TAIL_BYTES) -> Tail:
     except OSError:
         return Tail("", size, stat.st_mtime, False)
 
-    text = data.decode("utf-8", errors="replace")
+    # Windows line endings survive a binary read, and a pattern anchored at the
+    # end of a line then never matches: "All 2 simulations completed.\r" is not
+    # "...completed." and every name read off a banner kept a trailing "\r".
+    # So the run page never saw a run finish.
+    text = _newlines(data.decode("utf-8", errors="replace"))
     if start:
         # Drop the partial first line so nothing is shown half-decoded.
         newline = text.find("\n")
@@ -80,9 +89,9 @@ def head_and_tail(path, max_bytes: int = DEFAULT_TAIL_BYTES) -> str:
 
     try:
         with path.open("rb") as stream:
-            start = stream.read(max_bytes).decode("utf-8", errors="replace")
+            start = _newlines(stream.read(max_bytes).decode("utf-8", errors="replace"))
             stream.seek(-max_bytes, os.SEEK_END)
-            end = stream.read().decode("utf-8", errors="replace")
+            end = _newlines(stream.read().decode("utf-8", errors="replace"))
     except OSError:
         return ""
     skipped = size - 2 * max_bytes

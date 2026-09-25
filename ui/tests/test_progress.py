@@ -73,6 +73,25 @@ def test_parse_console_detects_a_clean_finish():
     assert parsed["all_completed"] and parsed["finished"]
 
 
+def test_a_console_log_with_windows_line_endings_still_finishes(tmp_path):
+    """Bryan's console goes to a file, and on Windows its lines end in CRLF.
+
+    The log is read as bytes, so the "\\r" survived into the text: the summary
+    line never matched, the run never finished, and the name read off each
+    banner kept a trailing "\\r".
+    """
+    console = tmp_path / "console.log"
+    text = (banner(1, 2, "out_18h") + banner(2, 2, "out_24h")
+            + "\nAll 2 simulations completed.\n")
+    console.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    chunk = FakeChunk(0, [0, 1], tmp_path / "missing_run_log.csv", console)
+
+    result = progress.read_chunk_progress(chunk, names=["out_18h", "out_24h"],
+                                          returncode=0, alive=False)
+    assert result.summary == "All 2 simulations completed."
+    assert "\r" not in progress.tail(console).text
+
+
 def test_parse_console_detects_failures():
     text = banner(1, 2, "a") + "\n2 of 2 simulations did not complete:\n"
     parsed = progress.parse_console(text)
