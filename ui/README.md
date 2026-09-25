@@ -42,6 +42,10 @@ leaves it closed, with the reason on the page.
 runs, each opened with one click, or any other by path, with **Add to study** to
 name it as one of the study's runs.
 
+**Runs panel** — down the left of every page: the study's runs with a count of
+their rows in each state, each opened with one click without leaving the page.
+Folds to a strip; the run name in the menu bar toggles it.
+
 **Select** — the sims list as a table, filtered by group. Where there is no
 `Group` column, one is derived by stripping the duration from the output name,
 so the durations of a case collapse into one row of the filter.

@@ -42,6 +42,8 @@ class UiSettings:
     # study's: the grids are tens of gigabytes that not everyone has, so a study
     # ships the catchment series extracted from them, never the path to them.
     awap_folder: str = ""
+    # The runs panel down the left of every page: open, or folded to a strip.
+    runs_panel_open: bool = True
 
     @classmethod
     def load(cls) -> "UiSettings":
@@ -52,6 +54,7 @@ class UiSettings:
         known["recent_studies"] = list(known.get("recent_studies") or [])
         known["last_study"] = str(known.get("last_study") or "")
         known["awap_folder"] = str(known.get("awap_folder") or "")
+        known["runs_panel_open"] = bool(known.get("runs_panel_open", True))
         known["downstream_configs"] = dict(known.get("downstream_configs") or {})
         settings = cls(**known)
         settings.fill_defaults()

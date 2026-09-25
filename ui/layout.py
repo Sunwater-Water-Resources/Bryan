@@ -45,7 +45,9 @@ STATE_COLOUR = {
 
 @contextmanager
 def page_frame(title: str):
+    from runspanel import runs_panel               # it draws with STATE_COLOUR, from here
     theme.apply()
+    panel = runs_panel()
     # The same bar Judith's window carries: the name, what the tool is for, and on
     # the right what is open.
     with ui.header().classes("items-center justify-between") \
@@ -62,7 +64,9 @@ def page_frame(title: str):
         with ui.row().classes("items-center gap-2 no-wrap"):
             project = STATE.project
             ui.label(project.name if project else "no sims list open") \
-                .classes("mono").style(f"color:{ON_INK_MUTED}; font-size:12px")
+                .classes("mono cursor-pointer").style(f"color:{ON_INK_MUTED}; font-size:12px") \
+                .on("click", panel.toggle).mark("header-run") \
+                .tooltip("Show or fold the runs panel")
             ui.button(icon="settings", on_click=_open_settings) \
                 .props("flat round dense color=white").mark("open-settings") \
                 .tooltip("Settings, and Check setup")
