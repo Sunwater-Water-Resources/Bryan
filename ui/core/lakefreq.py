@@ -34,7 +34,7 @@ from pathlib import Path
 
 from .bryan import BRYAN_ROOT, lake_level_record
 from .palette import BODY, MUTED, PALETTE, SURFACE
-from .paths import atomic_write_json, normalise_sep, read_json
+from .paths import atomic_write_json, clean_path_text, normalise_sep, read_json
 
 RECORD = lake_level_record()
 
@@ -117,7 +117,7 @@ def save_settings(config_path, settings: dict) -> Path:
 
 def portable(base: Path, text) -> str:
     """A path as it should be stored: relative when it sits under ``base``."""
-    text = str(text or "").strip().strip('"')
+    text = clean_path_text(text or "")
     if not text:
         return ""
     path = Path(normalise_sep(text))
@@ -131,7 +131,7 @@ def portable(base: Path, text) -> str:
 
 
 def resolve(base: Path, text) -> Path | None:
-    text = str(text or "").strip().strip('"')
+    text = clean_path_text(text or "")
     if not text:
         return None
     path = Path(normalise_sep(text))

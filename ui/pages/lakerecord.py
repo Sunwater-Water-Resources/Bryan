@@ -29,6 +29,7 @@ import pandas as pd
 from nicegui import app, run, ui
 
 from core import awap, lakerecord, wordtable
+from core.paths import clean_path_text
 from layout import page_frame, severity_banner
 from state import STATE
 from theme import house_echart
@@ -152,7 +153,7 @@ class _LakeRecordView:
             self._draw_rainfall()
 
     def _set_grids(self, text) -> None:
-        text = str(text or "").strip().strip('"')
+        text = clean_path_text(text or "")
         if text != STATE.settings.awap_folder:
             STATE.settings.awap_folder = text
             STATE.settings.save()

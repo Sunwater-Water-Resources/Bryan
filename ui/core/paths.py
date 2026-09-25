@@ -18,6 +18,7 @@ import json
 import os
 import re
 import tempfile
+import unicodedata
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pandas as pd
@@ -60,6 +61,19 @@ def cell_text(value) -> str:
     return "" if is_blank(value) else str(value).strip()
 
 
+def clean_path_text(value) -> str:
+    """Typed or pasted path text as a path: invisible marks, space and quotes gone.
+
+    Copying a path from a file's Properties > Security tab puts an invisible
+    U+202A (left-to-right embedding) in front of it, so a path that looks right
+    is not found. No file name holds a formatting character (Unicode category
+    Cf), so every one is dropped; then the space and the quotes "Copy as path"
+    wraps it in.
+    """
+    text = "".join(ch for ch in str(value) if unicodedata.category(ch) != "Cf")
+    return text.strip().strip('"').strip()
+
+
 def normalise_sep(value: str) -> str:
     """A sims-list path with its separators made local.
 
@@ -67,7 +81,7 @@ def normalise_sep(value: str) -> str:
     in both directions. Used only for resolving and stat-ing - never for a
     value written back out for Bryan.
     """
-    text = str(value).strip().strip('"')
+    text = clean_path_text(value)
     if not text:
         return ""
     if os.sep == "/":

@@ -36,7 +36,7 @@ from pathlib import Path
 
 from . import grouping
 from .config import ConfigError, load_sims_config
-from .paths import atomic_write_json, normalise_sep, read_json
+from .paths import atomic_write_json, clean_path_text, normalise_sep, read_json
 from .simslist import read_sims_list
 
 FORMAT_KEY = "bryan_study"
@@ -57,7 +57,7 @@ def portable(base: Path, text) -> str:
 
     Forward slashes either way, so the file reads the same on Linux.
     """
-    text = str(text or "").strip().strip('"')
+    text = clean_path_text(text or "")
     if not text:
         return ""
     path = Path(normalise_sep(text))
@@ -72,7 +72,7 @@ def portable(base: Path, text) -> str:
 
 
 def resolve(base: Path, text) -> Path | None:
-    text = str(text or "").strip().strip('"')
+    text = clean_path_text(text or "")
     if not text:
         return None
     path = Path(normalise_sep(text))
@@ -188,8 +188,18 @@ class Study:
         if self.run_entry(name) is not None:
             raise StudyError(f"there is already a run called {name!r}")
         path = resolve(self.folder, sims_config)
-        if path is None or not path.is_file():
-            raise StudyError(f"sims config not found: {sims_config}")
+        if path is None:
+            raise StudyError("give the run's sims_config.json")
+        if path.is_dir():
+            configs = sorted(item.name for item in path.glob("*.json"))[:6]
+            raise StudyError(f"{path} is a folder - give the sims_config.json in it"
+                             + (f" ({', '.join(configs)})" if configs else ""))
+        if not path.is_file():
+            relative = not Path(normalise_sep(sims_config)).is_absolute()
+            raise StudyError(
+                f"sims config not found: {path}"
+                + (f" - a relative path is read from the study file's folder, "
+                   f"{self.folder}" if relative else ""))
         entry = {"name": name, "sims_config": portable(self.folder, str(path))}
         self.runs.append(entry)
         return entry
@@ -304,7 +314,7 @@ def pmf_entries(study: Study) -> list:
 
 
 def new_study(path, name: str = "") -> Study:
-    path = Path(path).expanduser()
+    path = Path(clean_path_text(path)).expanduser()
     if path.suffix.lower() != ".json":
         path = path / DEFAULT_NAME
     if path.exists():
@@ -316,7 +326,7 @@ def new_study(path, name: str = "") -> Study:
 
 
 def load_study(path) -> Study:
-    path = Path(path).expanduser()
+    path = Path(clean_path_text(path)).expanduser()
     if path.is_dir():
         path = path / DEFAULT_NAME
     if not path.is_file():

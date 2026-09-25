@@ -21,6 +21,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .paths import clean_path_text
+
 FILEPATH_KEYS = ("model_config", "storm_config", "climate_config")
 
 
@@ -77,7 +79,7 @@ def load_sims_config(path) -> SimsConfig:
     Main.py has no validation at all - a missing key is a bare KeyError deep in
     the run. Everything that would blow up there is checked here instead.
     """
-    config_path = Path(path).expanduser()
+    config_path = Path(clean_path_text(path)).expanduser()
     if not config_path.is_file():
         raise ConfigError(f"config file not found: {config_path}")
     config_path = config_path.resolve()
