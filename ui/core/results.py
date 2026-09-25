@@ -81,6 +81,22 @@ def margin_scale(key) -> tuple:
     return PERCENT, MARGIN_NOISE_PERCENT, "margin %"
 
 
+def margin_note(kind) -> str:
+    """What the margin column means, in the units ``margin_scale`` gives it.
+
+    Level is in metres: a percentage of a level in m AHD depends on the datum,
+    and at Callide the durations separate by 0.01-0.10 m, which as a percentage
+    is 0.005-0.05% - below any sensible floor.
+    """
+    if kind == ABSOLUTE:
+        return ("'margin (m)' is how far the critical duration beat the "
+                "runner-up, in metres. A level is on an arbitrary datum, so it is "
+                "not given as a percentage. A few millimetres is sampling noise, "
+                "not a crossover.")
+    return ("'margin %' is how far the critical duration beat the runner-up. "
+            "A few tenths of a percent is sampling noise, not a crossover.")
+
+
 def format_margin(value, kind) -> str:
     if value != value:                      # NaN - only one duration reaches here
         return "-"
@@ -120,6 +136,15 @@ class Comparison:
     @property
     def is_empty(self) -> bool:
         return self.frame.empty
+
+    def between(self, low, high) -> "Comparison":
+        """The AEPs from ``low`` to ``high``, keeping everything else.
+
+        The result type above all: ``analyse`` reads the margin's units from
+        ``key``, and a comparison rebuilt without it judged lake level in percent.
+        """
+        return Comparison(frame=self.frame.loc[low:high], durations=self.durations,
+                          problems=self.problems, key=self.key)
 
 
 @dataclass(frozen=True)

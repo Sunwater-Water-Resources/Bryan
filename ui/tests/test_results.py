@@ -293,6 +293,12 @@ def test_level_margins_are_metres_and_flows_are_percentages(tmp_path):
         assert (kind, floor, label) == (results.PERCENT,
                                         results.MARGIN_NOISE_PERCENT, "margin %")
 
+    # the note above the table says the same thing as the column heading
+    level_note = results.margin_note(results.ABSOLUTE)
+    assert "margin (m)" in level_note and "metres" in level_note
+    assert "%" not in level_note
+    assert "margin %" in results.margin_note(results.PERCENT)
+
     # the same numbers, judged both ways
     for kind, values in (("level", {2: 216.0, 100: 220.0}),
                          ("inflow", {2: 216.0, 100: 220.0})):
@@ -311,6 +317,25 @@ def test_level_margins_are_metres_and_flows_are_percentages(tmp_path):
             # the same 0.1 in 216 is 0.05% - inside the noise floor for a flow
             assert analysis.margin.loc[2] == pytest.approx(0.0463, abs=1e-3)
             assert any("sampling noise" in t for t in analysis.warnings)
+
+
+def test_trimming_the_aep_range_keeps_the_result_type(tmp_path):
+    """The page trims every comparison to its AEP range before analysing it.
+
+    It used to rebuild the comparison without ``key``, so ``analyse`` could not
+    tell it was lake level and gave the margin in percent.
+    """
+    write_quantiles(tmp_path / "a_24h_level.csv", "level", {2: 216.0, 100: 220.0})
+    write_quantiles(tmp_path / "b_48h_level.csv", "level", {2: 216.1, 100: 219.0})
+    frame = pd.DataFrame([mc_row(tmp_path, "a_24h", 24), mc_row(tmp_path, "b_48h", 48)])
+    comparison = results.compare(results.sources_for_rows(frame, tmp_path)["level"])
+
+    trimmed = comparison.between(2, 100)
+    assert trimmed.key == "level"
+    assert trimmed.durations == comparison.durations
+    analysis = results.analyse(trimmed)
+    assert analysis.margin_label == "margin (m)"
+    assert analysis.margin.loc[2] == pytest.approx(0.1)
 
 
 def test_the_noise_floor_can_be_overridden(tmp_path):
