@@ -121,6 +121,17 @@ class Inputs:
                                end=end, recession_correction=self.recession_correction)
 
 
+def water_year_start(analysis_job: dict, homogenise_job) -> int:
+    """The month an analysis built on a homogenisation starts its water year.
+
+    Its own when its job gives one (``"water_year_start"``), else the
+    homogenisation job's. The launcher keeps one water year for the study and
+    lets each analysis override it, so the antecedent storage and the inflow
+    record need not label their years as the homogenisation does.
+    """
+    return int(analysis_job.get("water_year_start") or homogenise_job["water_year_start"])
+
+
 def load_inputs(job: Job, with_evaporation: bool = True) -> Inputs:
     """Read every shared input; clip the record to where they all cover it.
 
