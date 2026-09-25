@@ -162,3 +162,47 @@ async def test_twelve_pan_factors_are_needed(user, opened):
     await user.should_see("Give twelve pan factors")
     assert dams.settings(studies.load_study(opened.path))["pan_factors"] == \
         dams.CALLIDE_PAN_FACTORS
+
+
+# -- the water year: the study's, overridable per step ------------------------------------
+
+def test_every_step_takes_the_study_s_water_year_unless_it_has_its_own(study):
+    old_lake_record(study)                                     # study's water year: July
+    section = lakerecord.settings(study)
+    homogenise = lakerecord.homogenise_job(study, section)
+    assert homogenise["water_year_start"] == 7
+    assert lakerecord.antecedent_job(study, section, "h.json")["water_year_start"] == 7
+    section["inflow"]["water_year"] = 10
+    assert lakerecord.inflow_job(study, section, "h.json")["water_year_start"] == 10
+    assert lakerecord.antecedent_job(study, section, "h.json")["water_year_start"] == 7
+
+
+def test_steps_that_label_different_years_are_said_so(study):
+    section = lakerecord.settings(old_lake_record(study))
+    assert lakerecord.water_year_note(section) == ""
+    section["inflow"]["water_year"] = 10
+    note = lakerecord.water_year_note(section)
+    assert "homogenisation from Jul" in note and "the inflow record from Oct" in note
+
+
+def test_an_override_is_never_passed_off_as_the_study_s_water_year(study):
+    """An older launcher reads the homogenisation's month where the study's used
+    to be; the dam section keeps the study's own."""
+    section = lakerecord.settings(old_lake_record(study))     # no "dam" section yet
+    section["homogenise"]["water_year"] = 9
+    lakerecord.store(study, section)
+    assert study.extra["lake_record"]["homogenise"]["water_year_start"] == 9
+    assert dams.settings(study)["water_year_start"] == 7
+    assert lakerecord.water_year(lakerecord.settings(study), "antecedent") == 7
+
+
+@pytest.mark.asyncio
+async def test_a_step_s_own_water_year_is_chosen_on_its_card(user, opened):
+    await user.open("/lake-record")
+    await user.should_see(marker="water-year-inflow")
+    user.find(marker="water-year-inflow").click()
+    user.find("Jul").click()
+    await user.should_see("do not label the same water years")
+    stored = lakerecord.settings(studies.load_study(opened.path))
+    assert stored["inflow"]["water_year"] == 7
+    assert stored["homogenise"]["water_year"] is None
