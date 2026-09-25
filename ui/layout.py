@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from nicegui import ui
 
 import theme
-from core import completion
+from core import completion, manual
 from core.palette import BRAND_CYAN, INK, ON_INK_MUTED
 from state import STATE
 
@@ -69,6 +69,12 @@ def page_frame(title: str):
                 .classes("mono cursor-pointer").style(f"color:{ON_INK_MUTED}; font-size:12px") \
                 .on("click", panel.toggle).mark("header-run") \
                 .tooltip("Show or fold the runs panel")
+            help_at = manual.section_for(title)
+            if help_at:
+                ui.button(icon="help_outline",
+                          on_click=lambda: ui.navigate.to(help_at, new_tab=True)) \
+                    .props("flat round dense color=white").mark("open-help") \
+                    .tooltip("This page's section of the manual, in a new tab")
             ui.button(icon="settings", on_click=_open_settings) \
                 .props("flat round dense color=white").mark("open-settings") \
                 .tooltip("Settings, and Check setup")

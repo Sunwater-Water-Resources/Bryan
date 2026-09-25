@@ -207,7 +207,9 @@ class _ReportView:
         table_id = spec.get("id")
         kind = reporttables.KINDS.get(spec.get("kind"))
         is_open = table_id in self.open
-        with ui.card().classes("w-full gap-2").mark(f"table-{table_id}") as card:
+        # The margin keeps a table scrolled to from the contents clear of the menu bar.
+        with ui.card().classes("w-full gap-2").style("scroll-margin-top: 72px") \
+                .mark(f"table-{table_id}") as card:
             with ui.row().classes("w-full items-center justify-between no-wrap"):
                 with ui.row().classes("items-center gap-2 no-wrap grow cursor-pointer") \
                         .on("click", lambda: self._set_open(table_id, table_id not in self.open)) \
