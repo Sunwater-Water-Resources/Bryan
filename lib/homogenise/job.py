@@ -9,6 +9,7 @@ folder. What Callide held as constants and a repository layout is here:
                   "below": 200.90, "reconnect_margin": 0.10},
       "storage": "storage/CALLIDE_STORAGE.els",               # EL,A,V
       "register": "ratings/RatingCurves.xlsx",                # Register + a sheet per rating
+      "register_fsl": null,                                   # one rating only, see below
       "evaporation": "climate/silo_-24.35_150.65.txt",        # SILO Data Drill
       "pan_factors": {"1": 0.82, ...},                        # optional, month -> factor
       "step": "1h",
@@ -23,6 +24,12 @@ folder. What Callide held as constants and a repository layout is here:
 replaces the chain wherever it reads below ``below`` (a pool that partitions
 below a sediment bar), its last value held until the chain climbs
 ``reconnect_margin`` clear.
+
+``register`` is a workbook - a ``Register`` sheet of ``Rating, from, to, FSL``
+and one ``level, flow`` sheet per rating - or, for a dam whose spillway has not
+changed, one rating for the whole record: a URBS ``.rat`` (level, flow) or
+``.sq``, or a ``level,flow`` csv. ``register_fsl`` is its full supply level where
+the file does not state one; a ``.sq`` without one in its header needs it.
 
 A target rating is a URBS ``.sq`` (storage above full supply against outflow,
 tied to the FSL its header declares - never re-based) or a ``level,flow`` csv
@@ -43,7 +50,8 @@ from . import curves, evaporation as evaporation_module, gauges, model, peaks
 log = logging.getLogger("bryan.homogenise.job")
 
 DEFAULTS = {
-    "gauges": [], "overlay": None, "storage": "", "register": "", "evaporation": "",
+    "gauges": [], "overlay": None, "storage": "", "register": "", "register_fsl": None,
+    "evaporation": "",
     "pan_factors": None, "step": "1h", "recession_correction": True,
     "water_year_start": peaks.DEFAULT_WATER_YEAR_START,
     "separation_days": peaks.DEFAULT_SEPARATION_DAYS, "drop_m": peaks.DEFAULT_DROP_M,
@@ -144,7 +152,9 @@ def load_inputs(job: Job, with_evaporation: bool = True) -> Inputs:
         if not job.path(key).is_file():
             raise JobError(f"{key} file not found: {job.path(key)}")
     volume_of_level, area_of_level = curves.read_storage(job.path("storage"))
-    register, ratings = curves.read_ratings(job.path("register"))
+    fsl = job["register_fsl"]
+    register, ratings = curves.read_rating_source(
+        job.path("register"), volume_of_level, float(fsl) if fsl not in (None, "") else None)
 
     record = gauges.read_chain([job.resolve(item, "gauge export") for item in job["gauges"]])
     if with_evaporation:

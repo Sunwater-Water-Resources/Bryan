@@ -304,8 +304,21 @@ def read_storage(els_file, step=DENSE_STEP):
     fits are not exact inverses of each other, and routing hundreds of thousands
     of steps through the round trip accumulates drift.  The simulation therefore
     solves in level space and never needs an inverse.
+
+    A table that opens with several rows of no storage - below the lowest outlet,
+    or where the survey starts; Kroombit's reads 0 ML from 248.6 to 249.0 m - has
+    no volume curve until the last of them, so the rows before it are dropped. A
+    flat stretch anywhere else is still refused.
     """
-    els = pd.read_csv(els_file).sort_values("EL")
+    els = pd.read_csv(els_file).sort_values("EL").reset_index(drop=True)
+    volumes = els["V"].to_numpy(dtype=float)
+    first = 0
+    while first + 1 < len(volumes) and volumes[first + 1] <= volumes[0]:
+        first += 1
+    if first:
+        log.info("Storage: %d rows of %g ML below %.2f m AHD left out; the volume "
+                 "curve starts there", first, volumes[0], els["EL"].iloc[first])
+        els = els.iloc[first:]
     volume_of_level = DenseCurve(els["EL"], els["V"], "storage V(EL)",
                                  strict=True, step=step)
     area_of_level = DenseCurve(els["EL"], els["A"], "storage A(EL)", step=step)
@@ -323,6 +336,28 @@ def read_sq(path):
     trusted: a truncated table would otherwise cap the release at whatever the
     last surviving pair happened to be.
     """
+    pairs, comments = _read_pairs(path)
+    table = pd.DataFrame(pairs, columns=["storage_ML", "flow_m3s"])
+    log.info("URBS sq: %s, %d pairs, 0 to %s ML above FSV, 0 to %s m3/s",
+             Path(path).name, len(table), f"{table['storage_ML'].max():,.0f}",
+             f"{table['flow_m3s'].max():,.0f}")
+    return table, comments
+
+
+def read_rat(path):
+    """Read a URBS level-discharge file (``.rat``): the ``.sq`` layout, with the
+    first column the lake level (m AHD) rather than the storage above full
+    supply. Returns the table as ``level``, ``flow`` and the header's comments."""
+    pairs, comments = _read_pairs(path)
+    table = pd.DataFrame(pairs, columns=["level", "flow"])
+    log.info("URBS rat: %s, %d pairs, %.3f to %.3f m AHD, 0 to %s m3/s",
+             Path(path).name, len(table), table["level"].min(), table["level"].max(),
+             f"{table['flow'].max():,.0f}")
+    return table, comments
+
+
+def _read_pairs(path):
+    """The pairs and the header comments of a URBS ``.sq`` or ``.rat`` file."""
     lines = [line.strip() for line in Path(path).read_text().splitlines()]
     header = [i for i, line in enumerate(lines) if "PAIRS" in line.upper()]
     if not header:
@@ -343,13 +378,8 @@ def read_sq(path):
     if len(pairs) != declared:
         raise ValueError(f"{path}: declares {declared} pairs but {len(pairs)} "
                          f"could be read")
-
     comments = [line for line in lines[:start] if line]
-    table = pd.DataFrame(pairs, columns=["storage_ML", "flow_m3s"])
-    log.info("URBS sq: %s, %d pairs, 0 to %s ML above FSV, 0 to %s m3/s",
-             Path(path).name, len(table), f"{table['storage_ML'].max():,.0f}",
-             f"{table['flow_m3s'].max():,.0f}")
-    return table, comments
+    return pairs, comments
 
 
 # Full supply written into the sq header.  Both spellings have to be accepted:
@@ -372,7 +402,7 @@ def declared_sq_fsl(comments):
 
 
 def load_rating(path, volume_of_level, fsl=None, name=None):
-    """Build a rating from either a URBS ``.sq`` file or a level/flow CSV.
+    """Build a rating from a URBS ``.sq`` or ``.rat`` file, or a level/flow CSV.
 
     ``fsl`` is checked against the file rather than applied to it.  That
     distinction matters: a ``.sq`` is indexed by storage *above full supply*, so
@@ -413,6 +443,22 @@ def load_rating(path, volume_of_level, fsl=None, name=None):
             fsl = declared
         rating = StorageDischargeRating(table["storage_ML"], table["flow_m3s"],
                                         volume_of_level, fsl, name)
+    elif path.suffix.lower() == ".rat":
+        table, comments = read_rat(path)
+        declared = declared_sq_fsl(comments)
+        if declared is not None and fsl is not None and abs(declared - fsl) > FSL_TOLERANCE_M:
+            raise ValueError(
+                f"{path} declares a full supply level of {declared:.3f} m AHD but "
+                f"{fsl:.3f} m was given. Leave the full supply level blank to use "
+                f"the file's, or supply a rating for {fsl:.3f} m.")
+        claimed = declared if declared is not None else fsl
+        origin = float(table["level"].min())
+        if claimed is not None and abs(origin - claimed) > FSL_TOLERANCE_M:
+            raise ValueError(
+                f"{path} starts at {origin:.3f} m AHD but its full supply level is "
+                f"{claimed:.3f} m. In a level-discharge table the full supply level "
+                f"is the first row, so these have to agree.")
+        rating = StageDischargeRating(table["level"], table["flow"], name, fsl=origin)
     else:
         table = pd.read_csv(path)
         origin = float(table["level"].min())
@@ -449,3 +495,37 @@ def read_ratings(workbook):
     log.info("Ratings: %d curves, register %s to %s", len(ratings),
              register["from"].min().date(), register["to"].max().date())
     return register, ratings
+
+
+REGISTER_SUFFIXES = (".xlsx", ".xlsm", ".xls")
+
+# A single rating is in force over any record: from long before a dam could have
+# been gauged to long after. The register's span also clips the record, so it has
+# to be wide enough never to.
+SINGLE_RATING_SPAN = (pd.Timestamp("1800-01-01"), pd.Timestamp("2200-01-01"))
+
+
+def single_rating(path, volume_of_level, fsl=None):
+    """One rating for the whole record, as a one-row register.
+
+    For a dam whose spillway has not changed: a URBS ``.rat`` or ``.sq``, or a
+    ``level,flow`` csv, read by ``load_rating`` with the same full supply checks
+    as a target rating. Everything downstream reads the register as it would a
+    workbook's, so the homogenisation is unchanged.
+    """
+    rating = load_rating(path, volume_of_level, fsl=fsl, name=Path(path).name)
+    register = pd.DataFrame({"from": [SINGLE_RATING_SPAN[0]], "to": [SINGLE_RATING_SPAN[1]],
+                             "FSL": [float(rating.fsl)]},
+                            index=pd.Index([1], name="Rating"))
+    log.info("Ratings: one rating for the whole record, %s", rating.describe())
+    return register, {1: rating}
+
+
+def read_rating_source(path, volume_of_level, fsl=None):
+    """The ratings in force over the record: a register workbook, or one rating.
+
+    ``fsl`` is used only for a single rating whose file does not state one.
+    """
+    if Path(path).suffix.lower() in REGISTER_SUFFIXES:
+        return read_ratings(path)
+    return single_rating(path, volume_of_level, fsl)

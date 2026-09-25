@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -158,3 +159,108 @@ def test_an_analysis_takes_its_own_water_year_or_the_homogenisation_s():
     assert jobs.water_year_start({"water_year_start": None}, homogenise) == 10
     assert jobs.water_year_start({"water_year_start": 7}, homogenise) == 7
     assert jobs.water_year_start({"water_year_start": "7"}, homogenise) == 7
+
+
+# -- one rating for the whole record ------------------------------------------------------
+
+from lib.homogenise import curves                                  # noqa: E402
+
+
+def write_rat(path, pairs, *, fsl_note=None):
+    lines = ["KROOMBIT OUTFLOW", "* written for a test"]
+    if fsl_note:
+        lines.append(f"* {fsl_note}")
+    lines.append(f"{len(pairs)} PAIRS:")
+    lines += [f"{level:.3f} {flow:.2f}" for level, flow in pairs]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+PAIRS = [(265.8, 0.0), (266.0, 60.0), (266.5, 350.0), (267.0, 900.0), (268.0, 2600.0)]
+
+
+def test_a_rat_is_read_as_level_and_flow_with_the_header_s_full_supply(tmp_path):
+    table, comments = curves.read_rat(write_rat(tmp_path / "k.rat", PAIRS,
+                                                fsl_note="FSL is 265.8 mAHD"))
+    assert list(table.columns) == ["level", "flow"] and len(table) == 5
+    assert curves.declared_sq_fsl(comments) == 265.8
+    rating = curves.load_rating(tmp_path / "k.rat", None)
+    assert rating.fsl == 265.8 and rating.at(265.8) == 0.0
+    assert rating.at(267.0) == pytest.approx(900.0)
+
+
+def test_a_rat_s_full_supply_has_to_agree_with_what_is_given(tmp_path):
+    path = write_rat(tmp_path / "k.rat", PAIRS, fsl_note="FSL is 265.8 mAHD")
+    with pytest.raises(ValueError, match="declares a full supply level of 265.800"):
+        curves.load_rating(path, None, fsl=266.0)
+    starts_low = write_rat(tmp_path / "low.rat", [(265.0, 0.0)] + PAIRS[1:],
+                           fsl_note="FSL is 265.8 mAHD")
+    with pytest.raises(ValueError, match="starts at 265.000"):
+        curves.load_rating(starts_low, None)
+
+
+def test_one_rating_becomes_a_register_in_force_over_any_record(tmp_path):
+    register, ratings = curves.read_rating_source(write_rat(tmp_path / "k.rat", PAIRS), None)
+    assert list(register.columns) == ["from", "to", "FSL"] and len(register) == 1
+    assert register["from"].iloc[0].year == 1800 and register["to"].iloc[0].year == 2200
+    assert register["FSL"].iloc[0] == 265.8 and list(ratings) == [1]
+
+
+def test_a_sq_without_its_full_supply_needs_one_given(tmp_path):
+    sq = tmp_path / "k.sq"
+    sq.write_text("KROOMBIT\n*\n2 PAIRS:\n0 0\n586 52\n", encoding="utf-8")
+    volume, _ = curves.read_storage(write_els(tmp_path / "k.els"))
+    with pytest.raises(ValueError, match="not stated in the header"):
+        curves.read_rating_source(sq, volume)
+    register, _ = curves.read_rating_source(sq, volume, fsl=265.8)
+    assert register["FSL"].iloc[0] == 265.8
+
+
+def write_els(path):
+    levels = np.arange(250.0, 272.0, 0.5)
+    frame = pd.DataFrame({"EL": levels, "A": 1000.0, "V": (levels - 250.0) * 10_000.0})
+    frame.to_csv(path, index=False)
+    return path
+
+
+KROOMBIT_RECORD = BRYAN_ROOT.parent / "callide-fsl-reinstate" / "data" / "gauge" / "130360A_level_point.csv"
+KROOMBIT_RATINGS = BRYAN_ROOT.parent / "callide-design-flood-hydrology" / "runs" / "Regional_E001" / "ratings"
+SILO = BRYAN_ROOT.parent / "callide-fsl-reinstate" / "data" / "climate" / "silo_-24.35_150.65.txt"
+
+
+@pytest.mark.skipif(not (KROOMBIT_RECORD.is_file() and (KROOMBIT_RATINGS / "kroombit.sq").is_file()
+                         and SILO.is_file()),
+                    reason="needs the callide-fsl-reinstate and callide-design-flood-hydrology "
+                           "checkouts beside Bryan")
+def test_kroombit_s_single_rat_and_a_one_row_register_give_the_same_inflow(tmp_path):
+    """Phase 3's check: one rating read from a .rat is the same homogenisation input
+    as the same rating in a register workbook, on Kroombit's own record."""
+    fsl = 265.8
+    els = pd.read_csv(KROOMBIT_RATINGS / "kroombit.els")
+    sq, _ = curves.read_sq(KROOMBIT_RATINGS / "kroombit.sq")
+    fsv = float(np.interp(fsl, els["EL"], els["V"]))
+    levels = np.interp(fsv + sq["storage_ML"], els["V"], els["EL"])
+    # Rounded as a .rat file holds it, so the workbook gets the very same rating.
+    table = pd.DataFrame({"level": np.round(levels, 3), "flow": np.round(sq["flow_m3s"], 2)}) \
+        .drop_duplicates("level").reset_index(drop=True)
+    table.loc[0, "level"] = fsl
+    rat = write_rat(tmp_path / "kroombit.rat", list(zip(table["level"], table["flow"])),
+                    fsl_note=f"FSL is {fsl} mAHD")
+    workbook = tmp_path / "register.xlsx"
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame({"Rating": [1], "from": ["1/1/1990"], "to": ["1/1/2030"], "FSL": [fsl]}) \
+            .to_excel(writer, sheet_name="Register", index=False)
+        table.to_excel(writer, sheet_name="1", index=False)
+
+    def derived(register):
+        job = jobs.from_dict({"gauges": [str(KROOMBIT_RECORD)],
+                              "storage": str(KROOMBIT_RATINGS / "kroombit.els"),
+                              "register": str(register), "evaporation": str(SILO),
+                              "targets": []}, tmp_path, routing=False)
+        return jobs.load_inputs(job).dam().derive_inflow()
+
+    single, workbook_rated = derived(rat), derived(workbook)
+    assert len(single) == len(workbook_rated) > 10_000
+    pd.testing.assert_series_equal(single["Inflow_ML"], workbook_rated["Inflow_ML"])
+    pd.testing.assert_series_equal(single["Release_ML"], workbook_rated["Release_ML"])
+    assert single["Release_ML"].sum() > 0                  # Kroombit spills in the record
