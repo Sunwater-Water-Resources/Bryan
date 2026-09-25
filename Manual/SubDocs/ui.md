@@ -510,6 +510,10 @@ On Callide, with the evaporation left out, the annual maxima agree with the inde
 
 ## Things worth knowing
 
+### Long steps
+
+Homogenisation, antecedent storage and the inflow record on the Lake record page, and fitting and resampling the bands on the Lake levels page, run Bryan's scripts for up to several minutes. While one runs, the page says for how long, with **Cancel** beside it: that stops the script and anything it started, and leaves the last results as they were.
+
 ### Formulas without cached values
 
 Simulation lists are formula-driven — ```Output file```, ```Input MCDF```, ```Inflow```, ```SQ file```, ```Log file``` and ```Basename``` are usually concatenation formulas. Excel stores each formula's *result* when it saves the file, and that stored result is what Bryan reads. A workbook rewritten by a Python tool keeps the formulas but loses the results, and Bryan then reads those cells as **blank**.

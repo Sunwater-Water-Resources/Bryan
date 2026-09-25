@@ -15,6 +15,8 @@ held until a Save button, and is called on every change.
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 from nicegui import ui
@@ -167,6 +169,40 @@ class PathList:
         browse(title=self.label, start=pathcheck.start_folder(last, self.base), expect=FILE,
                suffixes=self.suffixes, places=_places(self.base, self.base_name, self.places),
                on_pick=add)
+
+
+class Running:
+    """While a long step runs: what it is doing, for how long, and Cancel.
+
+    ``cancel`` is the threading.Event handed to the step (core/processes.py);
+    ``done()`` takes the line away again.
+    """
+
+    def __init__(self, holder, what: str, *, mark: str = "running") -> None:
+        self.holder, self.what = holder, what
+        self.cancel = threading.Event()
+        self.started = time.monotonic()
+        holder.clear()
+        with holder:
+            with ui.row().classes("items-center gap-2 no-wrap").mark(mark):
+                ui.spinner(size="sm")
+                self.label = ui.label(what).classes("text-sm text-body")
+                self.button = ui.button("Cancel", icon="stop", on_click=self._cancel) \
+                    .props("flat dense no-caps color=negative").mark(f"{mark}-cancel")
+            self.timer = ui.timer(1.0, self._tick)
+
+    def _tick(self) -> None:
+        minutes, seconds = divmod(int(time.monotonic() - self.started), 60)
+        self.label.text = f"{self.what} - {minutes}:{seconds:02d}"
+
+    def _cancel(self) -> None:
+        self.cancel.set()
+        self.label.text = "stopping..."
+        self.button.set_enabled(False)
+
+    def done(self) -> None:
+        self.timer.cancel()
+        self.holder.clear()
 
 
 def path_input(label, value="", **kwargs) -> PathBox:

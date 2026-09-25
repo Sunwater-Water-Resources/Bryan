@@ -37,7 +37,7 @@ from core.paths import clean_path_text
 from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
-from widgets import FOLDER, OUTPUT, OUTPUT_FOLDER, path_input
+from widgets import FOLDER, OUTPUT, OUTPUT_FOLDER, Running, path_input
 
 
 async def _off_thread(function, *args):
@@ -324,7 +324,7 @@ class _LakeRecordView:
             with ui.row().classes("items-center gap-2"):
                 ui.button("Homogenise", icon="timeline", on_click=self._homogenise) \
                     .mark("run-homogenise")
-                self.h_status = ui.label("").classes("text-sm text-body")
+                self.h_status = ui.row().classes("items-center")
             self.h_box = ui.column().classes("w-full")
             self._draw_homogenised(lakerecord.last_summary(self.study, self.section,
                                                            "homogenise"))
@@ -363,10 +363,17 @@ class _LakeRecordView:
     async def _homogenise(self) -> None:
         if self._blocked("homogenise"):
             return
-        self.h_status.text = "homogenising - about half a minute per 500,000 steps..."
-        result = await _off_thread(lakerecord.homogenise, self.study,
-                                   copy.deepcopy(self.section), STATE.settings.bryan_python)
-        self.h_status.text = ""
+        running = Running(self.h_status, "homogenising - about half a minute per "
+                                         "500,000 steps", mark="running-homogenise")
+        try:
+            result = await _off_thread(lakerecord.homogenise, self.study,
+                                       copy.deepcopy(self.section), STATE.settings.bryan_python,
+                                       running.cancel)
+        finally:
+            running.done()
+        if result.cancelled:
+            ui.notify("Homogenising cancelled")
+            return
         if not result.ok:
             self._failed(self.h_box, result)
             return
@@ -442,7 +449,7 @@ class _LakeRecordView:
             with ui.row().classes("items-center gap-2"):
                 ui.button("Antecedent storage", icon="show_chart", on_click=self._antecedent) \
                     .mark("run-antecedent")
-                self.a_status = ui.label("").classes("text-sm text-body")
+                self.a_status = ui.row().classes("items-center")
             self.a_box = ui.column().classes("w-full")
             self._draw_antecedent(lakerecord.last_summary(self.study, self.section,
                                                           "antecedent"))
@@ -468,10 +475,17 @@ class _LakeRecordView:
     async def _antecedent(self) -> None:
         if self._blocked("antecedent"):
             return
-        self.a_status.text = "homogenising and searching the rainfall..."
-        result = await _off_thread(lakerecord.antecedent, self.study,
-                                   copy.deepcopy(self.section), STATE.settings.bryan_python)
-        self.a_status.text = ""
+        running = Running(self.a_status, "homogenising and searching the rainfall",
+                          mark="running-antecedent")
+        try:
+            result = await _off_thread(lakerecord.antecedent, self.study,
+                                       copy.deepcopy(self.section), STATE.settings.bryan_python,
+                                       running.cancel)
+        finally:
+            running.done()
+        if result.cancelled:
+            ui.notify("Antecedent storage cancelled")
+            return
         if not result.ok:
             self._failed(self.a_box, result)
             return
@@ -579,7 +593,7 @@ class _LakeRecordView:
             with ui.row().classes("items-center gap-2"):
                 ui.button("Inflow record", icon="waves", on_click=self._inflow) \
                     .mark("run-inflow")
-                self.i_status = ui.label("").classes("text-sm text-body")
+                self.i_status = ui.row().classes("items-center")
             self.i_box = ui.column().classes("w-full")
             self._draw_inflow(lakerecord.last_summary(self.study, self.section, "inflow"))
 
@@ -600,10 +614,16 @@ class _LakeRecordView:
     async def _inflow(self) -> None:
         if self._blocked("inflow"):
             return
-        self.i_status.text = "deriving the inflow..."
-        result = await _off_thread(lakerecord.inflow, self.study,
-                                   copy.deepcopy(self.section), STATE.settings.bryan_python)
-        self.i_status.text = ""
+        running = Running(self.i_status, "deriving the inflow", mark="running-inflow")
+        try:
+            result = await _off_thread(lakerecord.inflow, self.study,
+                                       copy.deepcopy(self.section), STATE.settings.bryan_python,
+                                       running.cancel)
+        finally:
+            running.done()
+        if result.cancelled:
+            ui.notify("Inflow record cancelled")
+            return
         if not result.ok:
             self._failed(self.i_box, result)
             return
