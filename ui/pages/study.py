@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
-from core import lakerecord, study as studies
+from core import dam as dams, lakerecord, study as studies
 from core.paths import clean_path_text
 from layout import page_frame, severity_banner
 from state import STATE
@@ -30,6 +30,13 @@ READERS = (("Report", "/report", "the runs and the report tables"),
 def study_page() -> None:
     with page_frame("Study"):
         _StudyView().build()
+
+
+def _number(value, default=None):
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def _plural(count, word) -> str:
@@ -67,6 +74,7 @@ class _StudyView:
                 self._open_card(first=True)
                 return
             self._study_card()
+            self._dam_card()
             self._contents_card()
             with ui.expansion("Open or create another study", icon="folder_open") \
                     .classes("w-full").mark("another-study"):
@@ -147,6 +155,127 @@ class _StudyView:
             study.save()
         except OSError as exc:
             ui.notify(f"Could not save {study.path.name}: {exc}", type="warning")
+
+    # -- the dam inputs ------------------------------------------------------------
+
+    def _dam_card(self) -> None:
+        """What more than one analysis reads about the dam, entered once.
+
+        Kept under ``"dam"`` in the study (``core/dam.py``). The Lake record page
+        shows them and links back here rather than editing them itself.
+        """
+        study = STATE.study
+        dam = dams.settings(study)
+        with ui.card().classes("w-full").mark("dam-card"):
+            ui.label(lakerecord.RECORD_CARD).classes("text-lg font-bold")
+            ui.label("What more than one analysis reads about the dam, entered once. "
+                     "The Lake record page's steps read these. Paths are kept relative "
+                     "to the study.").classes("text-xs text-muted")
+
+            ui.label("Lake level record").classes("text-sm font-bold pt-1")
+            ui.textarea("Gauge exports (WMIP / Hydstra), one per line, in the order the "
+                        "gauges operated", value="\n".join(dams.gauges(dam))) \
+                .classes("w-full").props("dense autogrow").mark("dam-gauges") \
+                .on("blur", lambda e: self._set_dam(dam, "gauges", [
+                    studies.portable(study.folder, line)
+                    for line in str(e.sender.value).splitlines() if line.strip()]))
+            overlay = dam.get("overlay")
+            with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                ui.checkbox("Overlay gauge below a level", value=bool(overlay),
+                            on_change=lambda e: self._toggle_overlay(dam, e.value)) \
+                    .mark("dam-overlay")
+                if overlay:
+                    with ui.element("div").classes("grow"):
+                        self._dam_path("Overlay gauge export", overlay, dam, "file")
+                    ui.input("below (m)", value=f"{overlay.get('below') or ''}") \
+                        .classes("w-28").props("dense") \
+                        .on("blur", lambda e: self._set_dam(
+                            overlay, "below", _number(e.sender.value), dam=dam))
+                    ui.input("reconnect margin (m)",
+                             value=f"{overlay.get('reconnect_margin', 0.10)}") \
+                        .classes("w-40").props("dense") \
+                        .on("blur", lambda e: self._set_dam(
+                            overlay, "reconnect_margin", _number(e.sender.value, 0.10),
+                            dam=dam))
+
+            ui.label("Storage and release").classes("text-sm font-bold pt-1")
+            with ui.row().classes("w-full gap-2 no-wrap"):
+                for key, label in (("storage", "Storage table (.els: EL, A, V)"),
+                                   ("register", "Rating register (.xlsx)")):
+                    with ui.element("div").classes("grow"):
+                        self._dam_path(label, dam, dam, key, mark=f"dam-{key}")
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+                with ui.element("div").classes("grow"):
+                    self._dam_path("Evaporation (SILO Data Drill)", dam, dam, "evaporation",
+                                   mark="dam-evaporation")
+                ui.input("Pan factors, Jan to Dec",
+                         value=" ".join(f"{v:g}" for v in dam["pan_factors"])) \
+                    .classes("w-[28rem]").props("dense").mark("dam-pan") \
+                    .on("blur", lambda e: self._set_pan(dam, e.sender.value))
+
+            ui.label("Catchment").classes("text-sm font-bold pt-1")
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+                with ui.element("div").classes("grow"):
+                    self._dam_path("Catchment shapefile (.shp)", dam, dam, "shapefile",
+                                   mark="dam-shapefile")
+                ui.input("Field (blank: every polygon)", value=dam["field"]) \
+                    .classes("w-48").props("dense") \
+                    .on("blur", lambda e: self._set_dam(dam, "field", e.sender.value.strip()))
+                ui.input("equal to", value=dam["value"]).classes("w-36").props("dense") \
+                    .on("blur", lambda e: self._set_dam(dam, "value", e.sender.value.strip()))
+                ui.input("Catchment area (km2)",
+                         value=f"{dam['catchment_km2']:g}" if dam["catchment_km2"] else "") \
+                    .classes("w-40").props("dense").mark("dam-area") \
+                    .on("blur", lambda e: self._set_dam(dam, "catchment_km2",
+                                                        _number(e.sender.value)))
+
+            with ui.row().classes("w-full items-end gap-3 no-wrap pt-1"):
+                ui.select({month + 1: name for month, name in enumerate(lakerecord.MONTHS)},
+                          value=int(dam["water_year_start"]), label="Water year starts",
+                          on_change=lambda e: self._set_dam(dam, "water_year_start",
+                                                            int(e.value))) \
+                    .classes("w-44").props("dense").mark("dam-water-year")
+                ui.label("The water year every analysis labels its annual maxima by.") \
+                    .classes("text-xs text-muted")
+
+    def _dam_path(self, label, holder, dam, key, *, mark=""):
+        box = ui.input(label, value=holder.get(key) or "").classes("w-full").props("dense")
+        box.on("blur", lambda e: self._set_dam(
+            holder, key, studies.portable(STATE.study.folder, e.sender.value)
+            if str(e.sender.value).strip() else "", dam=dam))
+        if mark:
+            box.mark(mark)
+        return box
+
+    def _set_dam(self, holder, key, value, *, dam=None) -> None:
+        """Change one dam input and save the study - ``dam`` is the whole section
+        when ``holder`` is a part of it, such as the overlay gauge."""
+        dam = holder if dam is None else dam
+        if holder.get(key) == value:
+            return
+        holder[key] = value
+        self._save_dam(dam)
+
+    def _save_dam(self, dam) -> None:
+        study = STATE.study
+        dams.store(study, dam)
+        try:
+            study.save()
+        except OSError as exc:
+            ui.notify(f"Could not save {study.path.name}: {exc}", type="warning")
+
+    def _toggle_overlay(self, dam, on) -> None:
+        dam["overlay"] = ({"file": "", "below": None, "reconnect_margin": 0.10}
+                          if on else None)
+        self._save_dam(dam)
+        self.redraw()
+
+    def _set_pan(self, dam, text) -> None:
+        values = [_number(token) for token in str(text).replace(",", " ").split()]
+        if len(values) != 12 or None in values:
+            ui.notify("Give twelve pan factors, January to December", type="warning")
+            return
+        self._set_dam(dam, "pan_factors", values)
 
     def _contents_card(self) -> None:
         found = contents(STATE.study)

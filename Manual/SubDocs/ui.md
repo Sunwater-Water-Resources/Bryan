@@ -40,6 +40,21 @@ A dam's design flood study spans several runs - the RFSL and FSL sims lists are 
 
 The **Study** page, first in the menu, opens one or creates one with **New study** (give the folder, or the file). Its paths are stored relative to it, so a study copied to another disk still opens. Once open, the page shows the study's name (edit it in place), where it is, and what it holds: its runs and report tables, PMF groups, figures and lake level record, each with a link to its page. **Close** closes it; another is opened from the section below.
 
+### Dam inputs
+
+What more than one analysis reads about the dam is entered once, in the **Dam inputs** card on the Study page, and kept under ```"dam"``` in the study file:
+
+- **Gauge exports** (WMIP or Hydstra), in the order the gauges operated; each owns the record from its first reading to the next one's.
+- An optional **overlay gauge** that replaces the chain wherever it reads below a level, its last value held until the chain climbs clear by the reconnect margin - Callide's intake gauge, reading the working storage below the sediment bar that partitions the pool at 200.90 m.
+- The **storage table** (```.els```: ```EL, A, V```) and the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating).
+- The **SILO evaporation** and the monthly **pan factors**.
+- The **catchment**: its shapefile (a field and value pick one polygon out of a regions file; blank takes every polygon) and its area in km2.
+- The month the **water year** starts.
+
+The Lake record page shows them, each with whether its file is there, and links back here to change them.
+
+A study saved before the dam inputs existed takes them from its Lake record settings, where they used to be kept, so nothing is retyped. Every save also writes them back there, so a launcher that has not been updated still finds them.
+
 **The study the launcher last had open is reopened when it starts**, so the pages that read it are ready without a visit here. The file is given five seconds: a study on a disk that is not plugged in, or on a network share that does not answer, is left closed, and the Study page - and every page that needs a study - says why. It is remembered all the same, so it reopens once the disk is back.
 
 ## Choosing simulations
@@ -386,21 +401,15 @@ The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v
 
 The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other, and a fourth, the **inflow record**, off the same record. Everything is kept in the study file (open it on the Study page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
 
-### The lake level record
+### The dam inputs, as the steps read them
 
-What steps 2, 3 and 4 all read is set once, in the card at the top of the page:
+The card at the top of the page shows the [dam inputs](#daminputs) the steps read - the gauge exports, storage table, rating register, evaporation, catchment and water year - each with whether its file is there. They are changed on the Study page. Step 1 reads the catchment; steps 2 and 3 the rest; step 4 the rest too, with the evaporation only when it keeps it.
 
-- **Gauge exports** (WMIP or Hydstra), in the order the gauges operated; each owns the record from its first reading to the next one's.
-- An optional **overlay gauge** that replaces the chain wherever it reads below a level, its last value held until the chain climbs clear by the reconnect margin - Callide's intake gauge, reading the working storage below the sediment bar that partitions the pool at 200.90 m.
-- The **storage table** (```.els```: ```EL, A, V```) and the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating).
-- The **SILO evaporation** and the monthly **pan factors** - read by steps 2 and 3, and by step 4 when it keeps the evaporation.
-- The **longest step**, beyond which gaps in the record are filled, and the month the **water year** starts.
-
-Step 1 reads none of them.
+The one setting kept here is the **longest step**, beyond which gaps in the level record are filled, for steps 2 to 4.
 
 ### 1. Catchment rainfall
 
-The daily catchment average of the AWAP / AWRA-L grids. Give the **catchment shapefile** (a field and value pick one catchment out of a regions file; blank takes every polygon) and the **folder of daily grids on this computer** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
+The daily catchment average of the AWAP / AWRA-L grids. It reads the catchment shapefile from the dam inputs; give the **folder of daily grids on this computer** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
 
 **Area-weighted** counts each grid cell by the share of it the catchment covers, and by the cell's own area, which shrinks towards the pole. **Cell centres** counts every cell whose centre is in the catchment equally - a plain mask average, as the yearly ```Average_<year>_<mask>.csv``` files made by the mask-and-average tool are. A cell with no value on a day drops out of that day and the rest are reweighted.
 
@@ -430,7 +439,7 @@ Run on Callide's inputs this reproduces the four lake configurations delivered f
 
 The inflow step 2 derives - the change in storage plus the release through the rating in force at each step - for an inflow flood frequency analysis and for calibrating the hydrologic model. It reads the record at the top of the page, but none of step 2's target ratings, and writes under ```lake_record/inflow```:
 
-- ```inflow_ams.csv```: each water year's **peak inflow**, averaged over the **peak averaged over** window (1 hour by default - over a one-minute interval a millimetre of gauge is hundreds of m3/s of noise), with the release and level at the peak, and the largest inflow volume over each **burst duration**. Given the **catchment area**, each volume is also a runoff depth, and with step 1's rainfall the catchment rain over the same days (and the day before) is beside it. The page charts the two for the longest duration and warns of any year with more runoff than rain: that is the one check on the inflow that the inflow did not produce. Years covering less than 90% of the year are marked as part years.
+- ```inflow_ams.csv```: each water year's **peak inflow**, averaged over the **peak averaged over** window (1 hour by default - over a one-minute interval a millimetre of gauge is hundreds of m3/s of noise), with the release and level at the peak, and the largest inflow volume over each **burst duration**. Given the **catchment area** in the dam inputs, each volume is also a runoff depth, and with step 1's rainfall the catchment rain over the same days (and the day before) is beside it. The page charts the two for the longest duration and warns of any year with more runoff than rain: that is the one check on the inflow that the inflow did not produce. Years covering less than 90% of the year are marked as part years.
 - ```hydrographs/```: one file per event - the largest annual peaks (**hydrographs of the largest**, from **days before** to **days after** each peak) and any windows listed as ```name, start, end```, one a line.
 - ```inflow_intervals.csv.gz```: every interval of the record.
 
