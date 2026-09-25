@@ -17,7 +17,7 @@ from pathlib import Path
 from nicegui import app, run, ui
 
 from core import figurechart, figures, staleness, study as studies
-from layout import no_study, page_frame, severity_banner
+from layout import confirm, no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
 from widgets import OUTPUT_FOLDER, path_input
@@ -144,8 +144,9 @@ class _FigureCard:
                     ui.button(icon="content_paste_go", on_click=self._duplicate) \
                         .props("flat dense round").tooltip(
                             "Duplicate - swap a curve for a sensitivity figure")
-                    ui.button(icon="delete", on_click=self._delete) \
-                        .props("flat dense round").tooltip("Remove")
+                    ui.button(icon="delete", on_click=self._ask_delete) \
+                        .props("flat dense round").tooltip("Remove") \
+                        .mark(f"remove-{self.figure_id}")
             with ui.row().classes("w-full items-start gap-4 no-wrap"):
                 self.chart_box = ui.column().classes("grow min-w-0")
                 with self.chart_box:
@@ -208,6 +209,10 @@ class _FigureCard:
         spec["id"] = ""
         spec["filename"] = f"{spec.get('filename') or 'figure'}_copy"
         _FigureEditor(self.view, spec, is_new=True).open()
+
+    def _ask_delete(self) -> None:
+        confirm(f"Remove the figure {self.spec.get('filename') or self.figure_id}?",
+                "Its exported PNG is left where it is.", self._delete)
 
     def _delete(self) -> None:
         figures.remove(self.study, self.figure_id)
