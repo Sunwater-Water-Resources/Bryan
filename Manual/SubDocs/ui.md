@@ -70,6 +70,12 @@ A sims_config.json and its simulation list are one **run**, E013 RFSL say. The S
 
 With a study open, the page lists the study's runs first: **Open** beside one loads it and goes to Select. The one already open is marked, and a run whose sims_config.json has gone is marked *not found*. Any other sims_config.json is opened by its path, or from the recent ones below it. When that one is not among the study's runs, the page offers **Add to study** with a name guessed from its folder and whether it is the RFSL or FSL list (```runs/E013/CLD_RFSL_mc_sims_01.json``` becomes *E013 RFSL*). The Report page renames and removes runs.
 
+### The runs panel
+
+Down the left of every page, the **runs panel** lists the study's runs with how many of each run's rows are in each state, worst first (the icons are the Select page's). Click a run to open it **without leaving the page**: swapping E013 RFSL for E013 FSL on the Results page is one click. The open run is marked. The panel also links to the study's dam inputs, to opening another sims_config.json, and, when the open one is not a run of the study, to adding it.
+
+The sums are kept for five minutes, or until the run's sims list or config changes, and the open run's are replaced whenever the Select page judges its rows; the refresh button judges every run again, after a run finishes, say. Sums not kept yet are worked out after the page has drawn, so a slow disk never holds up a page. The arrow folds the panel to a strip, as does clicking the run name at the right of the menu bar; it stays as you left it.
+
 ## Choosing simulations
 
 The **Select** page lists the simulation list as a table, filtered by group.

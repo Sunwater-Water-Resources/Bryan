@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from core import completion, grouping, preflight, runplan, runstate, runwriter
+from core import completion, grouping, preflight, runplan, runstate, runstatus, runwriter
 from core.config import SimsConfig, config_issues, load_sims_config
 from core.launcher import RunManager
 from core.outputs import log_path_for
@@ -195,6 +195,7 @@ class AppState:
         self.completions = completion.assess_frame(
             self.project.frame, self.project.config,
             check_truncation=check_truncation)
+        runstatus.note(self.project.config.config_path, self.completions)
         return self.completions
 
     def completion_of(self, index):
