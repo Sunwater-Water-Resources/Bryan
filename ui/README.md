@@ -200,8 +200,9 @@ homogenised first. It shows the annual maxima on the frequency axis, storm-drive
 ones filled and carried-over ones (the level the water year opened at) hollow.
 **Fit curves** runs `util/LakeLevelFrequency.py` with Bryan's interpreter: the
 shouldered-plateau curve (or a logistic) through all the maxima and through the
-storm-driven ones, each with its resampled 90% band, and the Monte Carlo level
-curves and envelope of one group. **Export figure** writes the A4 report figure
+storm-driven ones, in seconds, with the Monte Carlo level curves and envelope of
+one group; **Resample bands** adds each curve's resampled 90% band, which takes
+about a minute, once the settings are chosen. **Export figure** writes the A4 report figure
 with or without the design floods; **Export AMS CSV** writes the series with
 what produced it in `#` lines above it. **Water year options** scores all
 twelve start months on the level record alone.

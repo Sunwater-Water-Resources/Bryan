@@ -165,6 +165,34 @@ def test_the_cached_results_are_only_the_ones_for_this_job(project):
     assert lakefreq.cached_results(config, {**job, "fsl": FSL + 1}) is None
 
 
+def test_the_quick_fit_is_the_same_job_without_resampling(project):
+    config = project.config.config_path
+    job = lakefreq.build_job(config, settings_for(project)).job
+    quick = lakefreq.quick_job(job)
+    assert quick["fit"]["draws"] == 0 and job["fit"]["draws"] > 0     # not mutated
+    assert {**quick, "fit": None} == {**job, "fit": None}
+    assert lakefreq.RECORD.fingerprint(quick) != lakefreq.RECORD.fingerprint(job)
+
+
+def test_the_page_shows_the_bands_when_resampled_and_the_quick_fit_otherwise(project):
+    config = project.config.config_path
+    job = lakefreq.build_job(config, settings_for(project)).job
+    assert lakefreq.shown_results(config, job) == (None, False)
+
+    def save(which):
+        path = lakefreq.results_path(config, which)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"fingerprint": lakefreq.RECORD.fingerprint(which),
+                                    "kind": "banded" if which is job else "quick"}))
+
+    save(lakefreq.quick_job(job))
+    results, banded = lakefreq.shown_results(config, job)
+    assert results["kind"] == "quick" and not banded
+    save(job)
+    results, banded = lakefreq.shown_results(config, job)
+    assert results["kind"] == "banded" and banded
+
+
 def test_the_command_runs_the_util_script_with_what_was_asked_for(tmp_path):
     argv = lakefreq.command("py", tmp_path / "job.json", results=tmp_path / "r.json",
                             png=tmp_path / "f.png", without_design=True)

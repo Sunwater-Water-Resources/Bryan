@@ -238,6 +238,28 @@ def cached_results(config_path, job) -> dict | None:
     return None
 
 
+def quick_job(job) -> dict:
+    """The same job with no resampling: the curves in seconds, without their bands.
+
+    Trying settings is a matter of the fit, which is a fraction of a second; the
+    resampling is most of a minute. So **Fit curves** runs this, and the bands are
+    resampled once the settings are chosen. Its own fingerprint keeps the two
+    results files apart.
+    """
+    quick = json.loads(json.dumps(job))
+    quick["fit"]["draws"] = 0
+    return quick
+
+
+def shown_results(config_path, job) -> tuple:
+    """(results, banded): the resampled results for these settings if they exist,
+    else the quick fit, else None."""
+    banded = cached_results(config_path, job)
+    if banded is not None:
+        return banded, True
+    return cached_results(config_path, quick_job(job)), False
+
+
 # -- reading the record, cached ------------------------------------------------------
 
 _RECORDS: dict = {}
