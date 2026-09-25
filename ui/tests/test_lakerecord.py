@@ -156,6 +156,23 @@ async def test_the_page_shows_the_four_steps_and_refuses_to_run_unready(user, op
 
 
 @pytest.mark.asyncio
+async def test_the_record_steps_2_to_4_share_is_set_once_at_the_top(user, opened):
+    """The inflow record reads the gauges, storage table and register too, so they
+    are in their own card rather than inside step 2."""
+    await user.open("/lake-record")
+    await user.should_see(lakerecord.RECORD_CARD)
+    await user.should_see(marker="record-card")
+    box = user.find(marker="record-storage")
+    box.clear().type(str(opened.folder / "storage" / "dam.els"))
+    box.trigger("blur")
+    await asyncio.sleep(0.2)
+    stored = lakerecord.settings(studies.load_study(opened.path))
+    assert stored["homogenise"]["storage"] == "storage/dam.els"   # where the jobs read it
+    user.find(marker="run-inflow").click()
+    await user.should_see(f"(These are in '{lakerecord.RECORD_CARD}', at the top of the page.)")
+
+
+@pytest.mark.asyncio
 async def test_a_path_typed_on_the_page_is_kept_relative_to_the_study(user, opened):
     await user.open("/lake-record")
     box = user.find(marker="ifd")
