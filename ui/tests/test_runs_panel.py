@@ -162,3 +162,16 @@ async def test_an_open_list_outside_the_study_can_be_added(user, private_state, 
     private_state.open_project(other)
     await user.open("/select")
     await user.should_see(marker="panel-add-to-study")
+
+
+@pytest.mark.asyncio
+async def test_the_menu_bar_calls_the_open_run_by_its_study_name(user, private_state,
+                                                                 tmp_path):
+    study = build_study(tmp_path / "study")
+    private_state.open_project(study.run_config_path("E099 RFSL"))
+    await user.open("/select")
+    await user.should_see("CLD_RFSL_mc_sims_01.json")         # no study: the file
+    private_state.open_study(study.path)
+    await user.open("/select")
+    header = user.find(marker="header-run").elements.pop()
+    assert header.text == "E099 RFSL"
