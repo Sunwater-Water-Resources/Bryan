@@ -378,6 +378,18 @@ The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v
 
 The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other, and a fourth, the **inflow record**, off the same record. Everything is kept in the study file (open it on the Report page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
 
+### The lake level record
+
+What steps 2, 3 and 4 all read is set once, in the card at the top of the page:
+
+- **Gauge exports** (WMIP or Hydstra), in the order the gauges operated; each owns the record from its first reading to the next one's.
+- An optional **overlay gauge** that replaces the chain wherever it reads below a level, its last value held until the chain climbs clear by the reconnect margin - Callide's intake gauge, reading the working storage below the sediment bar that partitions the pool at 200.90 m.
+- The **storage table** (```.els```: ```EL, A, V```) and the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating).
+- The **SILO evaporation** and the monthly **pan factors** - read by steps 2 and 3, and by step 4 when it keeps the evaporation.
+- The **longest step**, beyond which gaps in the record are filled, and the month the **water year** starts.
+
+Step 1 reads none of them.
+
 ### 1. Catchment rainfall
 
 The daily catchment average of the AWAP / AWRA-L grids. Give the **catchment shapefile** (a field and value pick one catchment out of a regions file; blank takes every polygon) and the **folder of daily grids on this computer** as downloaded - one netCDF file per year, the rainfall a daily grid on latitude and longitude (```rain_day``` in AWRA-L; named if the file holds more than one). A shapefile not in latitude and longitude is reprojected from its ```.prj```.
@@ -394,11 +406,8 @@ This step runs in the launcher itself and needs ```netCDF4```, ```pyshp``` and `
 
 ### 2. Homogenisation
 
-The recorded lake levels re-routed through each **target rating**, so that a record made under several spillway configurations becomes one population. The net inflow is derived by closing the water balance backwards against the rating **in force at each step**, from the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating), then routed through the target. Its inputs:
+The recorded lake levels re-routed through each **target rating**, so that a record made under several spillway configurations becomes one population. The net inflow is derived by closing the water balance backwards against the rating **in force at each step**, from the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating), then routed through the target. It reads the record at the top of the page, and adds:
 
-- **Gauge exports** (WMIP or Hydstra), in the order the gauges operated; each owns the record from its first reading to the next one's.
-- An optional **overlay gauge** that replaces the chain wherever it reads below a level, its last value held until the chain climbs clear by the reconnect margin - Callide's intake gauge, reading the working storage below the sediment bar that partitions the pool at 200.90 m.
-- The **storage table** (```.els```: ```EL, A, V```), the **SILO evaporation** and the monthly **pan factors**.
 - **Target ratings**: a URBS ```.sq``` (storage above full supply against outflow, tied to the FSL its header declares - never re-based to another) or a ```level,flow``` csv starting at the FSL, each with a name and its FSL.
 
 The record is routed at the gauge's own resolution, gaps longer than the longest step filled, and clipped to where the evaporation and the register both cover it; the page says where. The chart is each water year's recorded maximum against the homogenised ones.
@@ -411,7 +420,7 @@ Run on Callide's inputs this reproduces the four lake configurations delivered f
 
 ### 4. Inflow record
 
-The inflow step 2 derives - the change in storage plus the release through the rating in force at each step - for an inflow flood frequency analysis and for calibrating the hydrologic model. It uses step 2's gauges, storage table and register, but none of its target ratings, and writes under ```lake_record/inflow```:
+The inflow step 2 derives - the change in storage plus the release through the rating in force at each step - for an inflow flood frequency analysis and for calibrating the hydrologic model. It reads the record at the top of the page, but none of step 2's target ratings, and writes under ```lake_record/inflow```:
 
 - ```inflow_ams.csv```: each water year's **peak inflow**, averaged over the **peak averaged over** window (1 hour by default - over a one-minute interval a millimetre of gauge is hundreds of m3/s of noise), with the release and level at the peak, and the largest inflow volume over each **burst duration**. Given the **catchment area**, each volume is also a runoff depth, and with step 1's rainfall the catchment rain over the same days (and the day before) is beside it. The page charts the two for the longest duration and warns of any year with more runoff than rain: that is the one check on the inflow that the inflow did not produce. Years covering less than 90% of the year are marked as part years.
 - ```hydrographs/```: one file per event - the largest annual peaks (**hydrographs of the largest**, from **days before** to **days after** each peak) and any windows listed as ```name, start, end```, one a line.

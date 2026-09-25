@@ -46,6 +46,8 @@ from .study import Study, portable, resolve
 from .wordtable import ReportTable
 
 KEY = "lake_record"
+# The page's card for what steps 2-4 all read, which the step checks point to.
+RECORD_CARD = "The lake level record"
 HOMOGENISE_SCRIPT = BRYAN_ROOT / "util" / "HomogeniseLakeLevels.py"
 ANTECEDENT_SCRIPT = BRYAN_ROOT / "util" / "AntecedentStorage.py"
 INFLOW_SCRIPT = BRYAN_ROOT / "util" / "InflowRecord.py"
@@ -213,6 +215,8 @@ def problems_before_running(study: Study, section: dict, step: str, grids: str =
             need("Evaporation (SILO)", h["evaporation"])
         if h.get("overlay"):
             need("Overlay gauge", h["overlay"].get("file"))
+        if out:
+            out.append(f"(These are in '{RECORD_CARD}', at the top of the page.)")
     if step in ("homogenise", "antecedent"):
         if not h["targets"]:
             out.append("Target ratings: none given")

@@ -15,6 +15,10 @@ record:
    and burst volumes (for an inflow flood frequency analysis) and as event
    hydrographs (for calibration) - ``util/InflowRecord.py``.
 
+What steps 2 to 4 all read - the gauge exports, the storage table, the rating
+register, the evaporation, the longest step and the water year - is set once,
+in "The lake level record" card at the top.
+
 Everything is kept in the study file (open it on the Report page) and saved as
 it changes; each run leaves its job file beside its outputs. See
 ``core/lakerecord.py``.
@@ -70,6 +74,7 @@ class _LakeRecordView:
             return
         ui.label(f"Kept in {self.study.path}; paths are stored relative to it."
                  ).classes("text-xs text-muted")
+        self._record_card()
         self._rainfall_card()
         self._homogenise_card()
         self._antecedent_card()
@@ -220,15 +225,20 @@ class _LakeRecordView:
                             "data": [round(float(v), 1) for v in totals]}],
             }).classes("w-full h-56").mark("rain-chart")
 
-    # -- 2. homogenisation ----------------------------------------------------------
+    # -- the record, shared by steps 2-4 -------------------------------------------
 
-    def _homogenise_card(self) -> None:
+    def _record_card(self) -> None:
+        """What steps 2, 3 and 4 all read, set once at the top of the page.
+
+        Kept under ``"homogenise"`` in the study file, where the scripts and every
+        existing study already have it; only where it is shown has moved.
+        """
         h = self.section["homogenise"]
-        with ui.card().classes("w-full"):
-            ui.label("2. Homogenisation").classes("text-lg font-bold")
-            ui.label("The recorded levels, re-routed through each target rating: the net "
-                     "inflow is derived against the rating in force at each step (the "
-                     "register), then routed through the target.").classes("text-xs text-muted")
+        with ui.card().classes("w-full").mark("record-card"):
+            ui.label(lakerecord.RECORD_CARD).classes("text-lg font-bold")
+            ui.label("The recorded lake levels and what turns them into storage and "
+                     "release. Steps 2, 3 and 4 all read these; step 1 does not.") \
+                .classes("text-xs text-muted")
             ui.textarea("Gauge exports (WMIP / Hydstra), one per line, in the order the gauges "
                         "operated", value="\n".join(h["gauges"])) \
                 .classes("w-full").props("dense autogrow").mark("gauges") \
@@ -252,23 +262,40 @@ class _LakeRecordView:
                                                         _float(e.sender.value, 0.10)))
             with ui.row().classes("w-full gap-2 no-wrap"):
                 for key, label in (("storage", "Storage table (.els: EL, A, V)"),
-                                   ("register", "Rating register (.xlsx)"),
-                                   ("evaporation", "Evaporation (SILO Data Drill)")):
+                                   ("register", "Rating register (.xlsx)")):
                     with ui.element("div").classes("grow"):
-                        self._path_input(label, h, key)
+                        self._path_input(label, h, key, mark=f"record-{key}")
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
+                with ui.element("div").classes("grow"):
+                    self._path_input("Evaporation (SILO Data Drill) - steps 2 and 3, and 4 "
+                                     "when it keeps the evaporation", h, "evaporation")
                 ui.input("Pan factors, Jan to Dec",
                          value=" ".join(f"{v:g}" for v in h["pan_factors"])) \
-                    .classes("grow").props("dense") \
+                    .classes("w-80").props("dense") \
                     .on("blur", lambda e: self._set_pan(e.sender.value))
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 ui.input("Longest step", value=h["step"]).classes("w-28").props("dense") \
                     .on("blur", lambda e: self._set(h, "step", e.sender.value.strip() or "1h"))
                 ui.select({month + 1: name for month, name in enumerate(lakerecord.MONTHS)},
                           value=int(h["water_year_start"]), label="Water year starts",
                           on_change=lambda e: self._set(h, "water_year_start", e.value)) \
                     .classes("w-40").props("dense")
-                ui.checkbox("Recession correction", value=bool(h["recession_correction"]),
-                            on_change=lambda e: self._set(h, "recession_correction", e.value))
+                ui.label("Gaps longer than the longest step are filled; the water year "
+                         "labels every annual maximum the steps below report.") \
+                    .classes("text-xs text-muted")
+
+    # -- 2. homogenisation ---------------------------------------------------------
+
+    def _homogenise_card(self) -> None:
+        h = self.section["homogenise"]
+        with ui.card().classes("w-full"):
+            ui.label("2. Homogenisation").classes("text-lg font-bold")
+            ui.label("The recorded levels, re-routed through each target rating: the net "
+                     "inflow is derived against the rating in force at each step (the "
+                     "register), then routed through the target. It reads the record at "
+                     "the top of the page.").classes("text-xs text-muted")
+            ui.checkbox("Recession correction", value=bool(h["recession_correction"]),
+                        on_change=lambda e: self._set(h, "recession_correction", e.value))
             ui.label("Target ratings").classes("text-sm font-bold pt-1")
             self.targets_box = ui.column().classes("w-full gap-1")
             self._draw_targets()
@@ -494,7 +521,8 @@ class _LakeRecordView:
             ui.label("Step 2's derived inflow - the change in storage plus the release "
                      "through the rating in force at each step - as each water year's peak "
                      "inflow and largest burst volumes, and as event hydrographs for "
-                     "calibration. It uses step 2's inputs but none of its target ratings.") \
+                     "calibration. It reads the record at the top of the page, but none "
+                     "of step 2's target ratings.") \
                 .classes("text-xs text-muted")
             ui.label("On a recession above full supply the balance often goes negative: the "
                      "gates released more than the rating says. The recession correction "
