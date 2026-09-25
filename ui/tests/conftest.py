@@ -20,6 +20,13 @@ for path in (str(UI_ROOT), str(BRYAN_ROOT)):
         sys.path.insert(0, path)
 
 
+@pytest.fixture(autouse=True)
+def _keep_off_the_users_settings(monkeypatch, tmp_path):
+    """No test writes to the real ~/.bryan_ui.json. Opening a sims list remembers
+    it there, and the Simulations page's recent list filled with pytest folders."""
+    monkeypatch.setattr("settings.SETTINGS_PATH", tmp_path / "_bryan_ui.json")
+
+
 # The two real schemas, taken from the Tinaroo and Callide projects.
 TINAROO_COLUMNS = [
     "Include", "Output suffix", "Duration", "GWL", "Method", "Output file",
