@@ -44,6 +44,9 @@ class UiSettings:
     awap_folder: str = ""
     # The runs panel down the left of every page: open, or folded to a strip.
     runs_panel_open: bool = True
+    # The Report page's tables that are open, per study (resolved path -> table ids).
+    # The user's, not the study's, so two people on one study keep their own view.
+    report_open_tables: dict = field(default_factory=dict)
 
     @classmethod
     def load(cls) -> "UiSettings":
@@ -55,6 +58,7 @@ class UiSettings:
         known["last_study"] = str(known.get("last_study") or "")
         known["awap_folder"] = str(known.get("awap_folder") or "")
         known["runs_panel_open"] = bool(known.get("runs_panel_open", True))
+        known["report_open_tables"] = dict(known.get("report_open_tables") or {})
         known["downstream_configs"] = dict(known.get("downstream_configs") or {})
         settings = cls(**known)
         settings.fill_defaults()
@@ -110,6 +114,18 @@ class UiSettings:
         else:
             self.downstream_configs[key] = {"config": str(config or ""),
                                             "model": str(model or "")}
+        self.save()
+
+    def open_tables_for(self, study_path) -> set:
+        """The Report tables left open on this study; none the first time."""
+        return set(self.report_open_tables.get(self._project_key(study_path)) or [])
+
+    def remember_open_tables(self, study_path, table_ids) -> None:
+        key = self._project_key(study_path)
+        if table_ids:
+            self.report_open_tables[key] = sorted(table_ids)
+        else:
+            self.report_open_tables.pop(key, None)
         self.save()
 
     def problems(self) -> list:

@@ -227,7 +227,8 @@ sims_config.json, and fitted results are kept in `_lake_frequency/` so the curve
 come back without resampling.
 
 **Report** — the design flood report's result tables, straight from the
-runs, with **Copy for Word** on each.
+runs, with **Copy for Word** on each. Tables open folded to one line and are
+built only when opened; a contents list opens and scrolls to one.
 
 A **study file** (`bryan_study.json`, at the top of the study) names the runs a
 report is written from — one sims_config.json each, so the RFSL and FSL lists,
