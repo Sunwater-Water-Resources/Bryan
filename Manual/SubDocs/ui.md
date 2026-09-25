@@ -58,6 +58,12 @@ A study saved before the dam inputs existed takes them from its Lake record sett
 
 **The study the launcher last had open is reopened when it starts**, so the pages that read it are ready without a visit here. The file is given five seconds: a study on a disk that is not plugged in, or on a network share that does not answer, is left closed, and the Study page - and every page that needs a study - says why. It is remembered all the same, so it reopens once the disk is back.
 
+## Opening a sims list
+
+A sims_config.json and its simulation list are one **run**, E013 RFSL say. The Select, Run, Results, Ensemble, Events, Lake levels and Downstream pages all work on the one opened on the **Simulations** page.
+
+With a study open, the page lists the study's runs first: **Open** beside one loads it and goes to Select. The one already open is marked, and a run whose sims_config.json has gone is marked *not found*. Any other sims_config.json is opened by its path, or from the recent ones below it. When that one is not among the study's runs, the page offers **Add to study** with a name guessed from its folder and whether it is the RFSL or FSL list (```runs/E013/CLD_RFSL_mc_sims_01.json``` becomes *E013 RFSL*). The Report page renames and removes runs.
+
 ## Choosing simulations
 
 The **Select** page lists the simulation list as a table, filtered by group.
@@ -271,7 +277,7 @@ A **lake level** loading is converted to an AEP by reading it off the level freq
 
 ### Extracting the hydrographs
 
-The page chooses events; pulling out their hydrographs and plotting them is one command, shown on the page under *Extract the hydrographs and plot them* once the selection is saved. Press **Run** beside it: the page runs the command with Bryan's interpreter (set on the Project page), and shows each plot as it is written, any warning about the rebuilt hyetograph, and the log. The command itself is shown with absolute paths and Bryan's interpreter, so the **copy button** gives one that also works pasted into any console:
+The page chooses events; pulling out their hydrographs and plotting them is one command, shown on the page under *Extract the hydrographs and plot them* once the selection is saved. Press **Run** beside it: the page runs the command with Bryan's interpreter (set on the Simulations page), and shows each plot as it is written, any warning about the rebuilt hyetograph, and the log. The command itself is shown with absolute paths and Bryan's interpreter, so the **copy button** gives one that also works pasted into any console:
 
 ```bat
 C:\...\env\python.exe -u C:\...\Bryan\util\RepresentativeEvents.py ^

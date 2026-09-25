@@ -14,12 +14,10 @@ The study file is saved on every change. See ``core/study.py`` for its format an
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
 from nicegui import app, run, ui
 
 from core import reporttables, study as studies, wordtable
-from core.paths import clean_path_text
 from layout import no_study, page_frame, severity_banner
 from state import STATE
 
@@ -94,11 +92,13 @@ class _ReportView:
         with ui.card().classes("w-full"):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("Runs").classes("text-lg font-bold")
-                ui.button("Add run", icon="add", on_click=self._add_run_dialog) \
-                    .props("outline dense").mark("add-run")
+                ui.button("Add runs on the Simulations page", icon="playlist_add",
+                          on_click=lambda: ui.navigate.to("/")) \
+                    .props("flat dense no-caps").mark("add-run")
             if not self.study.runs:
-                ui.label("No runs yet. Add each sims_config.json the report draws on - "
-                         "the RFSL and FSL lists are separate runs."
+                ui.label("No runs yet. Open each sims_config.json the report draws on "
+                         "on the Simulations page and add it to the study - the RFSL "
+                         "and FSL lists are separate runs."
                          ).classes("text-sm text-muted")
                 return
             for entry in list(self.study.runs):
@@ -138,33 +138,6 @@ class _ReportView:
             ui.notify(f"Removed {name}; these tables still name it: "
                       f"{', '.join(orphans)}", type="warning", multi_line=True)
         self.redraw()
-
-    def _add_run_dialog(self) -> None:
-        suggested = ""
-        if STATE.project is not None:
-            suggested = str(STATE.project.config.config_path)
-        with ui.dialog() as dialog, ui.card().classes("min-w-[36rem]"):
-            ui.label("Add a run").classes("text-lg font-bold")
-            path = ui.input("sims_config.json", value=suggested).classes("w-full") \
-                .props("dense").mark("run-path")
-            name = ui.input("Name", value=_guess_run_name(suggested)).classes("w-full") \
-                .props("dense").mark("run-name")
-            path.on("blur", lambda: name.value or name.set_value(_guess_run_name(path.value)))
-
-            def add() -> None:
-                try:
-                    self.study.add_run(name.value, path.value)
-                except studies.StudyError as exc:
-                    ui.notify(str(exc), type="negative")
-                    return
-                self.save()
-                dialog.close()
-                self.redraw()
-
-            with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button("Add", on_click=add).mark("confirm-add-run")
-        dialog.open()
 
     # -- tables ------------------------------------------------------------
 
@@ -309,19 +282,6 @@ class _ReportView:
         self.built.pop(stored["id"], None)
         self.save()
         self.redraw()
-
-
-def _guess_run_name(path) -> str:
-    """'runs/E013/CLD_RFSL_mc_sims_01.json' -> 'E013 RFSL'."""
-    text = clean_path_text(path or "")
-    if not text:
-        return ""
-    local = Path(text)
-    parent = local.parent.name
-    stem = local.stem.upper()
-    state = next((token for token in ("RFSL", "FSL") if token in stem.split("_")), "")
-    prefix = "PMF " if stem.startswith("PMF") else ""
-    return " ".join(part for part in (parent, prefix.strip(), state) if part) or local.stem
 
 
 def _describe(spec, kind) -> str:

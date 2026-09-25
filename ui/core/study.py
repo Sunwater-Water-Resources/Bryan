@@ -79,6 +79,22 @@ def resolve(base: Path, text) -> Path | None:
     return path if path.is_absolute() else (Path(base) / path).resolve()
 
 
+def guess_run_name(path) -> str:
+    """A run's name from its sims_config.json path, as the report names runs.
+
+    'runs/E013/CLD_RFSL_mc_sims_01.json' -> 'E013 RFSL'; a PMF list gets 'PMF'.
+    """
+    text = clean_path_text(path or "")
+    if not text:
+        return ""
+    local = Path(normalise_sep(text))
+    parent = local.parent.name
+    stem = local.stem.upper()
+    state = next((token for token in ("RFSL", "FSL") if token in stem.split("_")), "")
+    prefix = "PMF" if stem.startswith("PMF") else ""
+    return " ".join(part for part in (parent, prefix, state) if part) or local.stem
+
+
 def slug(text: str, limit: int = 40) -> str:
     """A table id from its title: short, because a caption is a sentence."""
     text = SLUG_RE.sub("-", str(text).lower()).strip("-")
@@ -174,6 +190,15 @@ class Study:
     def run_config_path(self, name: str) -> Path | None:
         entry = self.run_entry(name)
         return resolve(self.folder, entry["sims_config"]) if entry else None
+
+    def run_named_for(self, config_path) -> str | None:
+        """The study's name for a sims_config.json, or None when it is not a run."""
+        target = Path(config_path).resolve()
+        for entry in self.runs:
+            path = resolve(self.folder, entry["sims_config"])
+            if path is not None and path.resolve() == target:
+                return entry["name"]
+        return None
 
     def open_run(self, name: str) -> RunData:
         path = self.run_config_path(name)
