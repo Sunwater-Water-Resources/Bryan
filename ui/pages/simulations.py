@@ -16,6 +16,7 @@ from core import study as studies
 from core.config import ConfigError
 from layout import page_frame, severity_banner
 from state import STATE
+from widgets import path_input
 
 
 def simulations_page() -> None:
@@ -109,13 +110,13 @@ def _open_card() -> None:
         ui.label("Point at the sims_config.json a batch file would pass to "
                  "Main.py.").classes("text-sm text-body")
 
-        path_input = ui.input("sims_config.json",
-                              value=str(STATE.project.config.config_path)
-                              if STATE.project else "").classes("w-full") \
-            .mark("sims-config-path")
+        places = [("Study folder", STATE.study.folder)] if STATE.study is not None else []
+        path_box = path_input("sims_config.json",
+                              str(STATE.project.config.config_path) if STATE.project else "",
+                              suffixes=(".json",), mark="sims-config-path", places=places)
 
         def do_open(path=None) -> None:
-            target = path or path_input.value
+            target = path or path_box.value
             if not target:
                 ui.notify("Give a path to a sims_config.json", type="warning")
                 return

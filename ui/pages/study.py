@@ -19,6 +19,7 @@ from core import dam as dams, lakerecord, study as studies
 from core.paths import clean_path_text
 from layout import page_frame, severity_banner
 from state import STATE
+from widgets import EITHER, path_input, path_list
 
 # The pages that read the study, and what each keeps in it.
 READERS = (("Report", "/report", "the runs and the report tables"),
@@ -95,8 +96,8 @@ class _StudyView:
             if not default and STATE.project is not None:
                 default = str(STATE.project.config.config_path.parent
                               / studies.DEFAULT_NAME)
-            path = ui.input("Study file (or its folder)", value=default) \
-                .classes("w-full").props("dense").mark("study-path")
+            path = path_input("Study file (or its folder)", default, expect=EITHER,
+                              suffixes=(".json",), mark="study-path")
             name = ui.input("Name, for a new study", value="").classes("w-full") \
                 .props("dense").mark("study-name")
             with ui.row().classes("gap-2"):
@@ -173,12 +174,11 @@ class _StudyView:
                      "to the study.").classes("text-xs text-muted")
 
             ui.label("Lake level record").classes("text-sm font-bold pt-1")
-            ui.textarea("Gauge exports (WMIP / Hydstra), one per line, in the order the "
-                        "gauges operated", value="\n".join(dams.gauges(dam))) \
-                .classes("w-full").props("dense autogrow").mark("dam-gauges") \
-                .on("blur", lambda e: self._set_dam(dam, "gauges", [
-                    studies.portable(study.folder, line)
-                    for line in str(e.sender.value).splitlines() if line.strip()]))
+            path_list("Gauge exports (WMIP / Hydstra), one per line, in the order the "
+                      "gauges operated", dams.gauges(dam), base=study.folder,
+                      base_name="the study folder", mark="dam-gauges",
+                      on_commit=lambda lines: self._set_dam(dam, "gauges", [
+                          studies.portable(study.folder, line) for line in lines]))
             overlay = dam.get("overlay")
             with ui.row().classes("w-full items-center gap-2 no-wrap"):
                 ui.checkbox("Overlay gauge below a level", value=bool(overlay),
@@ -202,11 +202,12 @@ class _StudyView:
             with ui.row().classes("w-full gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._dam_path("Storage table (.els: EL, A, V)", dam, dam, "storage",
-                                   mark="dam-storage")
+                                   mark="dam-storage", suffixes=(".els", ".csv"))
                 with ui.element("div").classes("grow"):
                     self._dam_path("Ratings: a register (.xlsx), or one rating for the "
                                    "whole record (.rat, level,flow .csv or .sq)",
-                                   dam, dam, "register", mark="dam-register", redraw=True)
+                                   dam, dam, "register", mark="dam-register", redraw=True,
+                                   suffixes=dams.REGISTER_SUFFIXES + (".rat", ".csv", ".sq"))
                 if dams.single_rating(dam):
                     ui.input("Its full supply level (m AHD; blank: the file's)",
                              value=f"{dam['register_fsl']:g}" if dam["register_fsl"] else "") \
@@ -221,7 +222,7 @@ class _StudyView:
                          "what it is for. A .sq that does not state its full supply level "
                          "needs it given.").classes("text-xs text-muted") \
                     .mark("dam-single-rating")
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+            with ui.row().classes("w-full items-start gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._dam_path("Evaporation (SILO Data Drill)", dam, dam, "evaporation",
                                    mark="dam-evaporation")
@@ -231,10 +232,10 @@ class _StudyView:
                     .on("blur", lambda e: self._set_pan(dam, e.sender.value))
 
             ui.label("Catchment").classes("text-sm font-bold pt-1")
-            with ui.row().classes("w-full items-end gap-2 no-wrap"):
+            with ui.row().classes("w-full items-start gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._dam_path("Catchment shapefile (.shp)", dam, dam, "shapefile",
-                                   mark="dam-shapefile")
+                                   mark="dam-shapefile", suffixes=(".shp",))
                 ui.input("Field (blank: every polygon)", value=dam["field"]) \
                     .classes("w-48").props("dense") \
                     .on("blur", lambda e: self._set_dam(dam, "field", e.sender.value.strip()))
@@ -255,15 +256,14 @@ class _StudyView:
                 ui.label("The water year every analysis labels its annual maxima by.") \
                     .classes("text-xs text-muted")
 
-    def _dam_path(self, label, holder, dam, key, *, mark="", redraw=False):
+    def _dam_path(self, label, holder, dam, key, *, mark="", redraw=False, suffixes=()):
         """A path input; ``redraw`` for one whose value changes what else is asked."""
-        box = ui.input(label, value=holder.get(key) or "").classes("w-full").props("dense")
-        box.on("blur", lambda e: self._set_dam(
-            holder, key, studies.portable(STATE.study.folder, e.sender.value)
-            if str(e.sender.value).strip() else "", dam=dam, redraw=redraw))
-        if mark:
-            box.mark(mark)
-        return box
+        folder = STATE.study.folder
+        return path_input(label, holder.get(key) or "", base=folder,
+                          base_name="the study folder", suffixes=suffixes, mark=mark,
+                          on_commit=lambda text: self._set_dam(
+                              holder, key, studies.portable(folder, text)
+                              if str(text).strip() else "", dam=dam, redraw=redraw))
 
     def _set_dam(self, holder, key, value, *, dam=None, redraw=False) -> None:
         """Change one dam input and save the study - ``dam`` is the whole section

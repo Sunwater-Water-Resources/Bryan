@@ -40,6 +40,12 @@ The **gear** at the right of the menu bar opens this computer's settings: Bryan'
 
 **Check setup** asks Bryan's interpreter which of numpy, scipy, pandas, matplotlib, openpyxl and pyarrow it imports, and at which version; looks for ```Main.py```, and for the model executable the open sims list's model config names (```model_exe```: ```urbs32.exe```); and lists the launcher's own packages. What is missing is said with the command that installs it. The result is also written to ```bryan_setup_check.txt``` in your home folder, to send on when setting up on another computer goes wrong. It uses the values in the panel, saved or not, so a new interpreter can be tried before it is kept.
 
+## Path boxes
+
+Every box that takes a path says, under it, the full path it resolves to and whether that is what it wants: a tick when the file or folder is there, **not found**, **is a folder, not a file**, or a file of another type than the box expects (a ```.els``` given as the ratings, say). A relative path also says what it is relative to - the study folder, the sims_config.json's folder, or for the Downstream page the project folder Bryan runs in. An output says whether it will be written new or replace a file that is there, and whether its folder will be made. Boxes that take several paths, one per line - a record's gauge exports - check each line.
+
+**Browse...** (the folder button beside each box) lists this computer's folders and the files of the types the box wants, with a switch to show the rest. It opens in the folder the box already points at, or the study folder; the drive buttons, **Up** and the bookmarked folders move about, and a click on a folder opens it. Click a file and **Choose**, or double-click it. A file under the study folder is put in as a path relative to it, as the study keeps paths. For an output, the file name is typed at the bottom of the list.
+
 ## The study
 
 A dam's design flood study spans several runs - the RFSL and FSL sims lists are separate sims_config.json files, a sensitivity is another, and the PMF ensemble another again - so what is about the dam and its report is kept one level above them, in a **study file**: ```bryan_study.json```, at the top of the study folder. The Report, PMF, Figures and Lake record pages all read it.
