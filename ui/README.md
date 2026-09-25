@@ -127,9 +127,13 @@ format to what the study post-processing already produces.
 Reservoir-routing results export without the confidence columns, because that
 method writes quantiles but no `_perc_smooth` files.
 
-The ensemble method does not appear here: `lib/EnbAnalysis.py` computes the
-critical duration per AEP inside the run and writes its own plots, and a second
-implementation would be somewhere for the two to disagree.
+The ensemble method does not appear here; it has its own page.
+
+**Ensemble** — the Results page for ensemble runs, read from the database. Each
+duration's median pattern against AEP with the envelope, the critical durations
+(margin in metres for level) with the highest event at each AEP, and the PMF
+page's box plot for one AEP. It uses Bryan's own median rule and checks itself
+against the run's `csv/<name>_critical.csv`. See `Manual/SubDocs/ui.md`.
 
 **Events** — picking a representative event for each design flood loading.
 

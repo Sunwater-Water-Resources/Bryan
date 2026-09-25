@@ -11,14 +11,15 @@ from nicegui import ui
 
 
 def register_all() -> None:
-    from pages import (downstream, edit, events, figures, history, lakefreq, lakerecord,
-                       pmf, project, report, results, run, select)
+    from pages import (downstream, edit, ensembleresults, events, figures, history,
+                       lakefreq, lakerecord, pmf, project, report, results, run, select)
 
     for route, handler in [
         ("/", project.project_page),
         ("/select", select.select_page),
         ("/run", run.run_page),
         ("/results", results.results_page),
+        ("/ensemble", ensembleresults.ensemble_page),
         ("/events", events.events_page),
         ("/lake-levels", lakefreq.lake_levels_page),
         ("/downstream", downstream.downstream_page),

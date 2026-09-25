@@ -16,6 +16,7 @@ NAV = [
     ("Select", "/select"),
     ("Run", "/run"),
     ("Results", "/results"),
+    ("Ensemble", "/ensemble"),
     ("Events", "/events"),
     ("Lake levels", "/lake-levels"),
     ("Downstream", "/downstream"),
