@@ -403,6 +403,12 @@ The tables open **folded**, one line each: the title, what it is drawn from, and
 
 Anything a table cannot fill - a group with no results yet, an AEP the run did not produce, a level above the top of the curve - is shown as a dash and listed above the preview, never invented.
 
+### Out-of-date results
+
+A table built from a group whose results are older than an input they were made from looks exactly like a good one, so the page checks each group a table reads, as the Select page judges its rows: **stale** when an input - a rating curve, the storage table, a config - changed after the run, and durations **not run yet**, which the envelope and critical duration are then taken without. What it finds is said above the preview, for example *E013 FSL RFSL_Design_GWL1p3 is stale: CLD_E013.sq changed after the run (3 of 6 durations)*, the table's folded line carries *results out of date*, and **Copy** says it again as it copies. Copying is never refused: re-run the group and **Refresh**.
+
+The Figures and PMF pages say the same above each figure and PMF group, and the Results and Ensemble pages above the open group, and again on Copy for Word.
+
 ## The PMF
 
 The **PMF** page reads the PMF's ensemble runs and gives the PMF a notional AEP from the Monte Carlo realisations. It keeps its settings in the study file (open it on the Study page).

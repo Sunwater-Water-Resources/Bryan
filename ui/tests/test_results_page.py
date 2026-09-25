@@ -346,3 +346,19 @@ async def test_the_critical_duration_table_is_copied_as_shown(user, project, mon
     user.find(marker="copy-word-results").click()
     await user.should_see("Copied - paste into Word")
     assert "<table" in sent[0] and "120h" in sent[0]
+
+
+@pytest.mark.asyncio
+async def test_a_group_with_stale_results_says_so_and_again_when_copied(
+        user, tmp_path, monkeypatch):
+    from nicegui import ui as nicegui_ui
+    from report_fixtures import build_study
+    from test_staleness import make_stale
+    monkeypatch.setattr(nicegui_ui.clipboard, "write", lambda text: None)
+    study = build_study(tmp_path / "study")      # rows whose results are up to date
+    make_stale(study)                            # until the rating curve is edited
+    _open(study.run_config_path("E099 RFSL"))
+    await user.open("/results")
+    await user.should_see("dam.sq changed after the run")
+    user.find(marker="copy-text-results").click()
+    await user.should_see("Copied as text - but")

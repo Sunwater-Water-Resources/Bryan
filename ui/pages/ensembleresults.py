@@ -22,8 +22,9 @@ from nicegui import ui
 
 from core import enbresults, ensemble, pmfchart, resultchart, results
 from core.results import format_aep
-from layout import page_frame, require_project, severity_banner
+from layout import open_run_name, page_frame, require_project, severity_banner
 from clipboard import copy_buttons, table_from_rows
+from core import staleness
 from state import STATE
 from theme import house_echart
 
@@ -97,12 +98,15 @@ class _EnsembleView:
         self.box_chart = None
         self.pattern_box = None
         self.shown_table = None      # what Copy for Word copies: the table as drawn
+        self.stale = []              # what is out of date in this group's results
+        self.stale_box = None
 
     # -- build ------------------------------------------------------------
 
     def build(self) -> None:
         self._controls()
         self._chart_card()
+        self.stale_box = ui.column().classes("w-full gap-2").mark("ensemble-stale")
         self.warning_box = ui.column().classes("w-full gap-2")
         self._table_card()
         self._aep_card()
@@ -143,7 +147,8 @@ class _EnsembleView:
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("Critical durations").classes("font-bold")
                 with ui.row().classes("gap-1"):
-                    copy_buttons(lambda: self.shown_table, mark="ensemble")
+                    copy_buttons(lambda: self.shown_table, mark="ensemble",
+                                 get_warnings=lambda: self.stale)
             self.margin_note = ui.label("").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
 
@@ -172,7 +177,18 @@ class _EnsembleView:
         if self.aep not in aeps:
             self.aep = aeps[-1] if aeps else None     # the rarest - usually the PMP
         self._draw_files()
+        self._draw_stale()
         self.refresh()
+
+    def _draw_stale(self) -> None:
+        """Out-of-date results in this group, said above everything drawn from them."""
+        self.stale = staleness.of_open_group(STATE.project, open_run_name(), self.group) \
+            if STATE.project is not None else []
+        self.stale_box.clear()
+        if self.stale:
+            with self.stale_box:
+                severity_banner("warn", "\n".join(self.stale),
+                                "Re-run the group before copying or exporting from it.")
 
     def _on_result(self, event) -> None:
         self.result = event.value

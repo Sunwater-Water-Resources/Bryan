@@ -17,7 +17,7 @@ import copy
 
 from nicegui import app, run, ui
 
-from core import reporttables, study as studies, wordtable
+from core import reporttables, staleness, study as studies, wordtable
 from layout import no_study, page_frame, severity_banner
 from clipboard import copy_table
 from state import STATE
@@ -40,6 +40,7 @@ class _ReportView:
     def __init__(self) -> None:
         self.study = STATE.study
         self.built: dict = {}
+        self.stale: dict = {}           # table id -> what is out of date in its results
         self.body = None
         self.cards: dict = {}           # table id -> its card's parts
         self.open: set = (STATE.settings.open_tables_for(self.study.path)
@@ -88,7 +89,7 @@ class _ReportView:
     def _refresh(self) -> None:
         studies.forget_runs()
         reporttables.forget_cached()
-        self.built = {}
+        self.built, self.stale = {}, {}
         self.redraw()
 
     # -- runs --------------------------------------------------------------
@@ -233,7 +234,12 @@ class _ReportView:
             if built is None:
                 ui.label("not built yet" if table_id not in self.open else "building...") \
                     .classes("text-xs text-muted")
-            elif built.problems:
+                return
+            if self.stale.get(table_id):
+                ui.chip("results out of date", icon="update") \
+                    .props("color=warning text-color=white dense square") \
+                    .tooltip("\n".join(self.stale[table_id]))
+            if built.problems:
                 count = len(built.problems)
                 ui.chip(f"{count} problem{'' if count == 1 else 's'} to read",
                         icon="warning").props("color=warning text-color=white dense square")
@@ -294,11 +300,17 @@ class _ReportView:
             return
         built = await _off_thread(reporttables.build, self.study, spec)
         self.built[table_id] = built
+        self.stale[table_id] = await _off_thread(
+            staleness.for_sources, self.study, studies.table_sources(spec)) or []
         self._draw_status(table_id)
         if box.is_deleted:
             return
         box.clear()
         with box:
+            if self.stale[table_id]:
+                severity_banner("warn", "\n".join(self.stale[table_id]),
+                                "Re-run the group, then Refresh, before copying this "
+                                "table into the report.")
             if built.problems:
                 shown = built.problems[:6]
                 more = len(built.problems) - len(shown)
@@ -314,7 +326,7 @@ class _ReportView:
             built = await _off_thread(reporttables.build, self.study, spec)
         if built is None:
             return
-        await copy_table(built, rich=rich)
+        await copy_table(built, rich=rich, warnings=self.stale.get(table_id, []))
 
     def _new_table(self, kind: str) -> None:
         spec = reporttables.new_spec(kind)

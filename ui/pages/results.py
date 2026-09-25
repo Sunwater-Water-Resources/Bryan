@@ -29,9 +29,9 @@ from pathlib import Path
 from nicegui import run as nicerun
 from nicegui import ui
 
-from core import critexport, grouping, overlay, results, resultchart
+from core import critexport, grouping, overlay, results, resultchart, staleness
 from core.paths import cell_text
-from layout import page_frame, require_project, severity_banner
+from layout import open_run_name, page_frame, require_project, severity_banner
 from theme import house_echart
 from clipboard import copy_buttons, table_from_rows
 from state import STATE
@@ -146,6 +146,8 @@ class _ResultsView:
         self.margin_note = None
         self.files_box = None
         self.shown_table = None      # what Copy for Word copies: the table as drawn
+        self.stale = []              # what is out of date in this group's results
+        self.stale_box = None
 
     # -- build ------------------------------------------------------------
 
@@ -202,14 +204,26 @@ class _ResultsView:
                 self.files_box = ui.column().classes("w-full gap-0")
 
     def _warnings_card(self) -> None:
+        self.stale_box = ui.column().classes("w-full gap-2").mark("results-stale")
         self.warning_box = ui.column().classes("w-full gap-2")
+
+    def _draw_stale(self) -> None:
+        """Out-of-date results in this group, said above everything drawn from them."""
+        self.stale = staleness.of_open_group(STATE.project, open_run_name(), self.group) \
+            if STATE.project is not None else []
+        self.stale_box.clear()
+        if self.stale:
+            with self.stale_box:
+                severity_banner("warn", "\n".join(self.stale),
+                                "Re-run the group before copying or exporting from it.")
 
     def _table_card(self) -> None:
         with ui.card().classes("w-full"):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("Critical durations").classes("font-bold")
                 with ui.row().classes("gap-1"):
-                    copy_buttons(lambda: self.shown_table, mark="results")
+                    copy_buttons(lambda: self.shown_table, mark="results",
+                                 get_warnings=lambda: self.stale)
             # Worded per result type in _draw_table: metres for level.
             self.margin_note = ui.label("").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
@@ -226,6 +240,7 @@ class _ResultsView:
         self.aep_from = self.aep_to = self._range_aeps = None
         self._draw_types()
         self._draw_curves()
+        self._draw_stale()
         self.refresh()
 
     def _sources(self) -> list:

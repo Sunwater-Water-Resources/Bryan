@@ -19,7 +19,7 @@ import math
 
 from nicegui import app, run, ui
 
-from core import ensemble, pmfchart, reporttables, study as studies
+from core import ensemble, pmfchart, reporttables, staleness, study as studies
 from core.results import format_aep
 from layout import no_study, page_frame, severity_banner
 from state import STATE
@@ -310,6 +310,7 @@ class _GroupView:
             ui.label(f"{self.entry['ensemble']['group']} in {self.entry['ensemble']['run']}; "
                      f"realisations from {self.entry['mc']['group'] or '(none)'} in "
                      f"{self.entry['mc']['run'] or '(none)'}").classes("text-xs text-muted")
+            self.stale_box = ui.column().classes("w-full gap-2")
             self.box = ui.column().classes("w-full gap-2")
             with self.box:
                 ui.spinner()
@@ -334,6 +335,12 @@ class _GroupView:
             return
         self._draw_ensemble(out, result)
         self._draw_fit(out)
+        stale = await _off_thread(staleness.for_sources, self.study,
+                                  [self.entry["ensemble"], self.entry["mc"]]) or []
+        if stale and not self.stale_box.is_deleted:
+            with self.stale_box:
+                severity_banner("warn", "\n".join(stale),
+                                "Re-run the group before quoting this PMF.")
 
     def _draw_ensemble(self, out, result) -> None:
         frame, highest = out["frame"], out["highest"]

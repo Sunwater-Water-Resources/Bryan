@@ -87,3 +87,12 @@ async def test_a_changed_setting_is_kept_in_the_study(user, opened):
     await asyncio.sleep(0.3)
     stored = ensemble.settings(studies.load_study(opened.path))
     assert stored["groups"][0]["degree"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_pmf_from_stale_realisations_says_so(user, opened):
+    from test_staleness import make_stale
+    make_stale(opened)                        # the Monte Carlo run's rating curve
+    await user.open("/pmf")
+    await seen(user, "pmf-highest")
+    await user.should_see("dam.sq changed after the run")

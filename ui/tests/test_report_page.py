@@ -226,3 +226,21 @@ async def test_a_table_with_problems_says_so_on_its_folded_line(user, opened):
     await preview_text(user, stored["id"])
     user.find(marker=f"fold-{stored['id']}").click()
     await user.should_see("to read")
+
+
+@pytest.mark.asyncio
+async def test_a_table_from_stale_results_says_so_and_again_when_copied(user, opened,
+                                                                       monkeypatch):
+    from nicegui import ui as nicegui_ui
+    from test_staleness import make_stale
+    copied = []
+    monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
+    make_stale(opened)
+    table_id = "table-26-near-term"
+    await user.open("/report")
+    await preview_text(user, table_id)
+    await user.should_see("dam.sq changed after the run")
+    await user.should_see("results out of date")
+    user.find(marker=f"copy-text-{table_id}").click()
+    await user.should_see("Copied as text - but")
+    assert copied
