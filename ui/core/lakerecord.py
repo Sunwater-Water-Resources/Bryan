@@ -64,9 +64,10 @@ DEFAULTS = {
     "homogenise": {"gauges": [], "overlay": None, "storage": "", "register": "",
                    "evaporation": "", "pan_factors": list(CALLIDE_PAN_FACTORS), "step": "1h",
                    "recession_correction": True, "water_year_start": 10,
-                   "separation_days": 5, "drop_m": 0.5, "targets": [],
+                   "separation_days": 5, "drop_m": 0.5, "targets": [], "water_year": None,
                    "out": "lake_record/homogenised"},
     "antecedent": {"rainfall": "", "ifd": "", "targets": [], "bases": ["burst", "storm"],
+                   "water_year": None,
                    "settings": {"durations_d": [1, 2, 3, 4, 5],
                                 "restriction": {"1": 1.15, "2": 1.11, "3": 1.07,
                                                 "4": 1.05, "5": 1.04},
@@ -76,7 +77,7 @@ DEFAULTS = {
     "inflow": {"evaporation": False, "recession_correction": True, "smoothing": "1h",
                "durations_h": [24, 36, 48, 72], "catchment_km2": None, "rainfall": "",
                "top_events": 10, "before_days": 3, "after_days": 7, "events": [],
-               "out": "lake_record/inflow",
+               "out": "lake_record/inflow", "water_year": None,
                "window": {"start": "", "end": "", "step": ""}},
 }
 
@@ -102,8 +103,50 @@ def settings(study: Study) -> dict:
 
 def store(study: Study, section: dict) -> None:
     """Keep the section, with the dam inputs as they are now - a page opened before
-    they were changed on the Study page must not write the old ones back."""
-    study.extra[KEY] = dams.write_through(section, dams.settings(study))
+    they were changed on the Study page must not write the old ones back.
+
+    An older launcher reads the homogenisation's water year from
+    ``homogenise.water_year_start``, so that is written as the one it runs with.
+    """
+    if dams.KEY not in study.extra:
+        # Keep the dam inputs first: until they are kept, they are read from the
+        # copies here, and the line below would pass an override off as shared.
+        dams.store(study, dams.settings(study))
+    stored = dams.write_through(copy.deepcopy(section), dams.settings(study))
+    stored["homogenise"]["water_year_start"] = water_year(stored, "homogenise")
+    study.extra[KEY] = stored
+
+
+# -- the water year ---------------------------------------------------------------------
+
+STEP_NAMES = {"homogenise": "Homogenisation", "antecedent": "Antecedent storage",
+              "inflow": "The inflow record"}
+
+
+def shared_water_year(section: dict) -> int:
+    """The study's water year - the dam input, which ``settings`` lays in here."""
+    return int(section["homogenise"]["water_year_start"])
+
+
+def water_year(section: dict, step: str) -> int:
+    """The month ``step`` starts its water year: its own, else the study's."""
+    own = section[step].get("water_year")
+    return int(own) if own else shared_water_year(section)
+
+
+def water_year_note(section: dict) -> str:
+    """Said when the steps do not all label the same years, and blank when they do.
+
+    Their annual maxima are then not the same set of years, which matters to
+    anything that sets one against another.
+    """
+    months = {step: water_year(section, step) for step in STEP_NAMES}
+    if len(set(months.values())) < 2:
+        return ""
+    by = ", ".join(f"{STEP_NAMES[step].lower()} from {MONTHS[month - 1]}"
+                   for step, month in months.items())
+    return (f"The steps do not label the same water years ({by}), so their annual "
+            f"maxima are not the same years.")
 
 
 def keep_path(study: Study, text) -> str:
@@ -142,6 +185,7 @@ def homogenise_job(study: Study, section: dict) -> dict:
                        "fsl": float(t["fsl"]) if t.get("fsl") not in (None, "") else None}
                       for t in h["targets"] if t.get("rating")]
     job["out"] = _absolute(study, h["out"])
+    job["water_year_start"] = water_year(section, "homogenise")
     return job
 
 
@@ -151,7 +195,8 @@ def antecedent_job(study: Study, section: dict, homogenise_path: Path) -> dict:
     return {"homogenise": str(homogenise_path), "rainfall": _absolute(study, rainfall),
             "ifd": _absolute(study, a["ifd"]), "targets": list(a.get("targets") or []),
             "bases": list(a.get("bases") or ["burst", "storm"]),
-            "settings": copy.deepcopy(a["settings"]), "out": _absolute(study, a["out"])}
+            "settings": copy.deepcopy(a["settings"]), "out": _absolute(study, a["out"]),
+            "water_year_start": water_year(section, "antecedent")}
 
 
 def inflow_job(study: Study, section: dict, homogenise_path: Path) -> dict:
@@ -161,6 +206,7 @@ def inflow_job(study: Study, section: dict, homogenise_path: Path) -> dict:
         "evaporation", "recession_correction", "smoothing", "durations_h", "catchment_km2",
         "top_events", "before_days", "after_days", "events")}
     job["homogenise"] = str(homogenise_path)
+    job["water_year_start"] = water_year(section, "inflow")
     job["rainfall"] = str(rainfall) if rainfall and rainfall.is_file() else ""
     job["out"] = _absolute(study, i["out"])
     return job

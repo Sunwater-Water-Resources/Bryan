@@ -254,13 +254,40 @@ class _LakeRecordView:
                 ui.label(f"{i['catchment_km2']:g} km2" if i["catchment_km2"] else "not given") \
                     .classes("text-sm text-body")
                 ui.label("Water year starts").classes("text-sm text-muted")
-                ui.label(lakerecord.MONTHS[int(h["water_year_start"]) - 1]) \
+                ui.label(f"{lakerecord.MONTHS[lakerecord.shared_water_year(self.section) - 1]}"
+                         f", unless a step below says otherwise") \
                     .classes("text-sm text-body").mark("record-water-year")
+            self.water_year_box = ui.column().classes("w-full")
+            self._draw_water_year_note()
             with ui.row().classes("w-full items-end gap-2 no-wrap pt-2"):
                 ui.input("Longest step", value=h["step"]).classes("w-28").props("dense") \
                     .on("blur", lambda e: self._set(h, "step", e.sender.value.strip() or "1h"))
                 ui.label("Gaps in the level record longer than this are filled, for "
                          "steps 2 to 4.").classes("text-xs text-muted")
+
+    # -- the water year of each step ---------------------------------------------------
+
+    def _water_year_select(self, step) -> None:
+        """The step's own water year, or the study's - blank means the study's."""
+        shared = lakerecord.MONTHS[lakerecord.shared_water_year(self.section) - 1]
+        options = {0: f"{shared} (the study's)",
+                   **{month + 1: name for month, name in enumerate(lakerecord.MONTHS)}}
+        ui.select(options, value=int(self.section[step].get("water_year") or 0),
+                  label="Water year starts",
+                  on_change=lambda e: self._set_water_year(step, e.value)) \
+            .classes("w-48").props("dense").mark(f"water-year-{step}")
+
+    def _set_water_year(self, step, value) -> None:
+        self._set(self.section[step], "water_year", int(value) or None)
+        self._draw_water_year_note()
+
+    def _draw_water_year_note(self) -> None:
+        self.water_year_box.clear()
+        note = lakerecord.water_year_note(self.section)
+        if note:
+            with self.water_year_box:
+                severity_banner("warn", note, "Each step's water year is chosen on its "
+                                              "card; blank takes the study's.")
 
     def _file_state(self, value) -> None:
         """A dam input's path, and whether it is there."""
@@ -284,8 +311,10 @@ class _LakeRecordView:
                      "inflow is derived against the rating in force at each step (the "
                      "register), then routed through the target. It reads the dam inputs at "
                      "the top of the page.").classes("text-xs text-muted")
-            ui.checkbox("Recession correction", value=bool(h["recession_correction"]),
-                        on_change=lambda e: self._set(h, "recession_correction", e.value))
+            with ui.row().classes("w-full items-end gap-4"):
+                ui.checkbox("Recession correction", value=bool(h["recession_correction"]),
+                            on_change=lambda e: self._set(h, "recession_correction", e.value))
+                self._water_year_select("homogenise")
             ui.label("Target ratings").classes("text-sm font-bold pt-1")
             self.targets_box = ui.column().classes("w-full gap-1")
             self._draw_targets()
@@ -380,12 +409,13 @@ class _LakeRecordView:
                      "started, and the S-curve fitted to them with the ceiling at the full "
                      "supply volume - written as the lake configs the Monte Carlo runs "
                      "sample.").classes("text-xs text-muted")
-            with ui.row().classes("w-full gap-2 no-wrap"):
+            with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 with ui.element("div").classes("grow"):
                     self._path_input("Rainfall series (blank: step 1's)", a, "rainfall")
                 with ui.element("div").classes("grow"):
                     self._path_input("IFD (duration_h against '1 in X' columns, mm)", a, "ifd",
                                      mark="ifd")
+                self._water_year_select("antecedent")
             with ui.row().classes("w-full items-end gap-2 no-wrap"):
                 for key, label, width in (("window_days", "Search window (d)", "w-32"),
                                           ("threshold_fraction", "Significance (x 1 in 2)", "w-40"),
@@ -514,6 +544,7 @@ class _LakeRecordView:
                     .mark("inflow-evaporation")
                 ui.checkbox("Recession correction", value=bool(i["recession_correction"]),
                             on_change=lambda e: self._set(i, "recession_correction", e.value))
+                self._water_year_select("inflow")
                 ui.input("Peak averaged over", value=i["smoothing"] or "") \
                     .classes("w-36").props("dense") \
                     .on("blur", lambda e: self._set(i, "smoothing", e.sender.value.strip()))

@@ -49,7 +49,7 @@ What more than one analysis reads about the dam is entered once, in the **Dam in
 - The **storage table** (```.els```: ```EL, A, V```) and the **rating register** (an xlsx: a ```Register``` sheet of ```Rating, from, to, FSL, ...``` and one ```level, flow``` sheet per rating).
 - The **SILO evaporation** and the monthly **pan factors**.
 - The **catchment**: its shapefile (a field and value pick one polygon out of a regions file; blank takes every polygon) and its area in km2.
-- The month the **water year** starts.
+- The month the **water year** starts: the study's, which every analysis uses unless it says otherwise.
 
 The Lake record page shows them, each with whether its file is there, and links back here to change them.
 
@@ -406,6 +406,8 @@ The **Lake record** page makes the antecedent storage the Monte Carlo runs sampl
 The card at the top of the page shows the [dam inputs](#daminputs) the steps read - the gauge exports, storage table, rating register, evaporation, catchment and water year - each with whether its file is there. They are changed on the Study page. Step 1 reads the catchment; steps 2 and 3 the rest; step 4 the rest too, with the evaporation only when it keeps it.
 
 The one setting kept here is the **longest step**, beyond which gaps in the level record are filled, for steps 2 to 4.
+
+**Water year.** Steps 2, 3 and 4 label their annual maxima by the study's water year unless their own card says otherwise: each has a **Water year starts** whose first choice is the study's month. When they do not all use the same month, the page says so, because their annual maxima are then not the same years. The homogenisation, antecedent storage and inflow record jobs each carry the month they ran with, and the scripts record it in their summaries.
 
 ### 1. Catchment rainfall
 
