@@ -16,7 +16,7 @@ from pathlib import Path
 
 from nicegui import app, run, ui
 
-from core import figurechart, figures, study as studies
+from core import figurechart, figures, staleness, study as studies
 from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
@@ -168,10 +168,16 @@ class _FigureCard:
 
     async def _fill(self) -> None:
         data = await _off_thread(figures.build, self.study, self.spec)
+        sources = [curve for curve in self.spec.get("curves") or []
+                   if curve.get("kind", figures.GROUP) == figures.GROUP]
+        stale = await _off_thread(staleness.for_sources, self.study, sources) or []
         if self.chart_box.is_deleted:
             return
         self.chart_box.clear()
         with self.chart_box:
+            if stale:
+                severity_banner("warn", "\n".join(stale),
+                                "Re-run the group before exporting this figure.")
             if data.problems:
                 severity_banner("warn", "\n".join(data.problems[:6]))
             house_echart(figurechart.preview(data)).classes("w-full h-96") \

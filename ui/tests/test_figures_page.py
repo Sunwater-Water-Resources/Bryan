@@ -83,3 +83,12 @@ async def test_a_label_edited_beside_the_preview_is_kept_for_this_figure(user, o
             break
         await asyncio.sleep(0.1)
     assert stored["curves"][0]["label"] == "Near-term"
+
+
+@pytest.mark.asyncio
+async def test_a_figure_from_stale_results_says_so(user, opened):
+    from test_staleness import make_stale
+    make_stale(opened)
+    await user.open("/figures")
+    await seen(user, "preview-levels")
+    await user.should_see("dam.sq changed after the run")
