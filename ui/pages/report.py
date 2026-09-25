@@ -19,6 +19,7 @@ from pathlib import Path
 from nicegui import app, run, ui
 
 from core import reporttables, study as studies, wordtable
+from core.paths import clean_path_text
 from layout import page_frame, severity_banner
 from state import STATE
 
@@ -97,7 +98,7 @@ class _ReportView:
                         .props("flat dense no-caps align=left").classes("mono text-sm")
 
     def _open(self, path, *, create=False, name="") -> None:
-        text = str(path or "").strip().strip('"')
+        text = clean_path_text(path or "")
         if not text:
             ui.notify("Give the study file's path", type="warning")
             return
@@ -366,7 +367,7 @@ class _ReportView:
 
 def _guess_run_name(path) -> str:
     """'runs/E013/CLD_RFSL_mc_sims_01.json' -> 'E013 RFSL'."""
-    text = str(path or "").strip().strip('"')
+    text = clean_path_text(path or "")
     if not text:
         return ""
     local = Path(text)
