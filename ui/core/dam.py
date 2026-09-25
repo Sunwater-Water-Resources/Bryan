@@ -23,6 +23,7 @@ pandas-free and nicegui-free: plain dictionaries.
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 from .study import Study
 
@@ -30,7 +31,8 @@ KEY = "dam"
 CALLIDE_PAN_FACTORS = [0.82, 0.82, 0.83, 0.79, 0.75, 0.71, 0.76, 0.81, 0.79, 0.81, 0.82, 0.83]
 
 DEFAULTS = {
-    "gauges": [], "overlay": None, "storage": "", "register": "", "evaporation": "",
+    "gauges": [], "overlay": None, "storage": "", "register": "", "register_fsl": None,
+    "evaporation": "",
     "pan_factors": list(CALLIDE_PAN_FACTORS),
     "shapefile": "", "field": "", "value": "", "catchment_km2": None,
     "water_year_start": 10,
@@ -43,6 +45,7 @@ LEGACY = {
     "overlay": ("homogenise", "overlay"),
     "storage": ("homogenise", "storage"),
     "register": ("homogenise", "register"),
+    "register_fsl": ("homogenise", "register_fsl"),
     "evaporation": ("homogenise", "evaporation"),
     "pan_factors": ("homogenise", "pan_factors"),
     "water_year_start": ("homogenise", "water_year_start"),
@@ -89,3 +92,14 @@ def store(study: Study, dam: dict) -> None:
 
 def gauges(dam: dict) -> list:
     return [item for item in dam.get("gauges") or [] if str(item).strip()]
+
+
+# A register is a workbook; anything else in its place is one rating for the whole
+# record (lib/homogenise/curves.read_rating_source).
+REGISTER_SUFFIXES = (".xlsx", ".xlsm", ".xls")
+
+
+def single_rating(dam: dict) -> bool:
+    """Whether the ratings are one rating (.rat, .csv, .sq) rather than a register."""
+    text = str(dam.get("register") or "").strip()
+    return bool(text) and Path(text).suffix.lower() not in REGISTER_SUFFIXES

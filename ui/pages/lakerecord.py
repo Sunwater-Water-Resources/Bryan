@@ -32,7 +32,7 @@ from pathlib import Path
 import pandas as pd
 from nicegui import app, run, ui
 
-from core import awap, lakerecord, wordtable
+from core import awap, dam as dams, lakerecord, wordtable
 from core.paths import clean_path_text
 from layout import no_study, page_frame, severity_banner
 from state import STATE
@@ -242,7 +242,11 @@ class _LakeRecordView:
             if overlay:
                 rows.append((f"Overlay gauge, below {overlay.get('below')} m",
                              overlay.get("file")))
-            rows += [("Storage table", h["storage"]), ("Rating register", h["register"]),
+            single = dams.single_rating(h)
+            rows += [("Storage table", h["storage"]),
+                     ("One rating" + (f", FSL {h['register_fsl']:g} m" if single and
+                                      h.get("register_fsl") else "")
+                      if single else "Rating register", h["register"]),
                      ("Evaporation (SILO)", h["evaporation"]),
                      ("Catchment shapefile", r["shapefile"])]
             with ui.element("div").classes("w-full grid gap-x-4 gap-y-0") \
