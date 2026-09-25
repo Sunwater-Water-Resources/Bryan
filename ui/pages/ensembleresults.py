@@ -23,6 +23,7 @@ from nicegui import ui
 from core import enbresults, ensemble, pmfchart, resultchart, results
 from core.results import format_aep
 from layout import page_frame, require_project, severity_banner
+from clipboard import copy_buttons, table_from_rows
 from state import STATE
 from theme import house_echart
 
@@ -95,6 +96,7 @@ class _EnsembleView:
         self.aep_box = None
         self.box_chart = None
         self.pattern_box = None
+        self.shown_table = None      # what Copy for Word copies: the table as drawn
 
     # -- build ------------------------------------------------------------
 
@@ -138,7 +140,10 @@ class _EnsembleView:
 
     def _table_card(self) -> None:
         with ui.card().classes("w-full"):
-            ui.label("Critical durations").classes("font-bold")
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("Critical durations").classes("font-bold")
+                with ui.row().classes("gap-1"):
+                    copy_buttons(lambda: self.shown_table, mark="ensemble")
             self.margin_note = ui.label("").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
 
@@ -238,6 +243,7 @@ class _EnsembleView:
         self.table_box.clear()
         self.margin_note.set_text(results.margin_note(analysis.margin_kind))
         table = enbresults.critical_table(found, analysis, top)
+        self.shown_table = None
         with self.table_box:
             if table.empty:
                 ui.label("nothing to show").classes("text-muted text-sm")
@@ -262,6 +268,8 @@ class _EnsembleView:
                     else:
                         row[str(name)] = _cell(value, self.result)
                 rows.append(row)
+            self.shown_table = table_from_rows(
+                columns, rows, title=f"{self.group} - {RESULT_OPTIONS.get(self.result, self.result)}")
             ui.table(columns=columns, rows=rows, row_key="aep") \
                 .classes("w-full").props("dense flat bordered").mark("ensemble-table")
 

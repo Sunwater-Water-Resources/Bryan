@@ -33,6 +33,7 @@ from core import critexport, grouping, overlay, results, resultchart
 from core.paths import cell_text
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
+from clipboard import copy_buttons, table_from_rows
 from state import STATE
 from widgets import OUTPUT_FOLDER, path_input
 
@@ -144,6 +145,7 @@ class _ResultsView:
         self.table_box = None
         self.margin_note = None
         self.files_box = None
+        self.shown_table = None      # what Copy for Word copies: the table as drawn
 
     # -- build ------------------------------------------------------------
 
@@ -204,7 +206,10 @@ class _ResultsView:
 
     def _table_card(self) -> None:
         with ui.card().classes("w-full"):
-            ui.label("Critical durations").classes("font-bold")
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("Critical durations").classes("font-bold")
+                with ui.row().classes("gap-1"):
+                    copy_buttons(lambda: self.shown_table, mark="results")
             # Worded per result type in _draw_table: metres for level.
             self.margin_note = ui.label("").classes("text-xs text-muted")
             self.table_box = ui.column().classes("w-full")
@@ -492,6 +497,7 @@ class _ResultsView:
         self.table_box.clear()
         self.margin_note.set_text(results.margin_note(analysis.margin_kind))
         table = results.table(comparison, analysis)
+        self.shown_table = None
         with self.table_box:
             if table.empty:
                 ui.label("nothing selected").classes("text-muted text-sm")
@@ -508,6 +514,8 @@ class _ResultsView:
                         results.format_margin(value, analysis.margin_kind)
                         if name == analysis.margin_label else _cell(name, value))
                 rows.append(row)
+            self.shown_table = table_from_rows(columns, rows,
+                                               title=f"{self.group} - {self.key}")
             ui.table(columns=columns, rows=rows, row_key="aep"
                      ).classes("w-full").props("dense flat bordered")
 

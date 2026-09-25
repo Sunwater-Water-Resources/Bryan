@@ -19,6 +19,7 @@ from nicegui import app, run, ui
 
 from core import reporttables, study as studies, wordtable
 from layout import no_study, page_frame, severity_banner
+from clipboard import copy_table
 from state import STATE
 
 
@@ -313,22 +314,7 @@ class _ReportView:
             built = await _off_thread(reporttables.build, self.study, spec)
         if built is None:
             return
-        text = wordtable.to_text(built)
-        if not rich:
-            ui.clipboard.write(text)
-            ui.notify("Copied as text")
-            return
-        fragment = wordtable.to_html(built, self.study.extra.get("word"))
-        outcome = await ui.run_javascript(
-            wordtable.clipboard_script(wordtable.clipboard_document(fragment), text),
-            timeout=5.0)
-        if outcome == "html":
-            ui.notify("Copied - paste into Word")
-        elif outcome == "text":
-            ui.notify("This browser would only take text; copied as text",
-                      type="warning")
-        else:
-            ui.notify(f"Could not copy: {outcome}", type="negative")
+        await copy_table(built, rich=rich)
 
     def _new_table(self, kind: str) -> None:
         spec = reporttables.new_spec(kind)

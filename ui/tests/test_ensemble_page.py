@@ -52,3 +52,19 @@ async def test_a_sims_list_without_an_ensemble_says_so(user, tmp_path):
     _config(tmp_path, [monte_carlo_row(**{"Output file": "sims_mc\\results\\mc"})])
     await user.open("/ensemble")
     await user.should_see("No ensemble results found")
+
+
+@pytest.mark.asyncio
+async def test_the_ensemble_table_is_copied_as_shown(user, tmp_path, monkeypatch):
+    from nicegui import ui as nicegui_ui
+    copied = []
+    monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
+    write_run(tmp_path, "CLD_enb_test")
+    _config(tmp_path, [{"Include": "yes", "Method": "ensemble",
+                        "Output file": "sims_enb\\results\\CLD_enb_test",
+                        "Config file": "enb.json"}])
+    await user.open("/ensemble")
+    await user.should_see(marker="ensemble-table")
+    user.find(marker="copy-text-ensemble").click()
+    await user.should_see("Copied as text")
+    assert copied and copied[0].splitlines()[0].startswith("AEP (1 in X)\t")

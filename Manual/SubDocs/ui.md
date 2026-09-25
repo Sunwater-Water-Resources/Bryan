@@ -160,6 +160,10 @@ The floor a switch has to clear is shown beside the plot and can be changed: it 
 
 Note also that the margin *at* a crossover is near zero whatever the crossover means, since the two curves are equal there; a switch is therefore judged on how convincingly the incoming duration wins over the range it then holds. One that never gets clear of the next duration is reported as noise and is not pinned on the plot.
 
+### Copying the table
+
+**Copy for Word** above the critical durations table copies it as it is shown - the durations ticked, the critical duration and the margin - in the report's table style, as the Report page does (see [Copying](#copying)); **Copy as text** gives the tab-separated form for Excel. The Ensemble page's table copies the same way.
+
 ### Exporting the analysis
 
 **Export critical durations** writes the analysis to file, one run per result type:
@@ -212,7 +216,7 @@ Only inflow volumes are offered, for the reason the volume analysis itself gives
 The **Ensemble** page is the Results page for ensemble runs. An ensemble run routes every temporal pattern of every storm duration at each standard AEP, so there are no quantile tables to read: the page reads the run's database itself. Pick a **group** - an ensemble row, or a reservoir routing row that re-routed an ensemble - and a **result** (level, inflow or outflow).
 
 - **The durations.** Each duration's **median pattern** against AEP, with the envelope over them, marked up by which duration is critical, as the Results page draws the Monte Carlo curves. The median is Bryan's own pick (```lib/EnbAnalysis.py```): the pattern at position ```int(np.around(n / 2))``` of the ascending sort, the sixth of ten. The critical duration is the one whose median is largest, and a tie goes to the first duration the database lists, as Bryan's does. Each result type has its own critical duration: the inflow's is not the level's.
-- **Critical durations.** Per AEP: every duration's median, the critical duration, its **margin** over the runner-up (in **metres for lake level**, percent for flows), which pattern gave the median, and the single **highest** event over every pattern and duration, with its duration. The same warnings as the Results page follow it: the shortest or longest duration being critical, and crossovers too small to mean anything.
+- **Critical durations.** Per AEP: every duration's median, the critical duration, its **margin** over the runner-up (in **metres for lake level**, percent for flows), which pattern gave the median, and the single **highest** event over every pattern and duration, with its duration. The same warnings as the Results page follow it: the shortest or longest duration being critical, and crossovers too small to mean anything. **Copy for Word** copies the table as shown.
 - **The patterns at one AEP.** The PMF page's box plot: one box per duration over the patterns, every pattern a dot, the middle line Bryan's median pick and the diamond the highest event, with a table of each duration's median and highest pattern. It opens on the rarest AEP in the run.
 
 Where Bryan's ```csv/<name>_critical.csv``` is beside the database, the page checks itself against it - the critical duration and its median at every AEP - and says it **agrees**, or lists where it differs. A difference usually means the csv predates the last run, and the page says so when the csv is the older file. Two small differences from Bryan's analysis never move a median's value: where several patterns give the same value (a lake held at full supply) the pattern named may differ, and an event with no result is left out of the count where Bryan counts it - the page reports any.
