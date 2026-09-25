@@ -383,6 +383,10 @@ The last three hold **sections** (the RFSL and FSL halves of a table, each under
 
 **Where the inflow and outflow are read** is a choice for the last two kinds. The default is the storm that gives the peak level, consistent with the "Level critical duration" column and with Tables 1 and 26-31. The alternative is each result's own maximum, which is what the scripts that first filled Tables 33 and 34 did - the peak inflow of the PMPF then comes from a shorter storm than the peak level beside it, and differs from the PMPF row of Table 26.
 
+### Finding a table
+
+The tables open **folded**, one line each: the title, what it is drawn from, and, once built, whether it built cleanly or has problems to read. Click a line to open the table, which builds it and shows its preview and Copy buttons; a folded table is not built at all, so the page opens quickly however many tables the study holds. The **Contents** list above them opens a table and scrolls to it; **Open all** and **Fold all** do what they say. Which tables are open is remembered for you, not in the study, so two people working on one study each keep their own view. A table just added or edited is left open.
+
 ### Copying
 
 **Copy for Word** puts the table on the clipboard twice over: as a formatted table in the report's style (white bold header on the brand cyan, section rows on the cyan tint, Rubik Light 10 pt, units with a superscript), and as tab-separated text. Word pastes the first; Excel, or Word's *Keep Text Only*, takes the second. The caption is not copied - keep Word's own, so its numbering and cross-references survive. **Copy as text** gives the tab-separated form alone. A study can change the Word styling under a ```"word"``` key (```font```, ```size_pt```, ```header_fill```, ```header_text```, ```section_fill```, ```rule```).

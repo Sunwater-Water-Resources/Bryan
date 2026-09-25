@@ -40,6 +40,9 @@ class _ReportView:
         self.study = STATE.study
         self.built: dict = {}
         self.body = None
+        self.cards: dict = {}           # table id -> its card's parts
+        self.open: set = (STATE.settings.open_tables_for(self.study.path)
+                          if self.study is not None else set())
 
     # -- layout ------------------------------------------------------------
 
@@ -49,6 +52,7 @@ class _ReportView:
 
     def redraw(self) -> None:
         self.body.clear()
+        self.cards = {}
         with self.body:
             if self.study is None:
                 no_study("The report tables are kept in the study file.")
@@ -154,25 +158,48 @@ class _ReportView:
         if not self.study.tables:
             ui.label("No tables yet.").classes("text-sm text-muted")
             return
+        # Tables open folded: one line each, built only when opened - most of the
+        # page's loading time was spent reading runs for tables nobody was reading.
+        self.open = self.open & {spec.get("id") for spec in self.study.tables}
+        self._contents()
         for spec in self.study.tables:
             self._table_card(spec)
+
+    def _contents(self) -> None:
+        with ui.card().classes("w-full gap-1").mark("table-contents"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("Contents").classes("font-bold")
+                with ui.row().classes("gap-1"):
+                    ui.button("Open all", icon="unfold_more",
+                              on_click=lambda: self._open_all(True)) \
+                        .props("flat dense no-caps").mark("open-all-tables")
+                    ui.button("Fold all", icon="unfold_less",
+                              on_click=lambda: self._open_all(False)) \
+                        .props("flat dense no-caps").mark("fold-all-tables")
+            for number, spec in enumerate(self.study.tables, start=1):
+                table_id = spec.get("id")
+                # A label, not a link: a link's own navigation would fight the scroll.
+                ui.label(f"{number}. {spec.get('title') or '(untitled)'}") \
+                    .classes("text-sm text-primary cursor-pointer hover:underline") \
+                    .on("click", lambda _, t=table_id: self._go_to(t)) \
+                    .mark(f"contents-{table_id}")
 
     def _table_card(self, spec: dict) -> None:
         table_id = spec.get("id")
         kind = reporttables.KINDS.get(spec.get("kind"))
-        with ui.card().classes("w-full").mark(f"table-{table_id}"):
-            with ui.row().classes("w-full items-start justify-between no-wrap"):
-                with ui.column().classes("gap-0"):
-                    ui.label(spec.get("title") or "(untitled)").classes("font-bold")
-                    ui.label(_describe(spec, kind)).classes("text-xs text-muted")
+        is_open = table_id in self.open
+        with ui.card().classes("w-full gap-2").mark(f"table-{table_id}") as card:
+            with ui.row().classes("w-full items-center justify-between no-wrap"):
+                with ui.row().classes("items-center gap-2 no-wrap grow cursor-pointer") \
+                        .on("click", lambda: self._set_open(table_id, table_id not in self.open)) \
+                        .mark(f"fold-{table_id}"):
+                    chevron = ui.icon("expand_more" if is_open else "chevron_right") \
+                        .classes("text-2xl text-muted").mark(f"chevron-{table_id}")
+                    with ui.column().classes("gap-0"):
+                        ui.label(spec.get("title") or "(untitled)").classes("font-bold")
+                        ui.label(_describe(spec, kind)).classes("text-xs text-muted")
+                status = ui.row().classes("items-center no-wrap").mark(f"status-{table_id}")
                 with ui.row().classes("gap-1 no-wrap"):
-                    ui.button("Copy for Word", icon="content_copy",
-                              on_click=lambda: self._copy(table_id, rich=True)) \
-                        .props("dense no-caps").mark(f"copy-word-{table_id}")
-                    ui.button(icon="notes",
-                              on_click=lambda: self._copy(table_id, rich=False)) \
-                        .props("flat dense round").mark(f"copy-text-{table_id}") \
-                        .tooltip("Copy as text (tab-separated, for Excel)")
                     ui.button(icon="edit", on_click=lambda: self._edit(table_id)) \
                         .props("flat dense round").mark(f"edit-{table_id}").tooltip("Edit")
                     ui.button(icon="content_paste_go",
@@ -187,10 +214,78 @@ class _ReportView:
                         .props("flat dense round").tooltip("Move down")
                     ui.button(icon="delete", on_click=lambda: self._delete(table_id)) \
                         .props("flat dense round").tooltip("Remove")
+            body = ui.column().classes("w-full gap-2")
+            body.set_visibility(is_open)
+        self.cards[table_id] = {"card": card, "chevron": chevron, "status": status,
+                                "body": body, "drawn": False}
+        self._draw_status(table_id)
+        if is_open:
+            self._draw_body(table_id)
+
+    def _draw_status(self, table_id) -> None:
+        parts = self.cards.get(table_id)
+        if parts is None or parts["status"].is_deleted:
+            return
+        parts["status"].clear()
+        built = self.built.get(table_id)
+        with parts["status"]:
+            if built is None:
+                ui.label("not built yet" if table_id not in self.open else "building...") \
+                    .classes("text-xs text-muted")
+            elif built.problems:
+                count = len(built.problems)
+                ui.chip(f"{count} problem{'' if count == 1 else 's'} to read",
+                        icon="warning").props("color=warning text-color=white dense square")
+            else:
+                ui.chip("built", icon="check_circle") \
+                    .props("color=positive text-color=white dense square")
+
+    def _draw_body(self, table_id) -> None:
+        """The Copy buttons and the preview, made the first time a table is opened."""
+        parts = self.cards[table_id]
+        if parts["drawn"]:
+            return
+        parts["drawn"] = True
+        with parts["body"]:
+            with ui.row().classes("gap-1 no-wrap"):
+                ui.button("Copy for Word", icon="content_copy",
+                          on_click=lambda: self._copy(table_id, rich=True)) \
+                    .props("dense no-caps").mark(f"copy-word-{table_id}")
+                ui.button("Copy as text", icon="notes",
+                          on_click=lambda: self._copy(table_id, rich=False)) \
+                    .props("flat dense no-caps").mark(f"copy-text-{table_id}") \
+                    .tooltip("Tab-separated, for Excel")
             preview = ui.column().classes("w-full gap-1")
             with preview:
                 ui.spinner(size="sm")
-            ui.timer(0.01, lambda: self._fill(table_id, preview), once=True)
+        self._draw_status(table_id)
+        ui.timer(0.01, lambda: self._fill(table_id, preview), once=True)
+
+    def _set_open(self, table_id, on: bool, *, remember=True) -> None:
+        parts = self.cards.get(table_id)
+        if parts is None:
+            return
+        if on:
+            self.open.add(table_id)
+        else:
+            self.open.discard(table_id)
+        parts["chevron"].name = "expand_more" if on else "chevron_right"
+        parts["body"].set_visibility(on)
+        if on:
+            self._draw_body(table_id)
+        if remember:
+            STATE.settings.remember_open_tables(self.study.path, self.open)
+
+    def _open_all(self, on: bool) -> None:
+        for table_id in list(self.cards):
+            self._set_open(table_id, on, remember=False)
+        STATE.settings.remember_open_tables(self.study.path, self.open)
+
+    def _go_to(self, table_id) -> None:
+        self._set_open(table_id, True)
+        card = self.cards[table_id]["card"]
+        ui.run_javascript(f"document.getElementById('c{card.id}')"
+                          f".scrollIntoView({{behavior: 'smooth', block: 'start'}})")
 
     async def _fill(self, table_id, box) -> None:
         spec = self.study.table(table_id)
@@ -198,6 +293,7 @@ class _ReportView:
             return
         built = await _off_thread(reporttables.build, self.study, spec)
         self.built[table_id] = built
+        self._draw_status(table_id)
         if box.is_deleted:
             return
         box.clear()
@@ -280,6 +376,8 @@ class _ReportView:
     def store(self, spec: dict) -> None:
         stored = self.study.put_table(spec)
         self.built.pop(stored["id"], None)
+        self.open.add(stored["id"])                 # show what was just made or changed
+        STATE.settings.remember_open_tables(self.study.path, self.open)
         self.save()
         self.redraw()
 
