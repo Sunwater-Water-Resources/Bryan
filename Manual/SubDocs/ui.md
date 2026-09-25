@@ -155,9 +155,19 @@ Groups come from the sims list that is open. Comparing against a run held in a *
 
 ### What is not shown
 
-The ensemble method does not appear. ```lib/EnbAnalysis.py``` already computes the median pattern per duration and the critical duration per AEP inside the run, and writes its own plots beside the results; a second implementation in the launcher would only be somewhere for the two to disagree.
+The ensemble method does not appear here; it has its own page, below.
 
 Only inflow volumes are offered, for the reason the volume analysis itself gives: outflow and storage volumes follow from the peak level and the rating curve.
+
+## Viewing ensemble results
+
+The **Ensemble** page is the Results page for ensemble runs. An ensemble run routes every temporal pattern of every storm duration at each standard AEP, so there are no quantile tables to read: the page reads the run's database itself. Pick a **group** - an ensemble row, or a reservoir routing row that re-routed an ensemble - and a **result** (level, inflow or outflow).
+
+- **The durations.** Each duration's **median pattern** against AEP, with the envelope over them, marked up by which duration is critical, as the Results page draws the Monte Carlo curves. The median is Bryan's own pick (```lib/EnbAnalysis.py```): the pattern at position ```int(np.around(n / 2))``` of the ascending sort, the sixth of ten. The critical duration is the one whose median is largest, and a tie goes to the first duration the database lists, as Bryan's does. Each result type has its own critical duration: the inflow's is not the level's.
+- **Critical durations.** Per AEP: every duration's median, the critical duration, its **margin** over the runner-up (in **metres for lake level**, percent for flows), which pattern gave the median, and the single **highest** event over every pattern and duration, with its duration. The same warnings as the Results page follow it: the shortest or longest duration being critical, and crossovers too small to mean anything.
+- **The patterns at one AEP.** The PMF page's box plot: one box per duration over the patterns, every pattern a dot, the middle line Bryan's median pick and the diamond the highest event, with a table of each duration's median and highest pattern. It opens on the rarest AEP in the run.
+
+Where Bryan's ```csv/<name>_critical.csv``` is beside the database, the page checks itself against it - the critical duration and its median at every AEP - and says it **agrees**, or lists where it differs. A difference usually means the csv predates the last run, and the page says so when the csv is the older file. Two small differences from Bryan's analysis never move a median's value: where several patterns give the same value (a lake held at full supply) the pattern named may differ, and an event with no result is left out of the count where Bryan counts it - the page reports any.
 
 ## Choosing representative events
 

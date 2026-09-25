@@ -89,8 +89,7 @@ def _empty_state() -> None:
         ui.label("No analysed results found for this sims list."
                  ).classes("text-muted")
         ui.label("Rows write their quantile files when 'Analyse results' "
-                 "is yes. The ensemble method does its own critical "
-                 "duration analysis instead, so it does not appear here."
+                 "is yes. Ensemble results are on the Ensemble page."
                  ).classes("text-xs text-muted max-w-lg text-center")
         ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
 

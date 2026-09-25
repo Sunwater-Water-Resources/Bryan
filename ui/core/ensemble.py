@@ -151,16 +151,20 @@ def median_events(frame: pd.DataFrame, result: str = "level") -> pd.Series:
     return pd.Series(picked, dtype=object)
 
 
-def pick(frame: pd.DataFrame, convention: str = HIGHEST) -> Pick:
-    """The event a table quotes, with its own inflow and outflow."""
-    levels = frame["level"].dropna()
-    if levels.empty:
+def pick(frame: pd.DataFrame, convention: str = HIGHEST, result: str = "level") -> Pick:
+    """The event a table quotes, with its own inflow and outflow.
+
+    Picked on ``result`` - the level for the PMF; the Ensemble page picks on
+    whichever result it is showing.
+    """
+    values = frame[result].dropna()
+    if values.empty:
         return Pick(convention=convention)
     if convention == MEDIAN:
-        events = median_events(frame)
-        best = max(events.index, key=lambda duration: frame.loc[events[duration], "level"])
+        events = median_events(frame, result)
+        best = max(events.index, key=lambda duration: frame.loc[events[duration], result])
         return _pick_event(frame, events[best], convention)
-    return _pick_event(frame, levels.idxmax(), convention)
+    return _pick_event(frame, values.idxmax(), convention)
 
 
 def by_duration(frame: pd.DataFrame, result: str = "level") -> pd.DataFrame:
