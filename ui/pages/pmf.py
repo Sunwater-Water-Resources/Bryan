@@ -21,7 +21,7 @@ from nicegui import app, run, ui
 
 from core import ensemble, pmfchart, reporttables, study as studies
 from core.results import format_aep
-from layout import page_frame, severity_banner
+from layout import no_study, page_frame, severity_banner
 from state import STATE
 from theme import house_echart
 
@@ -71,11 +71,7 @@ class _PmfView:
 
     def build(self) -> None:
         if self.study is None:
-            with ui.card().classes("w-full items-center p-8"):
-                ui.icon("description").classes("text-5xl text-muted")
-                ui.label("Open a study first - the PMF page keeps its settings in the "
-                         "study file.").classes("text-muted")
-                ui.button("Go to Report", on_click=lambda: ui.navigate.to("/report"))
+            no_study("The PMF page keeps its settings in the study file.")
             return
         self._adopted_card()
         self.body = ui.column().classes("w-full gap-4")

@@ -34,6 +34,14 @@ if errorlevel 1 pause
 
 The two ```--bryan-*``` values are the same pair the ordinary batch files set as ```VENV_PY``` and ```PYFILE```. They are saved, so they only need giving once.
 
+## The study
+
+A dam's design flood study spans several runs - the RFSL and FSL sims lists are separate sims_config.json files, a sensitivity is another, and the PMF ensemble another again - so what is about the dam and its report is kept one level above them, in a **study file**: ```bryan_study.json```, at the top of the study folder. The Report, PMF, Figures and Lake record pages all read it.
+
+The **Study** page, first in the menu, opens one or creates one with **New study** (give the folder, or the file). Its paths are stored relative to it, so a study copied to another disk still opens. Once open, the page shows the study's name (edit it in place), where it is, and what it holds: its runs and report tables, PMF groups, figures and lake level record, each with a link to its page. **Close** closes it; another is opened from the section below.
+
+**The study the launcher last had open is reopened when it starts**, so the pages that read it are ready without a visit here. The file is given five seconds: a study on a disk that is not plugged in, or on a network share that does not answer, is left closed, and the Study page - and every page that needs a study - says why. It is remembered all the same, so it reopens once the disk is back.
+
 ## Choosing simulations
 
 The **Select** page lists the simulation list as a table, filtered by group.
@@ -313,7 +321,7 @@ The **Report** page fills the design flood report's result tables from the runs,
 
 ### The study file
 
-A report draws on several runs - the RFSL and FSL sims lists are separate sims_config.json files, and a sensitivity or a PMF ensemble is another - so the page works from a **study file** one level above them: ```bryan_study.json```, kept at the top of the study folder. Open it, or create it with **New study**. It holds:
+A report draws on several runs - the RFSL and FSL sims lists are separate sims_config.json files, and a sensitivity or a PMF ensemble is another - so the page works from the **study file** (see [The study](#thestudy)), opened on the Study page. For the report it holds:
 
 - **Runs** - a name and a sims_config.json for each. Paths are stored relative to the study file, so a study copied to another disk still opens. Rename a run and every table that reads it follows; point the name at a re-run (E013 for E012) and every table moves with it.
 - **Tables** - one entry per report table: its kind, the group or groups it is drawn from, and its layout options.
@@ -343,7 +351,7 @@ Anything a table cannot fill - a group with no results yet, an AEP the run did n
 
 ## The PMF
 
-The **PMF** page reads the PMF's ensemble runs and gives the PMF a notional AEP from the Monte Carlo realisations. It keeps its settings in the study file (open it on the Report page).
+The **PMF** page reads the PMF's ensemble runs and gives the PMF a notional AEP from the Monte Carlo realisations. It keeps its settings in the study file (open it on the Study page).
 
 ### Which event is the PMF
 
@@ -365,7 +373,7 @@ A straight read off the realisations without a fit is too noisy up there - a doz
 
 ## Report figures
 
-The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Report page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped.
+The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Study page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped.
 
 - **Curves**: a group's design curve (the envelope over its durations, as the Results page draws it); a curve from a file with the AEP ('1 in X') in its first column and the result as a column, for a previous study's adopted curve; or an **FFA** - an RMC Bestfit export, drawn as v03 drew it: the posterior mode (solid) and/or mean (dashed) in black, the 90% credible interval in faint grey when there is only one FFA on the figure, the annual maxima as dots and any paleoflood lower bounds as upward triangles.
 - **Labels** belong to the figure. The same group can be 'URBS' on the FFA comparison and 'GWL 1.3 °C' among the horizons; edit a label in the box beside the preview and the figure redraws.
@@ -376,7 +384,7 @@ The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v
 
 ## Lake record
 
-The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other, and a fourth, the **inflow record**, off the same record. Everything is kept in the study file (open it on the Report page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
+The **Lake record** page makes the antecedent storage the Monte Carlo runs sample - the `lake_config.json` files - from the dam's own lake level record, in three steps that feed each other, and a fourth, the **inflow record**, off the same record. Everything is kept in the study file (open it on the Study page), with paths relative to it, and each analysis leaves its job file beside its outputs so a run can be repeated from a console exactly as the page ran it.
 
 ### The lake level record
 

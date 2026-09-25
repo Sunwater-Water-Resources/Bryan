@@ -12,6 +12,7 @@ from core.palette import BRAND_CYAN, INK, ON_INK_MUTED
 from state import STATE
 
 NAV = [
+    ("Study", "/study"),
     ("Project", "/"),
     ("Select", "/select"),
     ("Run", "/run"),
@@ -74,6 +75,20 @@ def require_project():
         ui.label("Open a sims_config.json first.").classes("text-muted")
         ui.button("Go to Project", on_click=lambda: ui.navigate.to("/"))
     return None
+
+
+def no_study(what: str) -> None:
+    """The empty state for pages that read the study file.
+
+    ``what`` says what the page keeps there. When the last study could not be
+    reopened at start-up, the reason is shown too.
+    """
+    with ui.card().classes("w-full items-center p-8").mark("no-study"):
+        ui.icon("description").classes("text-5xl text-muted")
+        ui.label(f"No study is open. {what}").classes("text-muted text-center")
+        if STATE.study_problem:
+            ui.label(STATE.study_problem).classes("text-sm text-body max-w-lg text-center")
+        ui.button("Go to Study", on_click=lambda: ui.navigate.to("/study"))
 
 
 def status_chip(state) -> None:

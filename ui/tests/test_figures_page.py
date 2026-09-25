@@ -54,11 +54,12 @@ async def seen(user, marker, seconds=10.0):
 
 
 @pytest.mark.asyncio
-async def test_without_a_study_the_page_sends_you_to_the_report_page(user, private_settings):
+async def test_without_a_study_the_page_sends_you_to_the_study_page(user, private_settings):
     from state import STATE
     STATE.study = None
     await user.open("/figures")
-    await user.should_see("Go to Report")
+    await user.should_see("No study is open")
+    await user.should_see("Go to Study")
 
 
 @pytest.mark.asyncio

@@ -68,12 +68,12 @@ async def preview_text(user, table_id, seconds=10.0):
 
 
 @pytest.mark.asyncio
-async def test_without_a_study_the_page_offers_to_open_one(user, private_settings):
+async def test_without_a_study_the_page_sends_you_to_the_study_page(user, private_settings):
     from state import STATE
     STATE.study = None
     await user.open("/report")
-    await user.should_see("Study file")
-    await user.should_see("New study")
+    await user.should_see("No study is open")
+    await user.should_see("Go to Study")
 
 
 @pytest.mark.asyncio
@@ -116,14 +116,7 @@ async def test_copy_for_word_sends_the_html_and_says_what_it_managed(user, opene
 
 
 @pytest.mark.asyncio
-async def test_a_study_is_opened_from_the_page(user, private_settings, tmp_path):
-    from state import STATE
-    STATE.study = None
-    study = build_study(tmp_path / "other")
+async def test_the_study_is_named_with_a_way_to_change_it(user, opened):
     await user.open("/report")
-    user.find(marker="study-path").clear().type(str(study.path))
-    user.find(marker="open-study").click()
-    await user.should_see(str(study.path))
-    await user.should_see("1 group")
-    assert STATE.study is not None and STATE.study.path == study.path
-    STATE.study = None
+    await user.should_see(marker="report-study")
+    await user.should_see("Change study")

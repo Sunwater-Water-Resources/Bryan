@@ -20,7 +20,7 @@ from nicegui import app, run, ui
 
 from core import reporttables, study as studies, wordtable
 from core.paths import clean_path_text
-from layout import page_frame, severity_banner
+from layout import no_study, page_frame, severity_banner
 from state import STATE
 
 
@@ -53,7 +53,7 @@ class _ReportView:
         self.body.clear()
         with self.body:
             if self.study is None:
-                self._open_card()
+                no_study("The report tables are kept in the study file.")
                 return
             self._study_card()
             self._runs_card()
@@ -65,76 +65,22 @@ class _ReportView:
         except OSError as exc:
             ui.notify(f"Could not save {self.study.path.name}: {exc}", type="warning")
 
-    # -- opening a study ---------------------------------------------------
-
-    def _open_card(self) -> None:
-        with ui.card().classes("w-full"):
-            ui.label("Study file").classes("text-lg font-bold")
-            ui.label("A study file names the runs a report is written from and says "
-                     "which group of which run fills each report table. Keep it at "
-                     "the top of the study folder; the paths in it are stored "
-                     "relative to it, so the study can be moved."
-                     ).classes("text-sm text-body")
-            default = STATE.settings.last_study or ""
-            if not default and STATE.project is not None:
-                default = str(STATE.project.config.config_path.parent
-                              / studies.DEFAULT_NAME)
-            path = ui.input("Study file (or its folder)", value=default) \
-                .classes("w-full").props("dense").mark("study-path")
-            name = ui.input("Name, for a new study", value="").classes("w-full") \
-                .props("dense")
-            with ui.row().classes("gap-2"):
-                ui.button("Open", icon="folder_open",
-                          on_click=lambda: self._open(path.value)).mark("open-study")
-                ui.button("New study", icon="add",
-                          on_click=lambda: self._open(path.value, create=True,
-                                                      name=name.value)) \
-                    .props("outline").mark("new-study")
-            recent = [entry for entry in STATE.settings.recent_studies if entry]
-            if recent:
-                ui.label("Recent").classes("text-sm text-muted pt-2")
-                for entry in recent:
-                    ui.button(entry, on_click=lambda _, e=entry: self._open(e)) \
-                        .props("flat dense no-caps align=left").classes("mono text-sm")
-
-    def _open(self, path, *, create=False, name="") -> None:
-        text = clean_path_text(path or "")
-        if not text:
-            ui.notify("Give the study file's path", type="warning")
-            return
-        try:
-            self.study = STATE.open_study(text, create=create, name=name)
-        except (studies.StudyError, OSError) as exc:
-            ui.notify(str(exc), type="negative", multi_line=True)
-            return
-        self.built = {}
-        self.redraw()
-
-    def _close(self) -> None:
-        STATE.close_study()
-        self.study = None
-        self.redraw()
-
     # -- the study ---------------------------------------------------------
 
     def _study_card(self) -> None:
+        """The study, named - it is opened, renamed and closed on the Study page."""
         with ui.card().classes("w-full"):
             with ui.row().classes("w-full items-center justify-between no-wrap"):
                 with ui.column().classes("gap-0"):
-                    name = ui.input("Study", value=self.study.name) \
-                        .props("dense borderless").classes("text-lg font-bold")
-                    name.on("blur", lambda: self._rename_study(name.value))
+                    ui.label(self.study.name or self.study.path.stem) \
+                        .classes("text-lg font-bold").mark("report-study")
                     ui.label(str(self.study.path)).classes("mono text-xs text-muted")
                 with ui.row().classes("gap-2"):
                     ui.button("Refresh", icon="refresh", on_click=self._refresh) \
                         .props("outline").mark("refresh-tables") \
                         .tooltip("Re-read the results - after a re-run")
-                    ui.button("Close", icon="close", on_click=self._close).props("flat")
-
-    def _rename_study(self, value) -> None:
-        if value != self.study.name:
-            self.study.name = value
-            self.save()
+                    ui.button("Change study", icon="swap_horiz",
+                              on_click=lambda: ui.navigate.to("/study")).props("flat")
 
     def _refresh(self) -> None:
         studies.forget_runs()
