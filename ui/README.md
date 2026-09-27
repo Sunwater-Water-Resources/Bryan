@@ -24,6 +24,10 @@ C:\PythonProjects\Bryan_ui\.venv\Scripts\pip install -r ui\requirements-ui.txt
 python ui\main.py [sims_config.json] [--port 8081]
 ```
 
+The launcher serves this computer only (`127.0.0.1`). It has no login, and it
+starts processes and reads and writes project files, so `--host 0.0.0.0`, which
+opens it to every network the computer is on, is only for a network you trust.
+
 Or drop a `run_ui.bat` beside the model's existing `*_sims_*.bat` files — see
 `Manual/SubDocs/ui.md` for the template. In the settings panel (the gear in the
 menu bar), set the interpreter and `Main.py` that Bryan should be run with: the

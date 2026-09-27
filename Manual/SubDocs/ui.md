@@ -34,6 +34,8 @@ if errorlevel 1 pause
 
 The two ```--bryan-*``` values are the same pair the ordinary batch files set as ```VENV_PY``` and ```PYFILE```. They are saved, so they only need giving once.
 
+The launcher is served to **this computer only** (```127.0.0.1```). It has no login, yet it starts processes and reads and writes project files, so opening it to other machines with ```--host 0.0.0.0``` - every network the computer is on - is only for a network you trust.
+
 ### Help
 
 The **?** beside the gear opens the page's section of this manual in a new tab - the copy that came with this Bryan, served by the launcher itself, so it matches the launcher and needs no network.
