@@ -457,5 +457,5 @@ def summarise(result, rating):
 
 
 
-# The name it had in callide-fsl-reinstate, where it was written.
+# The name it had in the Callide study, where it was written.
 CallideDam = LakeModel

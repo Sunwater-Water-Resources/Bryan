@@ -1,4 +1,4 @@
-"""Antecedent storage (lib/antecedent), generalised from callide-fsl-reinstate.
+"""Antecedent storage (lib/antecedent), generalised from the private Callide study.
 
 As with the homogenisation, the method is the callide modules copied and the
 job layer is new - so the layer is tested here, and the whole is held to the
@@ -79,7 +79,7 @@ def test_a_lake_config_has_the_shape_lake_conditions_reads():
 
 
 @pytest.mark.skipif(not (CALLIDE / "antecedent_storage" / "BryanLakeConfig").is_dir(),
-                    reason="needs the callide-fsl-reinstate checkout beside Bryan")
+                    reason="needs Sunwater's private Callide study checkout (callide-fsl-reinstate) beside Bryan")
 def test_callide_s_delivered_lake_configs_come_back_byte_for_byte(tmp_path):
     data = CALLIDE / "data"
     homogenise = {

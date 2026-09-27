@@ -3,9 +3,9 @@
 Bryan and Judith chain in practice - Bryan produces the inflow, Judith routes it
 through the reservoir while the structures fail - so they are read side by side
 and are drawn as siblings. These values are copied from Judith's window
-(``damfailure/ui/app.py`` in dam-failure-hydraulics) rather than shared, because
-the two are separate repositories with separate environments. Change one, change
-both.
+(``damfailure/ui/app.py``, in a private Sunwater repository) rather than
+shared, because the two are separate repositories with separate environments.
+Change one, change both.
 
 Plain values, no nicegui, so the chart builders in core/ can use them.
 

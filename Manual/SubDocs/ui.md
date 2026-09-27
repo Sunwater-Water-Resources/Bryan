@@ -508,7 +508,7 @@ Under the annual maximum chart, **Download AMS CSV** sends ```inflow_ams.csv``` 
 
 **Recessions.** Above full supply the falling limb often derives negative inflow: the gates released more than the rating says. The **recession correction** books that as release, which is right for the water balance, but leaves the corrected inflow at zero there where the real inflow was falling away. The actual release is not recorded, so neither version is the true recession. Each hydrograph therefore carries both, ```Inflow_m3s``` (corrected) and ```Inflow_uncorrected_m3s```, with ```Release_uncertain``` marking every interval the correction touched; the chart draws the uncorrected inflow dashed over those intervals. Calibrate to the rising limb and the peak with confidence, and to the flagged part of the recession with care. Peaks and burst volumes are on rising limbs and are unaffected.
 
-On Callide, with the evaporation left out, the annual maxima agree with the independent reverse routing in callide-fsl-reinstate to a median of 0.00% on the peak and on every volume. The floods differ by 1-4% on volume, because that routing joins the rating rows with straight lines, which overstates a convex spillway rating between rows.
+On Callide, with the evaporation left out, the annual maxima agree with the independent reverse routing in Sunwater's Callide Dam study (a private repository) to a median of 0.00% on the peak and on every volume. The floods differ by 1-4% on volume, because that routing joins the rating rows with straight lines, which overstates a convex spillway rating between rows.
 
 ## Things worth knowing
 

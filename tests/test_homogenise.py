@@ -1,9 +1,9 @@
-"""Lake level homogenisation (lib/homogenise), generalised from callide-fsl-reinstate.
+"""Lake level homogenisation (lib/homogenise), generalised from the private Callide study.
 
 The engine is the callide package's own modules, copied; what is new is the job
 layer that takes every input and setting from a job file. So the tests here are
 of that layer, on small synthetic files, and one that holds the whole thing to
-the original: with the callide-fsl-reinstate checkout beside this one, the
+the original: with the private Callide study checkout beside this one, the
 generalised job run on Callide's data must write the same files, byte for byte,
 as ``callide.cli.run_scenario`` does.
 """
@@ -122,7 +122,7 @@ def test_a_missing_input_file_is_named(tmp_path):
 # -- held to the original ----------------------------------------------------------
 
 @pytest.mark.skipif(not (CALLIDE / "callide" / "pipeline.py").is_file(),
-                    reason="needs the callide-fsl-reinstate checkout beside Bryan")
+                    reason="needs Sunwater's private Callide study checkout (callide-fsl-reinstate) beside Bryan")
 def test_callide_homogenises_to_the_byte_as_the_original_did(tmp_path):
     data = CALLIDE / "data"
     job = {"gauges": [str(data / "gauge" / "130314A.csv"), str(data / "gauge" / "130314C.csv")],
@@ -230,8 +230,8 @@ SILO = BRYAN_ROOT.parent / "callide-fsl-reinstate" / "data" / "climate" / "silo_
 
 @pytest.mark.skipif(not (KROOMBIT_RECORD.is_file() and (KROOMBIT_RATINGS / "kroombit.sq").is_file()
                          and SILO.is_file()),
-                    reason="needs the callide-fsl-reinstate and callide-design-flood-hydrology "
-                           "checkouts beside Bryan")
+                    reason="needs Sunwater's private Callide study checkouts (callide-fsl-reinstate, "
+                           "callide-design-flood-hydrology) beside Bryan")
 def test_kroombit_s_single_rat_and_a_one_row_register_give_the_same_inflow(tmp_path):
     """Phase 3's check: one rating read from a .rat is the same homogenisation input
     as the same rating in a register workbook, on Kroombit's own record."""

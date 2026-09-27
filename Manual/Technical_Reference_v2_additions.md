@@ -243,7 +243,7 @@ Bryan derives three things from a dam's recorded lake levels:
 2. a **homogenised annual maximum lake level series**, for comparison with the design floods; and
 3. the **inflow record**: an annual maximum series of peak inflow and burst volume for flood frequency analysis, and event hydrographs for calibration.
 
-All three rest on one reverse routing of the level record (Section 7.3). The analyses were first written for Callide Dam (the `callide-fsl-reinstate` project) and were generalised into Bryan (`lib/homogenise`, `lib/antecedent`) without changing the method. Run on Callide's inputs, Bryan reproduces that project's homogenised record and its four lake configurations exactly. Each analysis is driven by a job file that records every input and setting, and writes the job beside its outputs so that a run can be repeated from the console.
+All three rest on one reverse routing of the level record (Section 7.3). The analyses were first written for Sunwater's Callide Dam study (held in a private repository) and were generalised into Bryan (`lib/homogenise`, `lib/antecedent`) without changing the method. Run on Callide's inputs, Bryan reproduces that study's homogenised record and its four lake configurations exactly. Each analysis is driven by a job file that records every input and setting, and writes the job beside its outputs so that a run can be repeated from the console.
 
 **[Figure: flow of the four steps — catchment rainfall, homogenisation, antecedent storage, inflow record — and their inputs.]**
 
@@ -374,7 +374,7 @@ The recession correction of Section 7.3 is right for the water balance, and it d
 
 #### Verification
 
-On Callide Dam, with evaporation left out, the annual maxima agree with the independent reverse routing in `callide-fsl-reinstate`, which shares no code with it, to a median of 0.00% on the peak and on every burst volume over 56 water years. Individual floods differ by 1–4% in volume. The independent implementation interpolates the ratings linearly between published rows, which overstates a convex spillway rating between rows.
+On Callide Dam, with evaporation left out, the annual maxima agree with the independent reverse routing in Sunwater's Callide Dam study (a private repository), which shares no code with it, to a median of 0.00% on the peak and on every burst volume over 56 water years. Individual floods differ by 1–4% in volume. The independent implementation interpolates the ratings linearly between published rows, which overstates a convex spillway rating between rows.
 
 ---
 

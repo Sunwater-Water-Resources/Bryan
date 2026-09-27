@@ -9,9 +9,9 @@ fitted to each, bounded by a floor from the data and the full supply volume, and
 written as the ``lake_config.json`` Bryan's Monte Carlo scheme samples the
 antecedent storage from.
 
-Written for Callide Dam in callide-fsl-reinstate; the method modules here are
-its ``antecedent_storage`` modules, copied, with one change each so the settings
-bind at call time:
+Written for Sunwater's Callide Dam study (a private repository); the method
+modules here are its ``antecedent_storage`` modules, copied, with one change
+each so the settings bind at call time:
 
     antecedent   the peak-conditioned burst search and the antecedent series
     scurve       the S-curve fit, and the model's sigmoid parameterisation

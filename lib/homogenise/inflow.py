@@ -12,8 +12,8 @@ flood frequency analysis and model calibration need:
   days beside it;
 * **event hydrographs** for calibration and validation, native and smoothed.
 
-Held against callide-fsl-reinstate's independent ``reverse_routing`` package on
-Callide (23-24 September 2026): with the evaporation left out, as that package
+Held against the independent ``reverse_routing`` package of Sunwater's private
+Callide study (23-24 September 2026): with the evaporation left out, as that package
 leaves out every loss, the two agree to a median of 0.00% on the peak and on every
 volume window over all 56 water years. What separates them otherwise: stage 1's
 ratings are a shape-preserving curve through the published rows where the package
