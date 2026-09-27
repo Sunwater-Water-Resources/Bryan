@@ -65,8 +65,8 @@ def _log_card(project) -> None:
     """When each output last ran, from Bryan's own run logs.
 
     Provenance only. 'Simulation' in a run log is the Output file with no
-    duration (lib/RunLog.py:36), so where several rows share a name - twenty
-    four of them in the Callide list - it cannot say which one ran.
+    duration (lib/RunLog.py:36), so where several rows share a name - two
+    dozen of them in a large study's list - it cannot say which one ran.
     """
     history = completion.last_run_from_logs(project.config)
     with ui.card().classes("w-full"):

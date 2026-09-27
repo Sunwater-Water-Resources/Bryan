@@ -27,8 +27,8 @@ from theme import house_echart
 
 CAVEAT = ("The grid is the sensitivity of the fit only. How far the Monte Carlo "
           "realisations reach past the AEP of the PMP - and so where the PMF sits in "
-          "them - is set by how the storm config extrapolates the rainfall (a GEV at "
-          "Callide) and by the rating and storage curves, which no fit setting touches.")
+          "them - is set by how the storm config extrapolates the rainfall (a GEV, for "
+          "example) and by the rating and storage curves, which no fit setting touches.")
 
 
 async def _off_thread(function, *args):

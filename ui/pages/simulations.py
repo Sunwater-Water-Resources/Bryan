@@ -1,6 +1,6 @@
 """Simulations: which sims list the run pages work on.
 
-A sims_config.json and its simulation list are one **run** - E013 RFSL, say. The
+A sims_config.json and its simulation list are one **run** - E001 RFSL, say. The
 Select, Run, Results, Ensemble, Events and Lake levels pages all work on the one
 open here. With a study open, its runs are listed first, each opened with one
 click; any other sims_config.json is opened below and can be added to the study.

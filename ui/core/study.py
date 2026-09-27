@@ -1,6 +1,6 @@
 """The study file: one dam study's runs and the report tables drawn from them.
 
-A sims_config.json is one run - E012, say, at one full supply level. A design
+A sims_config.json is one run - E001, say, at one full supply level. A design
 flood report is written across several: the RFSL and FSL sims lists are separate
 configs, the adopted run sits beside the one it replaced, and a sensitivity comes
 from a third. The study file is the level above: it names those runs once, and
@@ -13,16 +13,16 @@ here imports nicegui; ``pages/report.py`` is the view.
 
     {
       "bryan_study": 1,
-      "name": "Callide Dam design flood hydrology",
-      "runs": [{"name": "E013 RFSL",
-                "sims_config": "03_DESIGN/runs/E013/CLD_RFSL_mc_sims_01.json"}],
+      "name": "Juniper Creek Dam design flood hydrology",
+      "runs": [{"name": "E001 RFSL",
+                "sims_config": "03_DESIGN/runs/E001/JCD_RFSL_mc_sims_01.json"}],
       "tables": [{"id": "near-term-rfsl", "kind": "design_floods",
                   "title": "Table 26: Near-Term design hydrology results",
-                  "source": {"run": "E013 RFSL", "group": "RFSL_Design_GWL1p3"}}]
+                  "source": {"run": "E001 RFSL", "group": "RFSL_Design_GWL1p3"}}]
     }
 
 A table names its run by the run's **name**, never by path, so pointing the
-study at a re-run (E013 for E012) is one edit to ``runs`` rather than one per
+study at a re-run (E002 for E001) is one edit to ``runs`` rather than one per
 table.
 """
 
@@ -82,7 +82,7 @@ def resolve(base: Path, text) -> Path | None:
 def guess_run_name(path) -> str:
     """A run's name from its sims_config.json path, as the report names runs.
 
-    'runs/E013/CLD_RFSL_mc_sims_01.json' -> 'E013 RFSL'; a PMF list gets 'PMF'.
+    'runs/E001/JCD_RFSL_mc_sims_01.json' -> 'E001 RFSL'; a PMF list gets 'PMF'.
     """
     text = clean_path_text(path or "")
     if not text:
