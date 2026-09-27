@@ -253,7 +253,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - Puts a recorded lake level record onto one spillway configuration: derive the net inflow by
   closing the water balance backwards against the rating **in force at each step** (a dated
   register), then re-route it through one target rating, implicitly, at the gauge's native
-  resolution. Written for Callide in callide-fsl-reinstate; **the engine modules (`curves`,
+  resolution. Written for Sunwater's Callide Dam study (`callide-fsl-reinstate`, a private repository); **the engine modules (`curves`,
   `model`, `evaporation`, `peaks`, `gauges`) are that repository's `callide/` modules copied**, and
   only `job.py` is new - it takes every input and setting from a JSON job instead of a repository
   layout, so Callide's constants (gauge IDs, the 200.90 m intake splice, pan factors) are settings.
@@ -270,7 +270,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   largest 24-72 h burst volumes, with runoff depths and the catchment rain beside them, and event
   hydrographs for calibration. It takes the homogenisation job with `routing=False` (no target
   ratings) and by default `load_inputs(with_evaporation=False)`: zero evaporation, so the record
-  is clipped only where the register ends, not where SILO does. Held against callide-fsl-reinstate's
+  is clipped only where the register ends, not where SILO does. Held against the private Callide study's
   independent `reverse_routing` package (`tests/test_inflow_record.py`): median 0.00% on the peak
   and every volume. Floods differ by 1-4% on volume because that package joins rating rows with
   straight lines, and dry years differ by more because it has no intake splice.
@@ -290,7 +290,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   rarest 1-5 day burst in the 30 days before the peak, against the IFD) and the **homogenised**
   lake volume read where the burst started (`burst`) and where its pre-burst started (`storm`);
   a logistic S-curve is fitted to each with the ceiling at the FSV and written as the sigmoid
-  `lake_config.json` that `LakeConditions` samples. The method modules are callide-fsl-reinstate's
+  `lake_config.json` that `LakeConditions` samples. The method modules are the private Callide study's
   `antecedent_storage/` modules, copied, with **one change each**: `burst_frame` and
   `choose_bounds` resolve their defaults when called, because the job binds the settings into
   the module constants (`job.applied`) and a default captured at definition time would ignore
@@ -311,7 +311,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 - The launcher's **Lake levels** page: the recorded annual maximum lake levels on a frequency axis,
   fitted, resampled and laid against the Monte Carlo design floods, with an A4 report figure and the
   series as CSV. Developed on Callide (`curve_review_validation_shouldered_a4.png` in the
-  callide-fsl-reinstate project) and made general for Kroombit and the rest.
+  private Callide study repository, `callide-fsl-reinstate`) and made general for Kroombit and the rest.
 - **Split on dependencies, like representative events.** `LakeLevelRecord` is pandas-only and
   allow-listed: reading Hydstra/WMIP exports, water years, the annual maxima, Cunnane plotting
   positions, the water year scores. `LakeLevelFrequency` needs scipy: the curve forms, their bands,
@@ -347,7 +347,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   the sixteenth figure, and that is enough for the constrained shoulder fit to converge on a different
   handful of resamples: 335 of 400 against the published 338. `tests/test_lake_level_frequency.py`
   reproduces the Callide RMSEs (0.400, 0.559 m) and draw counts (338, 378) exactly when the
-  callide-fsl-reinstate checkout sits beside this one.
+  private Callide study checkout (`callide-fsl-reinstate`) sits beside this one.
 - Settings are `lake_frequency.json` **beside the sims_config.json**, not in `~/.bryan_ui.json`: they are
   analysis inputs and travel with the project. Fitted results are cached in `_lake_frequency/<fingerprint>.json`,
   where the fingerprint covers the job and the size and mtime of every input file.
@@ -361,7 +361,7 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
 
 - **It wears Judith's house style, pinned light.** The colours are `ui/core/palette.py`,
   copied from the dam failure model's window (`damfailure/ui/app.py` in
-  dam-failure-hydraulics) because the two are read side by side — change one, change
+  Sunwater's private dam-failure-hydraulics repository) because the two are read side by side — change one, change
   both. `ui/theme.py` applies them to every page and `main.py` runs with `dark=False`.
   Draw a chart with `theme.house_echart`, name colours by token (`text-muted`,
   `color=muted`) rather than as Tailwind or Quasar greys, and measure any new text

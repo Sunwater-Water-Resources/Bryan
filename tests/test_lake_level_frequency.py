@@ -2,7 +2,7 @@
 
 The synthetic record comes from ``ui/tests/lake_fixtures.py``, shared with the
 page's tests. The last test reproduces the Callide figure the analysis was
-developed on, and runs only where the callide-fsl-reinstate checkout sits beside
+developed on, and runs only where the private Callide study checkout sits beside
 this one.
 """
 
@@ -243,7 +243,7 @@ def test_the_axis_reads_in_ey_then_one_in_x():
 # -- the figure it was developed on ------------------------------------------------
 
 @pytest.mark.skipif(not (CALLIDE / "out" / "rfsl-215-5-rapid" / "ams.csv").is_file(),
-                    reason="needs the callide-fsl-reinstate checkout and its outputs")
+                    reason="needs Sunwater's private Callide study checkout (callide-fsl-reinstate) and its outputs")
 def test_the_callide_validation_figure_is_reproduced():
     """curve_review_validation_shouldered_a4.png: RMSE 0.40 and 0.56 m, 338 resamples."""
     ams = record.read_ams_csv(CALLIDE / "out" / "rfsl-215-5-rapid" / "ams.csv")

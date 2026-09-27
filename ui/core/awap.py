@@ -13,7 +13,7 @@ a side) against the polygon, and to the cell's own area, which shrinks with
 cos(latitude). A catchment of a few hundred cells is weighted to well under a
 per cent either way. ``centre`` weighting instead counts every cell whose centre
 is in the catchment equally, which is what the ``Average_<year>_Callide_mask.csv``
-files in callide-fsl-reinstate are - a plain mask average - and is here so those
+files in Sunwater's private Callide study are - a plain mask average - and is here so those
 can be reproduced.
 
 **Dates are the file's own.** An AWAP day is the 24 hours to 9 am, and which

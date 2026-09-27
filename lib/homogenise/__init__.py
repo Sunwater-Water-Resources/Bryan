@@ -8,8 +8,8 @@ force at each step, then re-route that inflow through one target rating. The
 annual maxima of the result are one population, and the lake volumes are what
 the antecedent storage analysis reads.
 
-Written for Callide Dam in callide-fsl-reinstate (the general modules here are
-its ``callide/`` package, copied); made general by ``job.py``, which takes every
+Written for Sunwater's Callide Dam study, a private repository (the general
+modules here are its ``callide/`` package, copied); made general by ``job.py``, which takes every
 input and setting from a job file instead of a repository layout:
 
     curves       storage table (.els), rating register (xlsx), target ratings

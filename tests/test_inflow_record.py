@@ -102,7 +102,7 @@ def test_a_hydrograph_carries_the_flags_and_its_events_are_named_by_year_and_day
 # -- held to the independent reverse routing ---------------------------------------------
 
 @pytest.mark.skipif(not (CALLIDE / "reverse_routing" / "run.py").is_file(),
-                    reason="needs the callide-fsl-reinstate checkout beside Bryan")
+                    reason="needs Sunwater's private Callide study checkout (callide-fsl-reinstate) beside Bryan")
 def test_callide_s_inflow_agrees_with_the_reverse_routing_package(tmp_path):
     data = CALLIDE / "data"
     homogenise = {

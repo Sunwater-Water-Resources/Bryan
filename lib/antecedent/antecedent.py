@@ -149,7 +149,7 @@ def burst_frame(series, ifd, durations=None, threshold_fraction=None):
     ``over``.  Empty if no accumulation can be formed at any duration.
     """
     # Resolved when called, not when defined, so settings.apply() takes effect
-    # (Bryan's one change to the callide-fsl-reinstate copy).
+    # (Bryan's one change to the Callide study's copy).
     durations = DURATIONS_D if durations is None else durations
     threshold_fraction = THRESHOLD_FRACTION if threshold_fraction is None else threshold_fraction
     aep_x = ifd.columns.to_numpy(dtype=float)

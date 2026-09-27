@@ -275,9 +275,9 @@
 - **Fixed: the hyetograph was blank for runs with the pre-burst excluded.** The Events page's **Run** button now runs the extraction itself.
 - **New: the Lake record page**, which takes the dam's own lake level record through four steps:
   - catchment rainfall from the AWAP / AWRA-L grids (the study keeps the series, and the grids folder is each user's own setting);
-  - homogenisation onto target ratings (```lib/homogenise```, copied from callide-fsl-reinstate and reproducing it byte for byte);
+  - homogenisation onto target ratings (```lib/homogenise```, copied from Sunwater's private Callide study and reproducing it byte for byte);
   - antecedent storage and the lake configs (```lib/antecedent```, reproducing Callide's four delivered configs byte for byte);
   - the inflow record: annual maximum peak inflow and burst volumes, event hydrographs for calibration, and any stretch of the record plotted or extracted as CSV on its own intervals or a regular step.
-- The inflow record keeps both the corrected and uncorrected inflow on recessions, and flags where the release is uncertain. On Callide it agrees with the independent reverse routing in callide-fsl-reinstate to a median of 0.00%.
+- The inflow record keeps both the corrected and uncorrected inflow on recessions, and flags where the release is uncertain. On Callide it agrees with the independent reverse routing in Sunwater's private Callide study to a median of 0.00%.
 - A study file briefly locked by another program (OneDrive, antivirus) is now retried before a save fails.
 
