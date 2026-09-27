@@ -3,8 +3,8 @@
 **Bryan** is Sunwater's Python platform for design flood hydrology simulation. It drives
 external hydrologic models (**URBS** and **RORB**) through either a **Monte Carlo** or
 **Ensemble** scheme to estimate design flood quantiles (peak inflow, lake level, outflow),
-then post-processes results using the Total Probability Theorem (TPT). It implements
-Sunwater's design flood hydrology specification.
+then post-processes results using the Total Probability Theorem (TPT). It was written to
+carry out the methods of Sunwater's design flood hydrology specification.
 
 Developers: Richard Sharpe and Graigan Panosot.
 
@@ -14,7 +14,8 @@ Developers: Richard Sharpe and Graigan Panosot.
   rainfall, temporal patterns, storm method, losses, preburst, and antecedent lake level)
   or an **Ensemble** scheme (a grid of AEPs x durations).
 - Applies **climate change** adjustments to rainfall intensity, losses, and temporal
-  patterns per the draft 2023 update to the ARR Climate Change Considerations chapter.
+  patterns, following the methods of the draft 2023 update to the ARR Climate Change
+  Considerations chapter.
 - Analyses results using the Total Probability Theorem (Monte Carlo) or critical-duration
   selection (Ensemble), producing csv tables and plots.
 - Includes a standalone reservoir routing method (`ReservoirRouting.py`) for routing
@@ -128,6 +129,19 @@ even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE
 produces design flood estimates that inform dam safety decisions; the results, and the
 judgement applied to them, remain the responsibility of the engineer running it.
 
+### Scope and support
+
+Bryan has been developed and checked for Sunwater's own studies. It has not been validated
+for any other use. That it follows the methods of a guideline or specification is not a
+certification that a study made with it complies with either; checking that is part of the
+engineer's judgement above.
+
+It is published as is. Sunwater maintains it for its own work: issues and pull requests are
+welcome but may not be answered, and there is no commitment to fix a reported problem, keep
+config formats compatible, or publish further releases. Changes that alter results are
+recorded in [`Manual/change_log.md`](Manual/change_log.md); check it before relying on
+results from an earlier version.
+
 ### Third-party reference data
 
 The licence above covers this repository's code and documentation. It does not cover the
@@ -154,7 +168,7 @@ licence like the rest of the repository.
 ## Documentation
 
 - [`Manual/Manual.md`](Manual/Manual.md) -- user guide
-- `Manual/Bryan_Technical_Reference_v1.pdf` -- authoritative technical reference
+- `Manual/Bryan_Technical_Reference_v1.pdf` -- technical reference
 - [`Manual/change_log.md`](Manual/change_log.md) -- design decisions and config-format
   changes
 - [`example_project/README.md`](example_project/README.md) -- the worked example, and what
