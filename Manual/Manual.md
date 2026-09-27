@@ -1,4 +1,4 @@
-![Juniper berries](SubDocs/stock-photo-juniper-twig-with-berries_3.png)
+![Juniper sprig](SubDocs/bryan_juniper.png)
 # Bryan: Sunwater's design flood simulation manager
 ### A brief guide
 
