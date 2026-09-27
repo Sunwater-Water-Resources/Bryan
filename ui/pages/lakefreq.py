@@ -115,8 +115,8 @@ class _LakeLevelsView:
     def _study_record(self) -> None:
         """The study's gauge exports, or this analysis's own record.
 
-        Its own is for a dam compared on a homogenised series - Callide's - which
-        is written in the gauges' layout and so cannot be told from them.
+        Its own is for a dam compared on a homogenised series, which is written
+        in the gauges' layout and so cannot be told from them.
         """
         settings = self.settings
         source = settings.get("record_source") or lakefreq.DAM_RECORD

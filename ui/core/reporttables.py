@@ -2,53 +2,46 @@
 
 Each table the report carries is a *kind* here, and a study file holds one spec
 per table naming the run and group it is drawn from. Re-routing a revised rating
-then means re-running the group and pressing Copy, not re-typing four hundred
-cells - which is what the Callide report's tables were, and why half of them had
-drifted from the results on disk by the time this was written (see below).
+then means re-running the group and pressing Copy, not re-typing hundreds of
+cells - which is how report tables drift from the results on disk.
 
-The kinds, and what each reproduces:
+The kinds:
 
-``design_floods``  Tables 1 and 26-31. One group. Per standard AEP: the level
-                   envelope over the durations and its critical duration, with
-                   the inflow and outflow **read at the level's critical
-                   duration**, not at their own - that is what the report's
-                   "* Peak inflow for lake level critical duration" says. A
-                   duration that does not spill has no outflow quantile at that
-                   AEP, and the table says 0, as the report does. Table 1 adds
-                   two rows in AEP order: the dam crest flood (``dcf``: its
-                   AEP by ``aep_of_level``, no flows, shaded) and the PMF
-                   (``pmf``: the highest ensemble event at the notional AEP
-                   adopted on the PMF page).
-``flood_levels``   Table 32. The AEP at which the level envelope reaches each of
-                   a list of levels (the dam crest, each embankment crest),
-                   rounded to 10. By default from the critical duration's own
-                   realisations, as the Callide DCF was estimated; see
+``design_floods``  One group. Per standard AEP: the level envelope over the
+                   durations and its critical duration, with the inflow and
+                   outflow **read at the level's critical duration**, not at
+                   their own ("* Peak inflow for lake level critical duration").
+                   A duration that does not spill has no outflow quantile at
+                   that AEP, and the table says 0. Two optional rows go in AEP
+                   order: the dam crest flood (``dcf``: its AEP by
+                   ``aep_of_level``, no flows, shaded) and the PMF (``pmf``:
+                   the highest ensemble event at the notional AEP adopted on
+                   the PMF page).
+``flood_levels``   The AEP at which the level envelope reaches each of a list of
+                   levels (the dam crest, each embankment crest), rounded to 10.
+                   By default from the critical duration's own realisations; see
                    ``aep_of_level``.
-``peak_at_aep``    Table 33. Level, inflow and outflow at one AEP (the AEP of
-                   the PMP) for several groups.
-``ensemble_peak``  Table 34. The PMF: the largest level in an ensemble database,
-                   with the inflow and outflow of the event that produced it
+``peak_at_aep``    Level, inflow and outflow at one AEP (the AEP of the PMP) for
+                   several groups.
+``ensemble_peak``  The PMF: the largest level in an ensemble database, with the
+                   inflow and outflow of the event that produced it
                    (``pick: highest``). ``pick: median`` takes Bryan's median
                    pattern instead, for any other ensemble result - see
                    core/ensemble.py.
 
 The multi-group kinds hold ``sections`` of rows, each row either a {run, group}
-or fixed ``values`` - the Sunwater 2020 baseline rows are a previous study's
-numbers, not a run in this one.
+or fixed ``values`` - a previous study's numbers, say, which are not a run in
+this one.
 
-**Where flows are read.** Tables 33 and 34 have one duration column headed
-"Level critical duration", and the scripts that filled them took each result's
-*own* maximum instead - the inflow's critical duration is shorter than the
-level's, so the PMPF inflow in Table 33 was a different storm from the PMPF
-level beside it, and not the value in Table 26's PMPF row. ``flows_at`` says
-which: ``level`` (the default, consistent with the header and with Tables 1 and
-26-31) or ``own`` (what the old scripts did).
+**Where flows are read.** A table with one duration column headed "Level
+critical duration" should show the inflow and outflow of that duration, not
+each result's *own* maximum: the inflow's critical duration is usually shorter
+than the level's, so its own maximum comes from a different storm from the
+level beside it. ``flows_at`` says which: ``level`` (the default, consistent
+with the header) or ``own``.
 
-Validated against E012 on 23 September 2026: Tables 26 and 28 reproduce the
-report to every digit. Everywhere the report differs, it is the report that is
-behind - Tables 29-31 predate the FSL re-run of 21 September, and Table 32 and 33
-predate E012 altogether; E012's own ``_00h_`` critical-duration files agree with
-this module, not with the report.
+The arithmetic was checked against the tables of a published design flood
+report, digit for digit; tests/test_reporttables.py pins it.
 
 pandas and the standard library only; nothing here imports nicegui.
 """
@@ -107,7 +100,7 @@ KINDS = {
     DESIGN_FLOODS: Kind(
         DESIGN_FLOODS, "Design flood estimates",
         "One group: peak inflow, outflow and level by AEP, flows at the level's "
-        "critical duration (report Tables 1, 26-31).",
+        "critical duration.",
         False,
         {"kind": DESIGN_FLOODS, "title": "", "source": {"run": "", "group": ""},
          "aeps": list(DEFAULT_AEPS), "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
@@ -115,15 +108,15 @@ KINDS = {
     FLOOD_LEVELS: Kind(
         FLOOD_LEVELS, "AEP of given lake levels",
         "The AEP at which each group's level curve reaches the dam crest, an "
-        "embankment crest or any other level (report Table 32).",
+        "embankment crest or any other level.",
         True,
         {"kind": FLOOD_LEVELS, "title": "", "first_column": "Climate Horizon",
-         "levels": [{"label": "DCF", "level": 219.13}], "method": MCDF,
+         "levels": [], "method": MCDF,
          "round_to": 10, "duration": True, "sections": []}),
     PEAK_AT_AEP: Kind(
         PEAK_AT_AEP, "Peaks at one AEP",
         "Lake level, inflow and outflow at one AEP - the AEP of the PMP for the "
-        "PMPF - for several groups (report Table 33).",
+        "PMPF - for several groups.",
         True,
         {"kind": PEAK_AT_AEP, "title": "", "first_column": "Climate Horizon",
          "aep": DEFAULT_PMP_AEP, "flows_at": AT_LEVEL, "thousands": True,
@@ -131,7 +124,7 @@ KINDS = {
     ENSEMBLE_PEAK: Kind(
         ENSEMBLE_PEAK, "Ensemble peak (PMF)",
         "The largest lake level in an ensemble run's database, with that event's "
-        "inflow and outflow (report Table 34).",
+        "inflow and outflow.",
         True,
         {"kind": ENSEMBLE_PEAK, "title": "", "first_column": "Climate Horizon",
          "pick": "highest", "flows_at": AT_LEVEL, "thousands": True, "sections": []}),
@@ -139,16 +132,16 @@ KINDS = {
         REPRESENTATIVE, "Representative events",
         "The events chosen on the Events page, one section per group: each loading's "
         "AEP, lake level, trigger, simulation and duration, with the PMF's event "
-        "(report Tables 35-36).",
+        "(the representative events library).",
         True,
         {"kind": REPRESENTATIVE, "title": "", "method": MCDF, "round_to": 10,
          "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
-         "triggers": [{"label": "DCF", "level": 219.13}],
+         "triggers": [],
          "sections": []}),     # [{heading, run, group, pmf: {run, group} | None}]
     FREQUENT: Kind(
         FREQUENT, "Frequent levels",
         "The lake level at frequent AEPs - 1 in 2 and 1 EY - for a row of groups "
-        "(the climate horizons), for closing the hazard curve (report Table 37).",
+        "(the climate horizons), for closing the hazard curve.",
         True,
         {"kind": FREQUENT, "title": "", "first_column": "Frequency",
          "frequencies": [{"label": "1 in 2 AEP", "aep": 2}, {"label": "1 EY", "aep": 1.582}],
@@ -347,8 +340,11 @@ def _design_floods(study: Study, spec: dict) -> ReportTable:
 
 
 def _dcf_row(study, curves, dcf, table) -> list:
-    """Table 1's dam crest flood row: its AEP and level, no flows, shaded."""
-    if not dcf or not _finite(dcf.get("level")):
+    """The dam crest flood row: its AEP and level, no flows, shaded."""
+    if not dcf:
+        return []
+    if not _finite(dcf.get("level")):
+        table.problems.append("Dam crest flood row: give the dam crest level")
         return []
     level = float(dcf["level"])
     aep, duration, problem = aep_of_level(study, curves, level, dcf.get("method", MCDF))
@@ -362,7 +358,7 @@ def _dcf_row(study, curves, dcf, table) -> list:
 
 
 def _pmf_row(study, pmf, thousands, table) -> list:
-    """Table 1's PMF row: the highest ensemble event at the adopted notional AEP."""
+    """The PMF row: the highest ensemble event at the adopted notional AEP."""
     if not pmf or not pmf.get("group"):
         return []
     aep = pmf.get("aep") or ensemble.settings(study).get("adopted_aep")
@@ -440,13 +436,14 @@ def aep_of_level(study: Study, curves: GroupCurves, level: float, method: str = 
 
     ``envelope`` reads the level off the design curve - the envelope over the
     durations, linear in (log level, z) between the standard AEPs
-    (util/DesignFloodInterpolation.py). ``mcdf`` - the default, and how the
-    Callide DCF was estimated - takes the **critical duration** from that curve
-    and then reads the level off that duration's own realisations
-    (``AEPofDCF_v2.py``): thousands of events rather than a straight line between
-    two standard AEPs a decade apart. On E012 near-term RFSL the two give 1 in
-    25,350 and 1 in 27,230 for the dam crest. Where the duration has no database
-    on disk the envelope answer is given, and the problem says so.
+    (util/DesignFloodInterpolation.py). ``mcdf`` - the default, and how Sunwater's
+    studies estimate the AEP of the dam crest flood - takes the **critical
+    duration** from that curve and then reads the level off that duration's own
+    realisations (``AEPofDCF_v2.py``): thousands of events rather than a straight
+    line between two standard AEPs a decade apart. At a dam crest the two can
+    differ by several per cent (about 7% in the study this was developed on).
+    Where the duration has no database on disk the envelope answer is given, and
+    the problem says so.
     """
     lookup = EVENTS.aep_for_level(curves.envelope("level"), level)
     if not lookup.found:
@@ -667,11 +664,11 @@ def frequent_level(study: Study, run_name: str, group: str, aep: float, duration
     A standard AEP the quantile tables carry (1 in 2) is the design curve's own
     value. One more frequent than they go (1 EY is 1 in 1.582) is read off each
     duration's realisations and the highest taken, as ``List_1EY_results.py``
-    does; at 1 in 2 the two readings agree to the digit on Callide E012.
+    does; at 1 in 2 the two readings agree to the digit.
 
     ``durations`` (hours) limits which runs count. ``List_1EY_results.py`` took
-    6-96 h; Callide E010 also ran 120 h, which governs the 1 in 2 level at GWL 1.7
-    and 2.7, so the report's Table 37 is reproduced only with the same limit.
+    6-96 h; a run that also has 120 h storms can find those govern the 1 in 2
+    level, so a table made with the 6-96 h limit is reproduced only with it.
     With a limit the envelope shortcut is not taken, since the envelope is over
     every duration.
     """

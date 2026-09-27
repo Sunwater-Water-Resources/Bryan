@@ -286,6 +286,18 @@ def test_table_1_carries_the_dcf_and_pmf_rows_in_aep_order(study):
     assert table.rows[-1].cells == ["8,000,000 (PMF)", "17,500", "16,310", "221.38", "9"]
 
 
+def test_a_dcf_row_without_a_level_asks_for_one(study):
+    # The checkbox starts the row with no level: every dam's crest is its own.
+    table = rt.build(study, design_spec(dcf={"level": None, "label": "DCF"}))
+    assert not any(row.cells[0].endswith("(DCF)") for row in table.rows)
+    assert "Dam crest flood row: give the dam crest level" in table.problems
+
+
+def test_new_tables_start_with_no_dam_specific_levels():
+    assert rt.KINDS[rt.FLOOD_LEVELS].template["levels"] == []
+    assert rt.KINDS[rt.REPRESENTATIVE].template["triggers"] == []
+
+
 def test_a_pmf_row_without_an_adopted_aep_asks_for_one(study):
     spec = design_spec(pmf={"run": "E099 PMF", "group": PMF_GROUP})
     table = rt.build(study, spec)

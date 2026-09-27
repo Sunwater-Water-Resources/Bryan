@@ -511,12 +511,13 @@ class _TableEditor:
             .on_value_change(lambda e: self.spec.update(
                 aeps=reporttables.parse_aeps(e.value)))
 
-        # Table 1's two extra rows, each placed in AEP order among the rest
+        # Two optional rows, each placed in AEP order among the rest. The dam crest
+        # level is the study's to give: the table says so until it is.
         dcf = self.spec.get("dcf")
         with ui.row().classes("w-full items-center gap-2 no-wrap"):
             ui.checkbox("Dam crest flood row", value=bool(dcf),
                         on_change=lambda e: self._toggle(
-                            "dcf", {"level": 219.13, "label": "DCF"} if e.value else None)) \
+                            "dcf", {"level": None, "label": "DCF"} if e.value else None)) \
                 .mark("dcf-row")
             if dcf:
                 ui.number("at level (m AHD)", value=dcf.get("level"), format="%.2f") \
