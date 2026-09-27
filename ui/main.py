@@ -24,7 +24,13 @@ def main() -> None:
         description="Choose and run Bryan simulations from a sims list")
     parser.add_argument("config", nargs="?", default=None,
                         help="sims_config.json to open on startup")
-    parser.add_argument("--host", default=None)
+    # This computer only by default. NiceGUI's own default in a browser tab is
+    # 0.0.0.0 - every network the computer is on - and the launcher has no login,
+    # yet it starts processes and reads and writes project files.
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="address to serve on (default 127.0.0.1, this computer "
+                             "only; 0.0.0.0 serves every network the computer is on, "
+                             "with no login)")
     parser.add_argument("--port", type=int, default=8081)
     parser.add_argument("--native", action="store_true",
                         help="a desktop window instead of a browser tab")
