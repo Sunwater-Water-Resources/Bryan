@@ -84,7 +84,7 @@ buttons, because they mean different things:
   in flight never reaches the run log, so it gets **no entry there at all**,
   and its working folder and log are left part-written.
 
-**Results** — two tabs over the same files, and neither runs anything.
+**Results** — three tabs. The first two read the same quantile files and run nothing.
 
 *Durations* plots the analysed frequency curves of one group on top of each
 other so the critical duration can be read off. Pick the group and the result
@@ -149,6 +149,22 @@ format to what the study post-processing already produces.
 
 Reservoir-routing results export without the confidence columns, because that
 method writes quantiles but no `_perc_smooth` files.
+
+*Sub-bursts* runs the sub-burst neutrality check
+(`Manual/SubDocs/sub_burst_check.md`) on a group, optionally beside another —
+the unfiltered runs against the filtered ones, say: the TPT curve of each
+shorter window's wettest depth, divided by the IFD at the same AEP, for every
+storm duration. It shows a verdict, the worst margin per storm and window over
+an AEP range (breaches above 1.05 in the attention colour), and the margin
+curves. **Calibrate pattern weights** then runs `util/CalibrateTpWeights.py`'s
+calibration per duration, reports what converged and what ended at the weight
+floor, writes the weights files in the form the `TP weights` column reads, and —
+where the databases hold levels — gives the design level curve with and without
+the weights, and the AEP of any level on each. The arithmetic needs scipy, so
+the page runs `util/SubBurstCheck.py` with **Bryan's** interpreter, as the Lake
+levels page does; results are cached in `_subburst/` by a fingerprint of the
+job and of the databases. The tab is built when first shown, because finding
+which groups recorded sub-bursts reads every database's header.
 
 The ensemble method does not appear here; it has its own page.
 

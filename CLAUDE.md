@@ -423,12 +423,20 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   blocker names no row — a missing column is not fixable by deselecting. It drops every row an
   issue names, not the fewest that would clear it. Keep it off the render path: `plan` reads
   the run logs for its timings, so `refresh()` uses the cheap `blocked_rows` instead.
-- **The Results page reads only the quantile tables**, never the mcdf: `<Output file>_<type>.csv`
+- **The Results page's Durations and Groups tabs read only the quantile tables**, never the mcdf: `<Output file>_<type>.csv`
   (monte carlo) and `<Output file>__<type>_quantiles<suffix>.csv` (reservoir routing) hold the
   same three columns, so `core/results.py` has one reader for both. It draws with `ui.echart`
   and takes its standard normal variate from `statistics.NormalDist`, because the allow-list
   rule means the UI environment has neither matplotlib nor scipy — do not reach for
   `ui.pyplot` or `scipy.special.ndtri` here.
+- **The Results page's Sub-bursts tab** (`core/subburst.py`, `pages/subbursts.py`) reads only
+  the mcdf *headers* itself, to say which groups recorded `subburst_<d>h`; the margins and the
+  weight calibration run in `util/SubBurstCheck.py` under Bryan's interpreter (scipy), which
+  reuses `neutrality_margin` and loads `util/CalibrateTpWeights.py` as a module. Two traps it
+  pins: `compute_std_quantiles` adds `<col>_aep` columns to the frame it is given, which the
+  calibration would then read as windows to calibrate, so margins work on a copy; and
+  `events.sources_by_group` labels are unique across *all* groups ('24h (CLD_mc_24h_...)'), so
+  `candidates` takes the plain duration back per group.
 - **The Events page is the one that reads the mcdf**, which is unavoidable: a representative
   event is a realisation, not a quantile. `core/events.py` finds the database with
   `outputs.find_database` (so a routed row gets its suffixed mcdf), and caches the prepared
@@ -563,7 +571,8 @@ Standalone scripts with editable paths at the top of `main()`, e.g. `PlotFrequen
   still the reason to run this script. If it is ever reworked into a CLI, take the selection
   from the shared module rather than keeping this copy of it.
 - `CriticalDurationAnalysis.py` is the exception: a real CLI (argparse), because the UI's
-  Results page shells out to it to export what it is showing. `CrticalDurationAnalysis.py`
+  Results page shells out to it to export what it is showing. (`SubBurstCheck.py`, behind the
+  Sub-bursts tab, is a CLI for the same reason, driven by a job JSON.) `CrticalDurationAnalysis.py`
   (sic — the typo is the older file) is the same analysis with hard-coded paths; both go
   through `UtilModule.MonteCarloSimulationGroup`, so keep the analysis there, not in either
   entry point.
