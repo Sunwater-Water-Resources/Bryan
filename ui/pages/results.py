@@ -1,4 +1,4 @@
-"""Viewing results, on two tabs.
+"""Viewing results, on three tabs.
 
 **Durations** compares storm durations inside one group: the maximum envelope,
 who owns it, and whether the range that was run brackets the critical duration
@@ -10,6 +10,9 @@ answers is what a warmer climate or a raised full supply level does to the
 flood - with the change from a baseline drawn underneath, in metres for level
 and percent for flows.
 
+**Sub-bursts** asks whether the embedded bursts in a group's design storms are
+neutral, and what calibrated pattern weights would do - see pages/subbursts.py.
+
 Nothing here polls: results only change when a run finishes, so the page has a
 Reload button instead of a timer. Refreshing still rebuilds the warnings, the
 table and the file list in place, so the expansions around them are built once
@@ -19,7 +22,7 @@ is what went wrong with the Run page's console output.
 The one thing tabs cost: ECharts sizes itself when it is created, and a chart
 created inside a hidden ``tab_panel`` measures zero and stays blank. So the
 Groups tab draws nothing until it is first shown, and asks its charts to resize
-when it is - see ``_GroupView.activate``.
+when it is - see ``_GroupView.activate``. The Sub-bursts tab waits the same way.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from theme import house_echart
 from clipboard import copy_buttons, table_from_rows
 from state import STATE
 from widgets import OUTPUT_FOLDER, path_input
+from pages.subbursts import SubBurstView
 
 # The order the result types are offered in; volume windows follow.
 TYPE_ORDER = ("inflow", "level", "outflow")
@@ -59,26 +63,35 @@ def results_page() -> None:
 
         durations = _ResultsView(project, available)
         groups = _GroupView(project, available)
+        subbursts = SubBurstView(project)
         tab = address.param("tab", "Durations")
-        tab = tab if tab in ("Durations", "Groups") else "Durations"
+        tab = tab if tab in ("Durations", "Groups", "Sub-bursts") else "Durations"
         with ui.tabs().classes("w-full").mark("result-tabs") as tabs:
             ui.tab("Durations")
             ui.tab("Groups")
+            ui.tab("Sub-bursts")
         with ui.tab_panels(tabs, value=tab).classes("w-full"):
             with ui.tab_panel("Durations").classes("p-0"):
                 durations.build()
             with ui.tab_panel("Groups").classes("p-0"):
                 groups.build()
+            with ui.tab_panel("Sub-bursts").classes("p-0"):
+                subbursts.build()
+
+        def activate(name) -> None:
+            if name == "Groups":
+                groups.activate(durations.key)
+            elif name == "Sub-bursts":
+                subbursts.activate()
 
         def on_tab(event) -> None:
             address.keep(tab=event.value if event.value != "Durations" else "")
-            if event.value == "Groups":
-                groups.activate(durations.key)
+            activate(event.value)
 
         tabs.on_value_change(on_tab)
         tabs.set_value(tab)
-        if tab == "Groups":                  # opened on it from its address
-            ui.timer(0.1, lambda: groups.activate(durations.key), once=True)
+        if tab != "Durations":               # opened on it from its address
+            ui.timer(0.1, lambda: activate(tab), once=True)
 
 
 def scan(project) -> dict:
