@@ -146,7 +146,7 @@ Two different things:
 
 ## Viewing results
 
-The **Results** page has two tabs. **Durations** plots the frequency curves a group has already produced, one line per storm duration, so the critical duration can be read off them; **Groups** plots one line per *group* instead, so scenarios can be compared with each other. Both read the same files and neither runs anything.
+The **Results** page has three tabs. **Durations** plots the frequency curves a group has already produced, one line per storm duration, so the critical duration can be read off them; **Groups** plots one line per *group* instead, so scenarios can be compared with each other. Both read the same files and neither runs anything. **Sub-bursts** asks whether the embedded bursts in a group's design storms are neutral — see [Sub-bursts](#subbursts).
 
 On the **Durations** tab, pick the group, pick the result type — ```inflow```, ```level```, ```outflow```, or one of the inflow volume windows where the volume analysis has run — and tick the durations to compare.
 
@@ -214,6 +214,22 @@ Overlaying envelopes hides how each one was built, so the tab says out loud what
 - **Groups that do not reach the same AEP**, which is ordinary rather than wrong: the AEP of the PMP comes from the storm config.
 
 Groups come from the sims list that is open. Comparing against a run held in a *different* sims list is not offered here; use ```util/PlotFrequencyCurves.py```, whose plot list takes folders and filenames directly.
+
+### Sub-bursts
+
+The **Sub-bursts** tab runs [the sub-burst check](sub_burst_check.md) on a group from its Monte Carlo databases: for each storm duration, the wettest window of each shorter duration in the main burst is taken through the total probability theorem and divided by the IFD depth for that window at the same AEP. That ratio is the *neutrality margin*. Above 1, the design storms carry embedded bursts of that duration more often than the rainfall statistics allow — the case for filtering them, or for down-weighting the patterns that carry them.
+
+Pick the group to test and, optionally, a group to compare with — the unfiltered runs against the filtered ones, say. **Check neutrality** takes seconds per duration and shows:
+
+- a verdict naming the worst window, read one-sided as the check is: above 1.05 is a breach, between 1 and 1.05 is within the sampling wander of the curves, and below 1 does not contradict leaving the bursts in;
+- the worst margin over an AEP range for every storm duration and window, with the compared group beside it (```1.20 → 0.97```) and breaches in the attention colour. The range defaults to all the standard AEPs but the first and last, which the edges of the sampling pin;
+- the margin against AEP for one storm duration, the compared group dashed.
+
+**Calibrate pattern weights** does the same and then, for each storm duration of the tested group, runs ```util/CalibrateTpWeights.py```'s calibration: the patterns whose embedded bursts breach are down-weighted until the group is neutral, or until the weights stop changing. The table says which durations reached neutrality, the worst margin before and after, and how many patterns ended at the weight floor; a duration that did not converge, or that did so only by putting most of its patterns at the floor, is one where filtering is the robust choice. Where the databases hold lake levels, the tab also gives the design level curve — the envelope over the durations — for the tested group, the same group with the calibrated weights, and the compared group, and the AEP of any level on each: enter the dam crest level to see what the choice does to the AEP of the dam crest flood. It takes a few minutes for a full group.
+
+The weights for each duration are written to ```_subburst/weights/``` beside the sims_config.json, in the form the sims list's ```TP weights``` column reads, should they be wanted for a production run. Results are kept in ```_subburst/``` too, named by a fingerprint of the job and the databases it read, so they are shown again until a run changes them.
+
+The check needs databases written by a Bryan version that records sub-burst depths (the ```subburst_<d>h``` and ```ifd_<d>h``` columns). If none has, the tab says so; re-running the storms records them, and *storms only* in ```Run models``` does that in minutes without the hydrologic model. The arithmetic needs scipy, so it runs ```util/SubBurstCheck.py``` with Bryan's interpreter.
 
 ### What is not shown
 
