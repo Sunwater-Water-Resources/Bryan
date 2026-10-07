@@ -23,7 +23,7 @@ import math
 from .palette import MUTED, PALETTE
 from .results import ABSOLUTE, format_aep, normal_variate, y_axis
 
-# The house ramp, shared with Judith; see core/palette.py for how it was validated.
+# The house ramp, shared with Judyth; see core/palette.py for how it was validated.
 ENVELOPE_COLOUR = MUTED
 
 # Abramowitz & Stegun 26.2.17 for the upper tail, so a tick anywhere on the

@@ -51,7 +51,7 @@ def page_frame(title: str):
     # The run the address names, opened before anything is drawn from it.
     problem = address.follow_run()
     panel = runs_panel()
-    # The same bar Judith's window carries: the name, what the tool is for, and on
+    # The same bar Judyth's window carries: the name, what the tool is for, and on
     # the right what is open.
     with ui.header().classes("items-center justify-between") \
             .style(f"background:{INK}; padding:8px 18px"):

@@ -1,6 +1,6 @@
-"""The house style: Judith's palette, measured, and used everywhere.
+"""The house style: Judyth's palette, measured, and used everywhere.
 
-Bryan and Judith are read side by side, so the window takes Judith's light
+Bryan and Judyth are read side by side, so the window takes Judyth's light
 palette and does not follow the desktop theme. These pin the parts of that which
 could drift back without anyone noticing: a Tailwind grey typed into a new page,
 a chart drawn without the theme, a text colour that no longer passes AA.

@@ -359,7 +359,7 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
 A NiceGUI browser app for choosing which sims-list rows to run, checking them, launching
 Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
 
-- **It wears Judith's house style, pinned light.** The colours are `ui/core/palette.py`,
+- **It wears Judyth's house style, pinned light.** The colours are `ui/core/palette.py`,
   copied from the dam failure model's window (`damfailure/ui/app.py` in
   Sunwater's private dam-failure-hydraulics repository) because the two are read side by side — change one, change
   both. `ui/theme.py` applies them to every page and `main.py` runs with `dark=False`.
