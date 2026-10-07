@@ -17,11 +17,12 @@ import copy
 
 from nicegui import app, run, ui
 
-from core import reporttables, staleness, study as studies, wordtable
+from core import calibration, reporttables, staleness, study as studies, wordtable
 from layout import confirm, no_study, page_frame, severity_banner
 import address
 from clipboard import copy_table
 from state import STATE
+from widgets import path_input
 
 
 async def _off_thread(function, *args):
@@ -356,7 +357,7 @@ class _ReportView:
     def _new_table(self, kind: str) -> None:
         spec = reporttables.new_spec(kind)
         spec["title"] = reporttables.KINDS[kind].label
-        if not reporttables.KINDS[kind].multi and self.study.runs:
+        if "source" in spec and self.study.runs:
             spec["source"]["run"] = self.study.runs[0]["name"]
         _TableEditor(self, spec, is_new=True).open()
 
@@ -454,6 +455,12 @@ class _TableEditor:
                 self._representative()
             elif self.kind.key == reporttables.FREQUENT:
                 self._frequent()
+            elif self.kind.key == reporttables.CALIBRATION:
+                self._calibration()
+            elif self.kind.key == reporttables.CRITERIA:
+                ui.label("Excellent to Poor by peak ratio, volume ratio, Nash-Sutcliffe "
+                         "efficiency and peak timing - the classes the calibration "
+                         "results table shades its cells by.").classes("text-sm text-body")
             else:
                 self._multi()
             ui.input("Footnote, pasted under the table", value=self.spec.get("footnote", "")) \
@@ -637,6 +644,63 @@ class _TableEditor:
         section["pmf"] = ({"run": self._default_run(), "group": "", "label": "PMF"}
                           if on else None)
         self.draw()
+
+    # -- calibration -----------------------------------------------------------
+
+    def _calibration(self) -> None:
+        spec = self.spec
+        if not hasattr(self, "observed"):
+            self.observed = [item["name"] for item in calibration.observed_events(self.study)]
+            self.smoothing = calibration.smoothing_of(self.study) or "1h"
+        if not self.observed:
+            severity_banner("warn", "The inflow record has no event hydrographs yet.",
+                            "Run the Lake record page's inflow step first.")
+        ui.label("Each event is a CSV of the model's dam inflow: time in the first column "
+                 "(dates, or hours from a start time), flow in m3/s. The statistics are "
+                 "over the modelled period, against the inflow record over the same "
+                 "period. The observed hydrograph is needed only to place a CSV in hours "
+                 "at its event's start.").classes("text-xs text-muted")
+        with ui.row().classes("w-full items-center gap-4"):
+            ui.radio({calibration.CORRECTED: "Recession-corrected inflow",
+                      calibration.UNCORRECTED: "Uncorrected inflow"},
+                     value=spec.get("observed_series", calibration.CORRECTED),
+                     on_change=lambda e: spec.update(observed_series=e.value))                 .props("dense inline").mark("calibration-series")
+            ui.checkbox(f"Observed flow averaged over {self.smoothing}, as the inflow "
+                        f"record's peaks are", value=spec.get("smoothed", True),
+                        on_change=lambda e: spec.update(smoothed=e.value))
+        with ui.row().classes("w-full items-center gap-4"):
+            ui.input("Modelled heading", value=spec.get("modelled_label", "Mod"))                 .classes("w-36").props("dense")                 .on_value_change(lambda e: spec.update(modelled_label=e.value))
+            ui.input("Observed heading", value=spec.get("observed_label", "Rated"))                 .classes("w-36").props("dense")                 .on_value_change(lambda e: spec.update(observed_label=e.value))
+            ui.checkbox("NSE as a percentage", value=spec.get("nse_percent", True),
+                        on_change=lambda e: spec.update(nse_percent=e.value))
+            ui.checkbox("Peak timing column", value=spec.get("timing", False),
+                        on_change=lambda e: spec.update(timing=e.value))
+            ui.checkbox("Shade by class", value=spec.get("shade", True),
+                        on_change=lambda e: spec.update(shade=e.value))
+        events = spec.setdefault("events", [])
+        for index, event in enumerate(events):
+            with ui.row().classes("w-full items-start gap-2 no-wrap")                     .mark(f"calibration-event-{index}"):
+                ui.input("Label", value=event.get("label", ""))                     .classes("w-28 shrink-0").props("dense")                     .on_value_change(lambda e, ev=event: ev.update(label=e.value))
+                options = list(self.observed)
+                if event.get("observed") and event["observed"] not in options:
+                    options.append(event["observed"])
+                ui.select(options, value=event.get("observed") or None,
+                          label="Observed event (for hours)",
+                          on_change=lambda e, ev=event: ev.update(observed=e.value or ""))                     .classes("w-72 shrink-0").props("dense")
+                with ui.element("div").classes("grow min-w-0"):
+                    path_input("Modelled dam inflow (.csv)", event.get("modelled", ""),
+                               base=self.study.folder, base_name="the study folder",
+                               suffixes=(".csv",), mark=f"calibration-modelled-{index}",
+                               on_commit=lambda text, ev=event: ev.update(
+                                   modelled=studies.portable(self.study.folder, text)
+                                   if str(text).strip() else ""))
+                ui.input("Flow column (blank: first)", value=event.get("column", ""))                     .classes("w-40 shrink-0").props("dense")                     .on_value_change(lambda e, ev=event: ev.update(column=e.value.strip()))
+                ui.input("Start, if hours", value=event.get("start", ""))                     .classes("w-40 shrink-0").props("dense")                     .tooltip("Only for a CSV whose time column is hours: the date and "
+                             "time hour 0 is. Blank: the observed event's start.")                     .on_value_change(lambda e, ev=event: ev.update(start=e.value.strip()))
+                ui.button(icon="close", on_click=lambda _, i=index: self._drop(events, i))                     .props("flat dense round").tooltip("Remove the event")
+        ui.button("Add event", icon="add", on_click=lambda: self._append(
+            events, {"label": "", "observed": "", "modelled": "", "column": "",
+                     "start": ""})).props("outline dense no-caps").mark("add-event")
 
     # -- sections of rows ----------------------------------------------------
 

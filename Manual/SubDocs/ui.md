@@ -414,10 +414,24 @@ Everything is saved as it changes.
 | Ensemble peak | 34 | Per ensemble group, the event with the highest lake level: its level, inflow, outflow and duration - the PMF. |
 | Representative events | 35-36 | One section per group, from the events **saved on the Events page** for it: each loading's AEP (a level loading's AEP read as above), lake level, trigger, the chosen simulation and the duration it came from, in AEP order, with the PMF's event from an ensemble group last. A level loading takes its trigger from its own comment on the Events page, or from the table's list of named levels (DCF, each embankment crest). |
 | Frequent levels | 37 | A grid: one column per group (the climate horizons), one row per frequency, in sections (RFSL, FSL). A standard AEP the quantile tables carry (1 in 2) is the design curve's value; a more frequent one (1 EY, 1 in 1.582) is read off each duration's realisations and the highest taken. The last column is the critical duration, as a range where the horizons differ. **Durations to consider** limits which runs count: Callide's Table 37 was made from 6-96 h, and a 120 h run changes the 1 in 2 level where it governs. |
+| Calibration results | 16 | Per event, a model's dam inflow against the reverse-routed inflow: both peaks and the peak ratio (PR), both volumes and the volume ratio (VR), the Nash-Sutcliffe efficiency and, optionally, the peak timing, each shaded by its class. The observed inflow is the [inflow record](#4inflowrecord) over the modelled period; the modelled one is a CSV you give, time in the first column (dates, or hours from the event's start) and flow in m³/s. See [The calibration table](#thecalibrationtable). |
+| Model performance criteria | 15 | The classes the calibration results are shaded by: Excellent to Poor on PR, VR, NSE and timing. |
 
 The last three hold **sections** (the RFSL and FSL halves of a table, each under a heading row) of **rows**: a row either reads a group, or holds fixed values - for a previous study's numbers, such as the Sunwater 2020 baseline, which are not a run in this one.
 
 **Where the inflow and outflow are read** is a choice for the last two kinds. The default is the storm that gives the peak level, consistent with the "Level critical duration" column and with Tables 1 and 26-31. The alternative is each result's own maximum, which is what the scripts that first filled Tables 33 and 34 did - the peak inflow of the PMPF then comes from a shorter storm than the peak level beside it, and differs from the PMPF row of Table 26.
+
+### The calibration table
+
+Each number depends on a choice, so the choices are fixed and stated:
+
+- **The window** is the modelled period. The observed side is cut from the whole inflow record over it, not from the event hydrograph, whose window (3 days before the peak to 7 after, by default) may be shorter than the model run. Where the model runs past the end of the record, the window stops there and the table says by how many hours. Both volumes and the NSE are over the window. The observed event you pick is used only to place a CSV whose times are hours.
+- **The observed series** is the recession-corrected inflow by default. Where the gates released more than the rating says, the corrected recession is zero, which lowers the observed volume and the NSE for something that is not a model error; the table says when that happens in an event's window, and by how much. The uncorrected inflow is the alternative.
+- **The observed flow** is the time average over the inflow record's smoothing window (1 h), centred on each time, as its peaks are taken - a reverse-routed hydrograph is noisy, and a peak off the raw intervals is mostly noise. Untick it for the raw interval means.
+- **Volumes**: the observed one is exact (each interval's mean inflow over the part of it inside the window); the modelled one is the trapezoid through the CSV's samples.
+- **PR** and **VR** are (modelled - observed) / observed; **timing** is the modelled peak's time less the observed one's, in hours. A class is judged on the size of each, so -14% and +14% are both Good.
+
+The headings default to the report's *Mod* and *Rated*, and NSE to a percentage, as Table 16 has them.
 
 ### Finding a table
 

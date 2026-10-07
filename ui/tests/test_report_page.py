@@ -244,3 +244,29 @@ async def test_a_table_from_stale_results_says_so_and_again_when_copied(user, op
     user.find(marker=f"copy-text-{table_id}").click()
     await user.should_see("Copied as text - but")
     assert copied
+
+
+@pytest.mark.asyncio
+async def test_a_calibration_table_previews_shaded_and_its_editor_opens(user, opened):
+    from core import reporttables as rt
+    from state import STATE
+    from test_calibration import modelled_csv, triangle, with_event
+
+    frame = with_event(opened, triangle())
+    spec = rt.new_spec(rt.CALIBRATION)
+    spec.update(title="Table 16 calibration", smoothed=False, events=[
+        {"label": "Jan-13", "observed": "2013_peak",
+         "modelled": modelled_csv(opened, frame, 0.86), "column": "", "start": ""}])
+    opened.put_table(spec)
+    opened.save()
+    STATE.open_study(opened.path)              # the page reads the study as saved
+
+    await user.open("/report")
+    html = await preview_text(user, "table-16-calibration")
+    assert "Flow (m<sup>3</sup>/s)" in html and "-14%" in html
+    assert "background:#92D050" in html
+
+    user.find(marker="edit-table-16-calibration").click()
+    await user.should_see(marker="calibration-event-0")
+    await user.should_see(marker="add-event")
+    await user.should_see("Observed flow averaged over")

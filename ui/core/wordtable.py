@@ -46,6 +46,7 @@ class Row:
     kind: str = DATA          # DATA, or SECTION - one label across the table
     bold: bool = False
     shaded: bool = False      # the section tint on a data row (T1's DCF row)
+    fills: list = field(default_factory=list)   # per cell: a fill colour, or ""
 
 
 @dataclass
@@ -56,6 +57,9 @@ class ReportTable:
     footnotes: list = field(default_factory=list)
     title: str = ""
     problems: list = field(default_factory=list)   # what could not be filled, and why
+    # A header row above ``header``: (label, span) left to right. A blank label
+    # over one column is that column's own heading, spanning both rows.
+    header_groups: list = field(default_factory=list)
 
     @property
     def width(self) -> int:
@@ -95,8 +99,15 @@ def _plain(text: str) -> str:
 
 
 def to_text(table: ReportTable) -> str:
-    """Tab-separated, one line per row; a section row is its label alone."""
-    lines = ["\t".join(_plain(cell) for cell in table.header)]
+    """Tab-separated, one line per row; a section row is its label alone, and a
+    header group row comes first, each label over the first column it spans."""
+    lines = []
+    if table.header_groups:
+        top = []
+        for label, span in table.header_groups:
+            top += [_plain(label)] + [""] * (int(span) - 1)
+        lines.append("\t".join(top))
+    lines.append("\t".join(_plain(cell) for cell in table.header))
     for row in table.rows:
         lines.append(_plain(row.cells[0]) if row.kind == SECTION
                      else "\t".join(_plain(cell) for cell in row.cells))
@@ -132,8 +143,22 @@ def to_html(table: ReportTable, style: dict | None = None) -> str:
     parts = [f"<table style=\"border-collapse:collapse;{font}\">", "<thead><tr>"]
     header_style = (f"background:{s['header_fill']};color:{s['header_text']};"
                     f"font-weight:bold")
+    spanned = set()
+    if table.header_groups:
+        column = 0
+        for label, span in table.header_groups:
+            span = int(span)
+            if not label and span == 1:
+                spanned.add(column)
+                parts.append(cell("th", table.header[column], column, header_style)
+                             .replace("<th ", "<th rowspan=\"2\" ", 1))
+            else:
+                parts.append(cell("th", label, column, header_style + ";text-align:center")
+                             .replace("<th ", f"<th colspan=\"{span}\" ", 1))
+            column += span
+        parts.append("</tr><tr>")
     parts += [cell("th", text, column, header_style)
-              for column, text in enumerate(table.header)]
+              for column, text in enumerate(table.header) if column not in spanned]
     parts.append("</tr></thead><tbody>")
     for row in table.rows:
         if row.kind == SECTION:
@@ -147,8 +172,11 @@ def to_html(table: ReportTable, style: dict | None = None) -> str:
             extra += f"background:{s['section_fill']};"
         if row.bold:
             extra += "font-weight:bold;"
-        parts.append("<tr>" + "".join(cell("td", text, column, extra)
-                                      for column, text in enumerate(row.cells)) + "</tr>")
+        parts.append("<tr>" + "".join(
+            cell("td", text, column, extra + (f"background:{row.fills[column]};"
+                                              if column < len(row.fills) and row.fills[column]
+                                              else ""))
+            for column, text in enumerate(row.cells)) + "</tr>")
     parts.append("</tbody></table>")
     for note in table.footnotes:
         parts.append(f"<p style=\"{font};margin:2pt 0 0 0\">{_rich(note)}</p>")

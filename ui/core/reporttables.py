@@ -67,6 +67,8 @@ PEAK_AT_AEP = "peak_at_aep"
 ENSEMBLE_PEAK = "ensemble_peak"
 REPRESENTATIVE = "representative_events"
 FREQUENT = "frequent_levels"
+CALIBRATION = "calibration"
+CRITERIA = "calibration_criteria"
 
 AT_LEVEL = "level"
 AT_OWN = "own"
@@ -148,6 +150,20 @@ KINDS = {
          "columns": ["GWL 0°C", "GWL 1.3°C", "GWL 1.7°C", "GWL 2.7°C"],
          "duration": True, "durations": [],     # hours to consider; blank = all
          "sections": []}),     # [{heading, groups: [{run, group}] in column order}]
+    CALIBRATION: Kind(
+        CALIBRATION, "Calibration results",
+        "Modelled dam inflow (a CSV per event) against the reverse-routed inflow: "
+        "peaks, volumes, their ratios and the Nash-Sutcliffe efficiency, shaded by class.",
+        False,
+        {"kind": CALIBRATION, "title": "", "observed_series": "corrected",
+         "smoothed": True, "modelled_label": "Mod", "observed_label": "Rated",
+         "nse_percent": True, "timing": False, "shade": True,
+         "events": []}),       # [{label, observed, modelled, column, start}]
+    CRITERIA: Kind(
+        CRITERIA, "Model performance criteria",
+        "The classes the calibration results are shaded by.",
+        False,
+        {"kind": CRITERIA, "title": ""}),
 }
 
 
@@ -749,7 +765,19 @@ def _frequent(study: Study, spec: dict) -> ReportTable:
     return table
 
 
+def _calibration(study: Study, spec: dict) -> ReportTable:
+    from . import calibration
+    return calibration.build(study, spec)
+
+
+def _criteria(study: Study, spec: dict) -> ReportTable:
+    from . import calibration
+    return calibration.criteria_table(spec)
+
+
 BUILDERS = {
+    CALIBRATION: _calibration,
+    CRITERIA: _criteria,
     FREQUENT: _frequent,
     DESIGN_FLOODS: _design_floods,
     FLOOD_LEVELS: _flood_levels,

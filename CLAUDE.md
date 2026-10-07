@@ -509,6 +509,15 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   `ReportTable` as HTML for Word (inline styles in points, the report's table style) and as
   tab-separated text, and the page puts both on the clipboard with one `ClipboardItem`; a
   browser without it gets the text and the page says so.
+- **The calibration table** (`core/calibration.py`, a report table kind) holds a modelled dam
+  inflow CSV against one of the inflow record's event hydrographs. Its choices are fixed in the
+  module docstring because each moves the numbers: the window is the modelled period, cut from the whole inflow record (`inflow_intervals.csv.gz`)
+  rather than the event hydrograph, whose window may be shorter than the model run, the observed series
+  is the recession-corrected one (an uncertain release in the window is reported, since the
+  corrected recession is zero there), the observed flow is the inflow record's centred 1 h time
+  average off the cumulative volume, and the observed volume is exact per interval. Its cells are
+  shaded through `Row.fills` and its two-row heading is `ReportTable.header_groups` - both optional
+  in `core/wordtable.py`, so every other table pastes as before.
 - **The PMF page takes the highest ensemble event; everything else takes the median pattern**
   (`core/ensemble.py`). The median is `EnbAnalysis`'s own position rule, `int(np.around(n / 2))`
   of the ascending sort - numpy rounds half to even, so five patterns give the third - and a
