@@ -344,7 +344,35 @@ def inflow(study: Study, section: dict, python, cancel=None) -> RunResult:
 
 def last_summary(study: Study, section: dict, step: str) -> dict:
     folder = path_of(study, section[step]["out"])
-    return read_json(folder / "summary.json", default={}) if folder else {}
+    if not folder:
+        return {}
+    return relocated(read_json(folder / "summary.json", default={}), folder)
+
+
+def relocated(value, folder: Path):
+    """A summary with its paths found again from where it now sits.
+
+    The jobs write every output as a full path, as the machine that ran them
+    reached it - a mapped drive letter, say, where a colleague has the UNC path,
+    or the folder before the study was copied. Everything a step writes is under
+    its output folder, so a path that no longer exists is looked for there: the
+    longest tail of it that does exist under ``folder``.
+    """
+    if isinstance(value, dict):
+        return {key: relocated(item, folder) for key, item in value.items()}
+    if isinstance(value, list):
+        return [relocated(item, folder) for item in value]
+    if not isinstance(value, str) or not value or "\n" in value:
+        return value
+    path = Path(value)
+    if not path.is_absolute() or path.exists():
+        return value
+    parts = path.parts[1:]                       # drop the drive or share
+    for start in range(len(parts)):
+        candidate = folder.joinpath(*parts[start:])
+        if candidate.exists():
+            return str(candidate)
+    return value
 
 
 # -- reading the results back ---------------------------------------------------------

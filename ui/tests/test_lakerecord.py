@@ -100,6 +100,28 @@ def test_a_run_writes_its_job_beside_the_outputs_and_reads_the_summary(tmp_path,
     assert json.loads((tmp_path / "out" / "job.json").read_text()) == job
 
 
+def test_a_summary_written_on_another_machine_finds_its_files_where_it_now_sits(study):
+    """A colleague reaches the study by another path (a drive letter for the UNC
+    share, or a copied folder), so the full paths a run recorded do not exist."""
+    section = lakerecord.settings(study)
+    out = lakerecord.path_of(study, section["inflow"]["out"])
+    ams = touch(out / "inflow_ams.csv")
+    event = touch(out / "hydrographs" / "1991.csv")
+    elsewhere = r"W:\KRO_2026\lake_record\inflow"
+    touch(out / "summary.json", json.dumps({
+        "ams": elsewhere + r"\inflow_ams.csv",
+        "intervals": elsewhere + r"\inflow_intervals.csv.gz",      # never written
+        "hydrographs": [{"name": "1991", "file": elsewhere + r"\hydrographs\1991.csv"}],
+        "notes": ["kept as it was"]}))
+
+    summary = lakerecord.last_summary(study, section, "inflow")
+
+    assert Path(summary["ams"]) == ams
+    assert Path(summary["hydrographs"][0]["file"]) == event
+    assert summary["intervals"].startswith("W:")       # nothing to find: left as written
+    assert summary["notes"] == ["kept as it was"]
+
+
 def test_a_failed_run_carries_its_output(tmp_path):
     script = touch(tmp_path / "fail.py", "print('ERROR: no gauges'); raise SystemExit(1)\n")
     result = lakerecord.run_script(script, {"out": str(tmp_path)}, tmp_path / "j.json",
