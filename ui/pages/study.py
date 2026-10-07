@@ -185,25 +185,25 @@ class _StudyView:
                             on_change=lambda e: self._toggle_overlay(dam, e.value)) \
                     .mark("dam-overlay")
                 if overlay:
-                    with ui.element("div").classes("grow"):
+                    with ui.element("div").classes("grow min-w-0"):
                         self._dam_path("Overlay gauge export", overlay, dam, "file")
                     ui.input("below (m)", value=f"{overlay.get('below') or ''}") \
-                        .classes("w-28").props("dense") \
+                        .classes("w-28 shrink-0").props("dense") \
                         .on("blur", lambda e: self._set_dam(
                             overlay, "below", _number(e.sender.value), dam=dam))
                     ui.input("reconnect margin (m)",
                              value=f"{overlay.get('reconnect_margin', 0.10)}") \
-                        .classes("w-40").props("dense") \
+                        .classes("w-40 shrink-0").props("dense") \
                         .on("blur", lambda e: self._set_dam(
                             overlay, "reconnect_margin", _number(e.sender.value, 0.10),
                             dam=dam))
 
             ui.label("Storage and release").classes("text-sm font-bold pt-1")
             with ui.row().classes("w-full gap-2 no-wrap"):
-                with ui.element("div").classes("grow"):
+                with ui.element("div").classes("grow min-w-0"):
                     self._dam_path("Storage table (.els: EL, A, V)", dam, dam, "storage",
                                    mark="dam-storage", suffixes=(".els", ".csv"))
-                with ui.element("div").classes("grow"):
+                with ui.element("div").classes("grow min-w-0"):
                     self._dam_path("Ratings: a register (.xlsx), or one rating for the "
                                    "whole record (.rat, level,flow .csv or .sq)",
                                    dam, dam, "register", mark="dam-register", redraw=True,
@@ -211,7 +211,7 @@ class _StudyView:
                 if dams.single_rating(dam):
                     ui.input("Its full supply level (m AHD; blank: the file's)",
                              value=f"{dam['register_fsl']:g}" if dam["register_fsl"] else "") \
-                        .classes("w-64").props("dense").mark("dam-register-fsl") \
+                        .classes("w-80 shrink-0").props("dense").mark("dam-register-fsl") \
                         .on("blur", lambda e: self._set_dam(dam, "register_fsl",
                                                             _number(e.sender.value)))
             if dams.single_rating(dam):
@@ -223,27 +223,27 @@ class _StudyView:
                          "needs it given.").classes("text-xs text-muted") \
                     .mark("dam-single-rating")
             with ui.row().classes("w-full items-start gap-2 no-wrap"):
-                with ui.element("div").classes("grow"):
+                with ui.element("div").classes("grow min-w-0"):
                     self._dam_path("Evaporation (SILO Data Drill)", dam, dam, "evaporation",
                                    mark="dam-evaporation")
                 ui.input("Pan factors, Jan to Dec",
                          value=" ".join(f"{v:g}" for v in dam["pan_factors"])) \
-                    .classes("w-[28rem]").props("dense").mark("dam-pan") \
+                    .classes("w-[28rem] shrink-0").props("dense").mark("dam-pan") \
                     .on("blur", lambda e: self._set_pan(dam, e.sender.value))
 
             ui.label("Catchment").classes("text-sm font-bold pt-1")
             with ui.row().classes("w-full items-start gap-2 no-wrap"):
-                with ui.element("div").classes("grow"):
+                with ui.element("div").classes("grow min-w-0"):
                     self._dam_path("Catchment shapefile (.shp)", dam, dam, "shapefile",
                                    mark="dam-shapefile", suffixes=(".shp",))
                 ui.input("Field (blank: every polygon)", value=dam["field"]) \
-                    .classes("w-48").props("dense") \
+                    .classes("w-48 shrink-0").props("dense") \
                     .on("blur", lambda e: self._set_dam(dam, "field", e.sender.value.strip()))
-                ui.input("equal to", value=dam["value"]).classes("w-36").props("dense") \
+                ui.input("equal to", value=dam["value"]).classes("w-36 shrink-0").props("dense") \
                     .on("blur", lambda e: self._set_dam(dam, "value", e.sender.value.strip()))
                 ui.input("Catchment area (km2)",
                          value=f"{dam['catchment_km2']:g}" if dam["catchment_km2"] else "") \
-                    .classes("w-40").props("dense").mark("dam-area") \
+                    .classes("w-40 shrink-0").props("dense").mark("dam-area") \
                     .on("blur", lambda e: self._set_dam(dam, "catchment_km2",
                                                         _number(e.sender.value)))
 
