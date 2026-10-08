@@ -4,7 +4,11 @@ Both axes are standard normal variates labelled as AEPs, so the picture is the
 question being asked: rainfall rarity up, flood rarity across. The diagonal is
 AEP neutrality - an event on it produced a flood exactly as rare as the rain
 that caused it. Distance from the target marker is the rank key, and it is a
-distance on the page because both axes are in the same units.
+distance on the page only because both axes cover the same range of variates
+*and* the plot area is square: ``GRID``'s margins add up to the same across as
+down, and the page draws the chart in a square box (``SQUARE_STYLE``). In a wide
+box the diagonal leans and two candidates the same Delta z from the target look
+different distances away.
 
 Points off the diagonal are the events to be careful with. Below it the flood
 outran the rainfall, which means something else supplied the rarity: a full
@@ -30,6 +34,12 @@ CLEAN = PALETTE[0]
 FLAGGED = PALETTE[3]
 CHOSEN = PALETTE[2]
 NEUTRAL_LINE = MUTED
+
+
+# Margins for the axis names and the legend: 100 px across, 100 px down, so a
+# square chart has a square plot area.
+GRID = {"left": 70, "right": 30, "top": 52, "bottom": 48}
+SQUARE_STYLE = "height: auto; aspect-ratio: 1 / 1"
 
 
 def _ticks(values, pad=0.4) -> tuple:
@@ -177,8 +187,8 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
     return {
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "item"},
-        "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
-        "grid": {"left": 70, "right": 30, "top": 72, "bottom": 60},
+        "legend": {"type": "scroll", "top": 24},   # clear of a 13 px title
+        "grid": dict(GRID),
         "xAxis": horizontal,
         "yAxis": vertical,
         "series": series,

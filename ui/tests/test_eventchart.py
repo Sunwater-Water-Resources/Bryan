@@ -82,3 +82,14 @@ def test_an_aep_loading_carries_no_second_mark():
     chart = eventchart.neutrality_chart(plain, "level")
     assert not [series for series in chart["series"]
                 if str(series.get("name", "")).endswith("in this run")]
+
+
+def test_the_plot_area_is_square_so_distance_on_the_page_is_delta_z():
+    """Both axes cover the same variates and the margins add up to the same
+    across as down, so in the page's square box a unit of z is as long either way."""
+    chart = eventchart.neutrality_chart(outcome(data_z=3.25), "level")
+    x, y = chart["xAxis"], chart["yAxis"]
+    assert (x["min"], x["max"]) == (y["min"], y["max"])
+    grid = chart["grid"]
+    assert grid["left"] + grid["right"] == grid["top"] + grid["bottom"]
+    assert "aspect-ratio: 1 / 1" in eventchart.SQUARE_STYLE

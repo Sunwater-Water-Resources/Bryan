@@ -416,7 +416,7 @@ class _EventsView:
             self._candidate_table(position, rows)
             self._preview_panel(position, outcome)
             chart = house_echart(eventchart.neutrality_chart(
-                outcome, self.result_type)).classes("w-full h-96")
+                outcome, self.result_type)).classes("w-[45%] min-w-[18rem] self-center")                 .style(eventchart.SQUARE_STYLE)     # equal scales: distance is Delta z
             chart.mark(f"neutrality-{position}")
 
     def _candidate_table(self, position, rows) -> None:
