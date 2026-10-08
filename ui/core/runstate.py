@@ -82,6 +82,36 @@ class RunRecord:
     def path(self) -> Path:
         return Path(self.folder) / RUN_STATE_FILENAME
 
+    def relocate(self, folder) -> None:
+        """Re-point every stored path at where the record now sits.
+
+        The paths are written absolute, as the machine that launched the run
+        reached the project - ``F:\Models\...`` on one machine is a network
+        share or another drive letter on the next. A record read from
+        ``<project>/_ui_runs/<id>/`` belongs to that project, so whatever the
+        old project folder was, the new one is two levels up from here. Paths
+        outside the old project folder are left alone.
+        """
+        folder = Path(folder)
+        new_project = folder.parent.parent
+        old_project = self.project_folder
+        if not old_project or _key(old_project) == _key(new_project):
+            return
+
+        def moved(text):
+            return _rebased(text, old_project, new_project)
+
+        self.folder = str(folder)
+        self.project_folder = str(new_project)
+        self.source_config = moved(self.source_config)
+        self.source_sims_list = moved(self.source_sims_list)
+        for chunk in self.chunks:
+            chunk.config = moved(chunk.config)
+            chunk.sims_list = moved(chunk.sims_list)
+            chunk.console_log = moved(chunk.console_log)
+            chunk.run_log = moved(chunk.run_log)
+            chunk.log_paths = [moved(item) for item in chunk.log_paths]
+
     @property
     def is_live(self) -> bool:
         return any(chunk.is_live for chunk in self.chunks)
@@ -122,6 +152,22 @@ class RunRecord:
         atomic_write_json(self.path, self.to_dict())
 
 
+def _key(text) -> str:
+    """A path for comparing, whichever separators and case it was written with."""
+    return str(text).replace("\\", "/").rstrip("/").lower()
+
+
+def _rebased(text, old_root, new_root) -> str:
+    """``text`` moved from under ``old_root`` to under ``new_root``, or as it was."""
+    if not text:
+        return text
+    key, root = _key(text), _key(old_root)
+    if key != root and not key.startswith(root + "/"):
+        return text
+    rest = str(text).replace("\\", "/")[len(root):].strip("/")
+    return str(Path(new_root).joinpath(*rest.split("/"))) if rest else str(new_root)
+
+
 def load(folder) -> RunRecord | None:
     data = read_json(Path(folder) / RUN_STATE_FILENAME)
     if not isinstance(data, dict) or "run_id" not in data:
@@ -143,6 +189,7 @@ def discover(run_root) -> list:
             continue
         record = load(folder)
         if record is not None:
+            record.relocate(folder)
             runs.append(record)
     return sorted(runs, key=lambda record: record.created, reverse=True)
 

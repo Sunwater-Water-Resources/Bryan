@@ -278,3 +278,50 @@ def test_prune_removes_old_finished_runs(project, fake_main):
     removed = runstate.prune(config.run_root, older_than_days=30)
     assert removed == [record.run_id]
     assert not folder.folder.exists()
+
+
+def moved_record(tmp_path, old_project=r"F:\Models\CLD_2025\03_DESIGN\runs\E013"):
+    """A finished run's record as another machine wrote it: every path absolute,
+    on a drive this one does not have."""
+    run_id = "20260925-213302"
+    old_folder = old_project + r"\_ui_runs" + "\\" + run_id
+    record = runstate.RunRecord(
+        run_id=run_id, folder=old_folder, project_folder=old_project,
+        source_config=old_project + r"\CLD_FSL_mc_sims_01.json",
+        source_sims_list=old_project + r"\CLD_FSL_mc_sims_01.xlsx",
+        chunks=[runstate.ChunkRecord(
+            index=1, config=old_folder + r"\chunk_01.json",
+            sims_list=old_folder + r"\chunk_01.xlsx",
+            console_log=old_folder + r"\chunk_01_console.txt",
+            run_log=old_folder + r"\chunk_01_log.csv",
+            log_paths=[old_project + r"\sims_mc\log\CLD_mc_72h.txt", r"D:\elsewhere\x.txt"],
+            status=runstate.COMPLETED)])
+    project = tmp_path / "E013"
+    folder = project / "_ui_runs" / run_id
+    folder.mkdir(parents=True)
+    runstate.atomic_write_json(folder / runstate.RUN_STATE_FILENAME, record.to_dict())
+    return project, folder
+
+
+def test_a_record_written_on_another_machine_is_read_where_it_now_sits(tmp_path):
+    project, folder = moved_record(tmp_path)
+    record = runstate.discover(project / "_ui_runs")[0]
+    assert record.folder == str(folder)
+    assert record.path == folder / runstate.RUN_STATE_FILENAME
+    assert record.project_folder == str(project)
+    assert record.source_config == str(project / "CLD_FSL_mc_sims_01.json")
+    chunk = record.chunks[0]
+    assert chunk.run_log == str(folder / "chunk_01_log.csv")
+    assert chunk.log_paths == [str(project / "sims_mc" / "log" / "CLD_mc_72h.txt"),
+                               r"D:\elsewhere\x.txt"]     # not under the project: left
+
+
+def test_opening_a_project_does_not_rewrite_finished_records(tmp_path):
+    """Reattach saved every record back, to the path it was written with - on
+    another machine's drive, which stopped the run opening at all."""
+    project, folder = moved_record(tmp_path)
+    before = (folder / runstate.RUN_STATE_FILENAME).read_text(encoding="utf-8")
+    manager = launcher.RunManager(bryan_python=sys.executable, bryan_main="Main.py")
+    found = manager.reattach(project / "_ui_runs")
+    assert [record.run_id for record in found] == ["20260925-213302"]
+    assert (folder / runstate.RUN_STATE_FILENAME).read_text(encoding="utf-8") == before

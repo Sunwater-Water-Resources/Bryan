@@ -244,11 +244,20 @@ class RunManager:
                 if existing is not None:
                     found.append(existing)
                     continue
+                changed = False
                 for chunk in record.chunks:
                     if chunk.status == RUNNING and not self._external_alive(chunk):
                         self._finish_unknown(chunk)
+                        changed = True
                 self.runs[record.run_id] = record
-                record.save()
+                # Only a record this changed is written back. Saving every one
+                # rewrote the whole history on each open, and one that could not
+                # be written - a read-only share, say - stopped the run opening.
+                if changed:
+                    try:
+                        record.save()
+                    except OSError:
+                        pass
             found.append(record)
         return found
 
