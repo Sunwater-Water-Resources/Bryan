@@ -646,7 +646,8 @@ def _representative(study: Study, spec: dict) -> ReportTable:
                                                spec.get("method", MCDF))
                 if problem:
                     table.problems.append(f"{group}: {level:.2f} m {problem}")
-                trigger = (target.comment or "").strip() or triggers.get(round(level, 3), "")
+                trigger = ((target.name or "").strip() or (target.comment or "").strip()
+                           or triggers.get(round(level, 3), ""))
                 rows.append((aep if _finite(aep) else math.inf,
                              [fmt_rounded_aep(aep, spec.get("round_to", 10)),
                               fmt_level(level), trigger, str(target.picked), duration]))

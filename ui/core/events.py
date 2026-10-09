@@ -358,14 +358,23 @@ def evaluate(project, sources, target: Target, filters: Filters,
             return outcome
     outcome.aep = aep
 
-    if order == EVENTS.RESULT and target_value is None and aep and not above_curve:
-        # The loading is named in the wrong units for this ranking - a design
-        # AEP, or a level while the inflow is being ranked - so the design
-        # value at that AEP is read off the curve for the result type.
+    # Where the ranking takes the loading's value from, and whether the plot
+    # marks where this run reaches it: a level loading in its own units, or a
+    # ranking on the result. Kept apart from the value the table measures
+    # against, so filling that in for every loading changes neither.
+    ranks_on_value = target_value is not None or order == EVENTS.RESULT
+    read_off_curve = target_value is None and bool(aep) and not above_curve
+    if read_off_curve:
+        # The loading is named in other units than the result - a design AEP,
+        # or a level while the inflow is being ranked - so the design value at
+        # that AEP is read off the curve for the result type. The 'delta
+        # target' column needs it whatever the order; only the result order
+        # ranks on it.
         design = envelope(target.result_type)
         value = (EVENTS.value_for_aep(design, aep)
                  if design is not None and len(design) else float("nan"))
         target_value = None if value != value else float(value)
+    if read_off_curve and order == EVENTS.RESULT:
         if target_value is None:
             outcome.notes.append(
                 f"No design {target.result_type} at 1 in "
@@ -405,7 +414,7 @@ def evaluate(project, sources, target: Target, filters: Filters,
         outcome.problem = str(error)
         return outcome
 
-    if target_value is not None:
+    if target_value is not None and ranks_on_value:
         # Where the loading sits in this database's own realisations, which is
         # not where the design curve puts it - see EVENTS.variate_at_value. The
         # plot marks both, because a mark at the design AEP alone reads as an
@@ -460,6 +469,7 @@ def summary_rows(outcomes) -> list:
     for outcome in outcomes:
         row = {
             "loading": outcome.target.label,
+            "name": outcome.target.name,
             "result": outcome.target.result_type,
             "target aep (1 in x)": (round(outcome.aep, 1)
                                     if outcome.aep else ""),

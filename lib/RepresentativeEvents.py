@@ -795,12 +795,21 @@ class Target:
     count: int = 10
     picked: int | None = None
     comment: str = ''
+    name: str = ''             # the analyst's, e.g. 'dam crest flood'; optional
 
     @property
     def label(self) -> str:
+        """The loading by its value - what files are named by, so a name can
+        change without orphaning the plots already written."""
         if self.kind == 'level':
             return f'{self.value:g} m AHD'
         return f'1 in {self.value:,.0f}'
+
+    @property
+    def title(self) -> str:
+        """The name with the value, or the value alone: what a reader is shown."""
+        name = (self.name or '').strip()
+        return f'{name} ({self.label})' if name else self.label
 
     def to_dict(self) -> dict:
         return {
@@ -809,6 +818,7 @@ class Target:
             'source': self.source, 'output_file': self.output_file,
             'database': self.database, 'count': self.count,
             'picked': self.picked, 'comment': self.comment,
+            'name': self.name,
         }
 
     @classmethod
@@ -819,6 +829,7 @@ class Target:
         known['count'] = int(known.get('count') or 10)
         picked = known.get('picked')
         known['picked'] = None if picked in (None, '') else int(picked)
+        known['name'] = str(known.get('name') or '')
         return cls(**known)
 
 

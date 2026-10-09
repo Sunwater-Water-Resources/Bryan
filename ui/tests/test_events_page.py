@@ -119,6 +119,17 @@ async def test_typing_a_loading_value_does_not_rebuild_the_row(user, project):
 
 
 @pytest.mark.asyncio
+async def test_a_loading_can_be_named_without_rebuilding_its_row(user, project):
+    _open(project)
+    await user.open("/events")
+    field = next(iter(user.find(marker="loading-name-0").elements))
+    identity = field.id
+    field.set_value("Dam crest flood")
+    await user.should_see("Dam crest flood (")       # the card's headline
+    assert next(iter(user.find(marker="loading-name-0").elements)).id == identity
+
+
+@pytest.mark.asyncio
 async def test_adding_a_loading_does_redraw_the_rows(user, project):
     """The other half of it: a new row has to appear."""
     _open(project)
@@ -331,3 +342,97 @@ async def test_the_extraction_runs_from_the_page_and_shows_its_warnings(user, pr
 def nicegui_code():
     from nicegui import ui
     return ui.code
+
+
+def _selection_file(user) -> Path:
+    code = next(element for element in user.find(kind=nicegui_code()).elements
+                if "--selection" in element.content)
+    return Path(code.content.split("--selection", 1)[1].strip().strip('"'))
+
+
+@pytest.mark.asyncio
+async def test_opening_the_page_saves_nothing(user, project):
+    """Only a change is saved: opening a group must not overwrite its file."""
+    _open(project)
+    await user.open("/events")
+    await user.should_see("Loadings")
+    assert not _selection_file(user).exists()
+
+
+@pytest.mark.asyncio
+async def test_every_change_is_saved_as_it_is_made(user, project):
+    """The launcher saves on every action; this page had a Save button that
+    was easy to forget."""
+    import json
+    _open(project)
+    await user.open("/events")
+    next(iter(user.find(marker="loading-name-1").elements)).set_value("Dam crest flood")
+    await user.should_see("Dam crest flood (")
+    saved = json.loads(_selection_file(user).read_text(encoding="utf-8"))
+    assert [t["name"] for t in saved["targets"]] == ["", "Dam crest flood", ""]
+    # every loading carries its event, the automatic ones included, for the extract
+    assert all(t["picked"] is not None for t in saved["targets"])
+    status = next(iter(user.find(marker="saved-state").elements)).text
+    assert status.startswith("saved ")
+
+
+@pytest.mark.asyncio
+async def test_a_loading_can_be_moved_up_and_down(user, project):
+    import json
+    _open(project)
+    await user.open("/events")
+    assert not next(iter(user.find(marker="loading-up-0").elements)).enabled
+    assert not next(iter(user.find(marker="loading-down-2").elements)).enabled
+
+    user.find(marker="loading-down-0").click()
+    await user.should_see("Loadings")
+    table = next(iter(user.find(marker="summary-table").elements))
+    assert [row["loading"] for row in table.rows] == ["1 in 1,000", "1 in 100", "1 in 10,000"]
+    saved = json.loads(_selection_file(user).read_text(encoding="utf-8"))
+    assert [t["value"] for t in saved["targets"]] == [1000, 100, 10_000]
+
+
+@pytest.mark.asyncio
+async def test_the_chosen_event_s_row_is_shaded(user, project):
+    import pages.events as events_page
+    _open(project)
+    await user.open("/events")
+    table = next(iter(user.find(marker="candidates-0").elements))
+    assert table.props[":table-row-class-fn"] == events_page.CHOSEN_ROW_JS
+    assert any(row["picked"] for row in table.rows)
+
+
+@pytest.mark.asyncio
+async def test_a_preview_of_another_event_says_it_is_not_the_chosen_one(
+        user, with_hydrographs):
+    """A clicked row is drawn without being chosen; the title alone was easy to miss."""
+    _open(with_hydrographs)
+    await user.open("/events")
+    user.find(marker="preview-button-0").click()
+    await user.should_see(marker="hydrograph-0")
+    await user.should_see(", the chosen event")
+    await user.should_not_see(marker="preview-mismatch-0")
+
+    table = next(iter(user.find(marker="candidates-0").elements))
+    other = next(row for row in table.rows if not row["picked"])
+    # as the browser sends it: the click event first, serialised, then the row
+    user.find(marker="candidates-0").trigger(
+        "rowClick", [{"isTrusted": True, "clientX": 10, "type": "click"}, other, 0])
+    await user.should_see(marker="preview-mismatch-0")
+    await user.should_see(f"This preview is sim {other['sim']}, not the chosen event")
+    chart = next(iter(user.find(marker="hydrograph-0").elements))
+    assert chart.options["graphic"][0]["style"]["text"] == "NOT THE CHOSEN EVENT"
+
+
+@pytest.mark.asyncio
+async def test_picking_another_event_after_previewing_marks_the_preview(
+        user, with_hydrographs):
+    """The other way to get there: preview the chosen event, then choose another."""
+    _open(with_hydrographs)
+    await user.open("/events")
+    user.find(marker="preview-button-0").click()
+    await user.should_see(marker="hydrograph-0")
+    table = next(iter(user.find(marker="candidates-0").elements))
+    other = next(row for row in table.rows if not row["picked"])
+    user.find(marker="candidates-0").trigger("pick", other)
+    await user.should_see(marker="preview-mismatch-0")

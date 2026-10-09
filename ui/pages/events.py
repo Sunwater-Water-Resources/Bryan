@@ -19,6 +19,7 @@ Extracting the hydrographs for the chosen events is the util script's job.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -66,6 +67,9 @@ async def _off_thread(function, *args):
     if result is None:
         return (None, None) if app.is_stopping else function(*args)
     return result
+
+
+CHOSEN_ROW_JS = "row => row.picked ? 'bg-water-soft text-weight-medium' : ''"
 
 
 def _saved_numbers(saved, defaults) -> dict:
@@ -241,7 +245,8 @@ class _EventsView:
                 ui.space()
                 ui.button("Add loading", icon="add", on_click=self._add
                           ).props("flat dense")
-                ui.button("Save", icon="save", on_click=self._save).props("flat dense")
+                self.saved_label = ui.label("").classes("text-xs text-muted") \
+                    .mark("saved-state")
                 ui.button("Export csv", icon="download", on_click=self._export
                           ).props("flat dense")
             self.target_box = ui.column().classes("w-full gap-1")
@@ -258,7 +263,8 @@ class _EventsView:
             self.summary_box = ui.column().classes("w-full")
             with ui.expansion("Extract the hydrographs and plot them").classes("w-full"):
                 ui.label(
-                    "Save first, then run this with Bryan's interpreter. It "
+                    "Run this with Bryan's interpreter - the selection is saved as "
+                    "you go, so it reads what is on this page. It "
                     "writes a three-panel plot per event - the rebuilt "
                     "hyetograph, the inflow and outflow, and the lake level - "
                     "and a workbook of the series."
@@ -352,6 +358,10 @@ class _EventsView:
                 ui.label("No loadings yet - add one.").classes("text-muted text-sm")
             for position, target in enumerate(self.targets):
                 with ui.row().classes("items-center gap-2 flex-wrap"):
+                    ui.input("Name (optional)", value=target.name,
+                             placeholder="e.g. dam crest flood",
+                             on_change=lambda e, i=position: self._edit(i, "name", e.value)
+                             ).classes("w-56").props(f"dense debounce={TYPING_PAUSE_MS}")                         .mark(f"loading-name-{position}")
                     ui.toggle(KIND_LABELS, value=target.kind,
                               on_change=lambda e, i=position: self._edit(i, "kind", e.value)
                               ).props("no-caps dense")
@@ -373,6 +383,16 @@ class _EventsView:
                     ui.number("Show", value=target.count, format="%d",
                               on_change=lambda e, i=position: self._edit(i, "count", e.value)
                               ).classes("w-24").props(f"debounce={TYPING_PAUSE_MS}")
+                    up = ui.button(icon="arrow_upward",
+                                   on_click=lambda _, i=position: self._move(i, -1)
+                                   ).props("flat dense round").tooltip("Move up") \
+                        .mark(f"loading-up-{position}")
+                    up.set_enabled(position > 0)
+                    down = ui.button(icon="arrow_downward",
+                                     on_click=lambda _, i=position: self._move(i, 1)
+                                     ).props("flat dense round").tooltip("Move down") \
+                        .mark(f"loading-down-{position}")
+                    down.set_enabled(position < len(self.targets) - 1)
                     ui.button(icon="delete", on_click=lambda _, i=position: self._remove(i)
                               ).props("flat dense round")
 
@@ -385,7 +405,7 @@ class _EventsView:
     def _draw_outcome(self, position, outcome) -> None:
         target = outcome.target
         picked = outcome.picked
-        headline = f"{target.label}"
+        headline = f"{target.title}"
         if outcome.aep:
             headline += f"  -  1 in {results.format_aep(outcome.aep)}"
         if outcome.source is not None:
@@ -420,12 +440,15 @@ class _EventsView:
             chart.mark(f"neutrality-{position}")
 
     def _candidate_table(self, position, rows) -> None:
+        # The chosen event's row is shaded, so it can be found again after
+        # scrolling the table sideways, where the radio button is off screen.
         columns = [{"name": "pick", "label": "", "field": "pick", "align": "center"}] + [
             {"name": name, "label": label, "field": name, "sortable": True}
             for name, label in events.CANDIDATE_COLUMNS
         ]
         table = ui.table(columns=columns, rows=rows, row_key="sim") \
             .classes("w-full").props("dense flat bordered") \
+            .props(f':table-row-class-fn="{CHOSEN_ROW_JS}"') \
             .mark(f"candidates-{position}")
         table.add_slot("body-cell-pick", r"""
             <q-td :props="props">
@@ -459,14 +482,26 @@ class _EventsView:
                          "the first time - fills the Shape column for every "
                          "candidate, and draws the chosen event. Click any row "
                          "afterwards to draw that one.")
-            if sim_id is not None:
-                ui.label(f"showing sim {int(sim_id)}").classes("text-xs text-muted")
+            chosen = outcome.picked_id
+            matches = sim_id is None or chosen is None or int(sim_id) == int(chosen)
+            if sim_id is not None and matches:
+                ui.label(f"showing sim {int(sim_id)}, the chosen event") \
+                    .classes("text-xs text-muted")
         for note in self.preview_notes.get(position, ()):
             ui.label(note).classes("text-xs text-muted")
 
         series = self.preview_series.get(position)
+        if series and not matches:
+            # A row clicked to look at it is drawn without being chosen. The
+            # chart's title said so, and was easy to read past.
+            with ui.element("div").classes("w-full").mark(f"preview-mismatch-{position}"):
+                severity_banner("warn",
+                                f"This preview is sim {int(sim_id)}, not the chosen event "
+                                f"(sim {int(chosen)}).",
+                                "Click the chosen event's row to preview it, or pick this "
+                                "one with its radio button.")
         if series:
-            house_echart(eventchart.hydrograph_chart(series, sim_id)) \
+            house_echart(eventchart.hydrograph_chart(series, sim_id, chosen=chosen)) \
                 .classes("w-full h-80").mark(f"hydrograph-{position}")
 
     def _source_key(self, outcome) -> str:
@@ -516,7 +551,11 @@ class _EventsView:
         Only once the panel is in use. A first click should not spend seconds
         reading a file nobody asked for - the button is where that is agreed to.
         """
-        row = next((item for item in (args or []) if isinstance(item, dict)), None)
+        # Quasar sends (event, row, index), and NiceGUI serialises the browser's
+        # click event to a dictionary too - so the row is the one with a 'sim',
+        # not the first dictionary. Taking the first made row clicks do nothing.
+        row = next((item for item in (args or [])
+                    if isinstance(item, dict) and "sim" in item), None)
         if not row or "sim" not in row or position not in self.preview:
             return
         await self._load_preview(position, int(row["sim"]))
@@ -547,8 +586,12 @@ class _EventsView:
             self.extract_box = ui.column().classes("w-full gap-2")
 
     async def _run_extract(self, selection) -> None:
+        # A selection nobody has changed yet has never been saved - the defaults
+        # are not written on opening - so save what is on screen before reading it.
+        self._autosave()
         if not Path(selection).is_file():
-            ui.notify("Save the chosen events first", type="warning")
+            ui.notify("The selection could not be saved, so there is nothing to extract",
+                      type="warning")
             return
         argv = events.extract_argv(self.project, selection,
                                    STATE.settings.bryan_python or "python")
@@ -620,6 +663,7 @@ class _EventsView:
         # They are per result type: 20 mm of lake level is not 20 m3/s.
         self._show_bands()
         self.refresh()
+        self._autosave()
 
     def _show_bands(self) -> None:
         """Put this result type's band and rounding in their fields."""
@@ -643,10 +687,12 @@ class _EventsView:
             return                            # mid-edit, as the loading rows are
         values[self.result_type] = max(float(value), 0.0)
         self.refresh()
+        self._autosave()
 
     def _on_order(self, event) -> None:
         self.order = event.value
         self.refresh()
+        self._autosave()
 
     def _on_filter(self, name, value) -> None:
         if name in ("aep_of_pmp", "max_delta_z"):
@@ -657,6 +703,7 @@ class _EventsView:
             name: value,
         })
         self.refresh()
+        self._autosave()
 
     def _edit(self, position, name, value) -> None:
         if position >= len(self.targets):
@@ -673,11 +720,20 @@ class _EventsView:
             value = max(int(value), 1)
         if getattr(target, name) == value:
             return
+        if name == "name":
+            # A label, not a different loading: nothing to re-rank, and the
+            # name box keeps its focus because the row is not redrawn.
+            target.name = str(value or "")
+            self._draw_details()
+            self._draw_summary()
+            self._autosave()
+            return
         setattr(target, name, value)
         if name in ("kind", "value", "source"):
             # A different loading is a different event - do not carry the pick.
             target.picked = None
         self.refresh()
+        self._autosave()
 
     def _add(self) -> None:
         self.targets.append(events.Target(kind="aep", value=100,
@@ -686,6 +742,7 @@ class _EventsView:
         # Open the one just added: it is what the user is about to work on.
         self.open_cards.add(len(self.targets) - 1)
         self.refresh(redraw_targets=True)
+        self._autosave()
 
     def _remove(self, position) -> None:
         if position < len(self.targets):
@@ -695,11 +752,29 @@ class _EventsView:
         self.open_cards = {index if index < position else index - 1
                            for index in self.open_cards if index != position}
         self.refresh(redraw_targets=True)
+        self._autosave()
+
+    def _move(self, position, step) -> None:
+        """Swap a loading with its neighbour. The outcomes go with them, so
+        nothing is re-ranked; the open cards follow their loadings."""
+        other = position + step
+        if not (0 <= position < len(self.targets) and 0 <= other < len(self.targets)):
+            return
+        for items in (self.targets, self.outcomes):
+            if len(items) == len(self.targets):
+                items[position], items[other] = items[other], items[position]
+        swap = {position: other, other: position}
+        self.open_cards = {swap.get(index, index) for index in self.open_cards}
+        self._draw_targets()
+        self._draw_details()
+        self._draw_summary()
+        self._autosave()
 
     def _pick(self, position, row) -> None:
         if position < len(self.targets) and isinstance(row, dict):
             self.targets[position].picked = int(row.get("sim"))
         self.refresh()
+        self._autosave()
 
     def _reload(self) -> None:
         events.forget_cached()
@@ -717,24 +792,43 @@ class _EventsView:
                 "exclude_embedded": self.filters.exclude_embedded,
                 "exclude_flagged": self.filters.exclude_flagged}
 
-    def _save(self) -> None:
+    def _autosave(self) -> None:
+        """Save the selection after every change, as the rest of the launcher does.
+
+        It had a Save button, and was the one page that did - a selection made
+        and never saved was lost on the next group or page, and the extract
+        read whatever was saved last. The file holds each loading's event as
+        shown, the automatic top-ranked one included, which the extract needs;
+        the page itself does not take that as a choice, so changing the
+        ranking settings still moves an event nobody picked.
+        """
         if self.folder is None:
-            ui.notify("Nowhere to save - no database folder", type="warning")
+            self._saved("not saved - there is no database folder to save beside")
             return
-        # Save what is on screen, pick included, so reopening shows the same
-        # list - and where each event came from, which is what lets the util
-        # script find the database and the stored hydrographs without being
-        # told a second time.
+        stored = []
         for target, outcome in zip(self.targets, self.outcomes):
+            # Where each event came from, which is what lets the util script find
+            # the database and the stored hydrographs without being told again.
             if outcome.source is not None:
                 target.output_file = outcome.source.output_name
                 target.database = events.project_relative(self.project,
                                                           outcome.source.path)
-            if target.picked is None and outcome.picked_id is not None:
-                target.picked = int(outcome.picked_id)
+            copy = events.Target.from_dict(target.to_dict())
+            if copy.picked is None and outcome.picked_id is not None:
+                copy.picked = int(outcome.picked_id)
+            stored.append(copy)
         path = events.selection_path(self.folder, self.group)
-        events.save_targets(path, self.targets, self._settings())
-        ui.notify(f"Saved {path}")
+        try:
+            events.save_targets(path, stored, self._settings())
+        except OSError as exc:
+            self._saved(f"NOT saved: {exc}")
+            ui.notify(f"Could not save {Path(path).name}: {exc}", type="warning")
+            return
+        self._saved(f"saved {time.strftime('%H:%M:%S')} to {Path(path).name}")
+
+    def _saved(self, text) -> None:
+        if getattr(self, "saved_label", None) is not None:
+            self.saved_label.set_text(text)
 
     def _export(self) -> None:
         rows = events.summary_rows(self.outcomes)

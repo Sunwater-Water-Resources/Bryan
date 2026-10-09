@@ -332,7 +332,25 @@ def test_the_default_order_is_still_the_neutral_one(project):
                            source="24h", count=3)
     outcome = events.evaluate(project, sources, target, events.Filters())
     assert outcome.picked_id == 0
-    assert outcome.target_value is None
+
+
+def test_an_aep_loading_measures_its_delta_target_whatever_the_order(project):
+    """The design level at the AEP is read off the envelope for the table, but
+    under the neutral order it is only measured against, never ranked on."""
+    sources = events.sources_for_rows(project)
+    levels = events.level_curve(project, sources)
+    target = events.Target(kind="aep", value=1000, result_type="level",
+                           source="24h", count=3)
+    neutral = events.evaluate(project, sources, target, events.Filters())
+    assert neutral.target_value == pytest.approx(float(levels.loc[1000]), rel=1e-6)
+    rows = events.candidate_rows(neutral)
+    assert all(row["delta_value"] != "-" for row in rows)
+    # the order is still on z: the same events, in the same order, as before
+    scored = neutral.ranking.candidates
+    assert list(scored["delta_z"]) == sorted(scored["delta_z"])
+    # and nothing new is said or marked for a loading that is not ranked on value
+    assert neutral.data_z is None
+    assert not any(note.startswith("Ranking on") for note in neutral.notes)
 
 
 def test_ranking_the_inflow_reads_the_inflow_curve(project):

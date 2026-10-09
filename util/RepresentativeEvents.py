@@ -513,7 +513,7 @@ def figure_for(event):
 def _title(event):
     target = event['target']
     sim = event['sim']
-    bits = [f'{target.label} {target.result_type}', f'sim {event["sim_id"]}']
+    bits = [f'{target.title} {target.result_type}', f'sim {event["sim_id"]}']
     if sim is not None:
         rain = sim.get('rain_aep')
         if rain is not None and not pd.isna(rain):
@@ -532,7 +532,7 @@ def summary_frame(collected):
         target = event['target']
         sim = event['sim']
         hyeto = event['hyetograph']
-        row = {'loading': target.label, 'result': target.result_type,
+        row = {'loading': target.label, 'name': target.name, 'result': target.result_type,
                'source': target.source, 'output file': target.output_file,
                'sim': event['sim_id'], 'hydrograph': event['column']}
         for name in ('rain_aep', 'mean_rain_mm', 'preburst_mm', 'ADV',
@@ -632,7 +632,7 @@ def main(argv=None):
     storms = {}
     collected = []
     for target in chosen:
-        print(f'\n{target.label} ({target.result_type}) - simulation {target.picked}')
+        print(f'\n{target.title} ({target.result_type}) - simulation {target.picked}')
         event = collect(target, frame, config, storms,
                         rebuild=not args.no_hyetograph)
         for note in event['notes']:

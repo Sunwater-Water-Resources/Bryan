@@ -22,7 +22,7 @@ this borrows its AEP axis from.
 from __future__ import annotations
 
 from .results import normal_variate
-from .palette import MUTED
+from .palette import MUTED, OCHRE
 from .resultchart import PALETTE, aep_axis, numeric
 
 # Enough of the standard set to label either axis over any range Bryan runs.
@@ -203,8 +203,25 @@ HYDROGRAPH_LABELS = {"inflows": "Inflow", "outflows": "Outflow",
                      "levels": "Lake level"}
 
 
-def hydrograph_chart(series, sim_id, title="") -> dict:
+def preview_title(sim_id, chosen=None) -> tuple:
+    """(title, matches) for a preview: whether it shows the loading's chosen event.
+
+    A row clicked to look at it is drawn without being chosen, so the chart can
+    show one event while the loading has another. The title alone said which,
+    and was easy to read past.
+    """
+    if chosen is None:
+        return f"sim {int(sim_id)}", True
+    if int(sim_id) == int(chosen):
+        return f"sim {int(sim_id)} - the chosen event", True
+    return f"sim {int(sim_id)} - not the chosen event (sim {int(chosen)})", False
+
+
+def hydrograph_chart(series, sim_id, title="", chosen=None) -> dict:
     """One realisation's stored hydrographs - the shape behind the peak.
+
+    ``chosen`` is the loading's chosen event. When the preview is another one,
+    the title turns to the attention colour and the plot carries a watermark.
 
     Flows on the left axis and the lake level on the right, because the two are
     orders of magnitude apart and the question being asked - is this one rise
@@ -232,9 +249,11 @@ def hydrograph_chart(series, sim_id, title="") -> dict:
     if not drawn:
         return {"series": []}
 
-    return {
-        "title": {"text": title or f"sim {int(sim_id)}", "left": "center",
-                  "textStyle": {"fontSize": 13}},
+    text, matches = preview_title(sim_id, chosen)
+    options = {
+        "title": {"text": title or text, "left": "center",
+                  "textStyle": {"fontSize": 13,
+                                **({} if matches else {"color": OCHRE})}},
         "tooltip": {"trigger": "axis"},
         "legend": {"type": "scroll", "top": 34},   # clear of a 13 px title
         "grid": {"left": 70, "right": 70, "top": 72, "bottom": 50},
@@ -249,3 +268,11 @@ def hydrograph_chart(series, sim_id, title="") -> dict:
         ],
         "series": drawn,
     }
+    if not matches:
+        options["graphic"] = [{
+            "type": "text", "left": "center", "top": "middle", "silent": True,
+            "z": -1,
+            "style": {"text": "NOT THE CHOSEN EVENT", "fill": OCHRE, "opacity": 0.18,
+                      "fontSize": 30, "fontWeight": "bold"},
+        }]
+    return options

@@ -297,6 +297,24 @@ def test_target_labels_read_as_loadings():
     assert events.Target(kind="level", value=220.5).label == "220.5 m AHD"
 
 
+def test_a_loading_s_name_is_kept_and_shown_with_its_value(tmp_path):
+    named = events.Target(kind="level", value=219.13, name="Dam crest flood")
+    assert named.title == "Dam crest flood (219.13 m AHD)"
+    assert named.label == "219.13 m AHD"            # files stay named by value
+    assert events.Target(kind="aep", value=100).title == "1 in 100"
+
+    path = tmp_path / events.SELECTION_FILE
+    path.write_text(json.dumps(events.selection_payload([named])))
+    assert events.read_selection(path)[0][0].name == "Dam crest flood"
+
+
+def test_a_selection_saved_before_names_existed_still_reads(tmp_path):
+    path = tmp_path / events.SELECTION_FILE
+    path.write_text(json.dumps({"targets": [{"kind": "aep", "value": 100}]}))
+    target = events.read_selection(path)[0][0]
+    assert target.name == "" and target.title == "1 in 100"
+
+
 # -- the AEP of the PMP ------------------------------------------------------
 
 def test_the_pmp_aep_is_read_from_the_ifd_files_config(tmp_path):

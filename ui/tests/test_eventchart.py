@@ -93,3 +93,18 @@ def test_the_plot_area_is_square_so_distance_on_the_page_is_delta_z():
     grid = chart["grid"]
     assert grid["left"] + grid["right"] == grid["top"] + grid["bottom"]
     assert "aspect-ratio: 1 / 1" in eventchart.SQUARE_STYLE
+
+
+def test_a_preview_of_the_chosen_event_is_plain_and_another_is_marked():
+    import pandas as pd
+    series = {"inflows": pd.Series([0.0, 5.0, 1.0], index=[0.0, 1.0, 2.0])}
+    same = eventchart.hydrograph_chart(series, 12, chosen=12)
+    assert same["title"]["text"] == "sim 12 - the chosen event"
+    assert "graphic" not in same and "color" not in same["title"]["textStyle"]
+
+    other = eventchart.hydrograph_chart(series, 40, chosen=12)
+    assert other["title"]["text"] == "sim 40 - not the chosen event (sim 12)"
+    assert other["title"]["textStyle"]["color"] == eventchart.OCHRE
+    assert other["graphic"][0]["style"]["text"] == "NOT THE CHOSEN EVENT"
+
+    assert eventchart.hydrograph_chart(series, 40)["title"]["text"] == "sim 40"
