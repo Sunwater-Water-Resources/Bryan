@@ -82,7 +82,52 @@ def find_selections(folder) -> list:
     return [str(p) for p in found]
 
 
-def plan(selection_path, duration=None, gwl=None) -> Plan:
+def group_of(selection_path) -> str:
+    """The group a selection was saved for, from its file name; '' where it carries none."""
+    name = os.path.basename(str(selection_path))
+    tail = '_' + EVENTS.SELECTION_FILE
+    return name[:-len(tail)] if name.endswith(tail) else ''
+
+
+def storm_names(selection_path, suffix='') -> set:
+    """The storm files a selection would write, for comparing one selection with another."""
+    return {storm.filename for storm in plan(selection_path, suffix=suffix).ready}
+
+
+def clashes(selection_path, selections, suffix='') -> list:
+    """The other selections in the project that would write a file of the same name.
+
+    A storm file is named for its realisation, duration and warming level. Two groups that
+    share a realisation at the same duration and warming level - the same Monte Carlo run
+    re-routed at two full supply levels, say - therefore write the same name, and the second
+    silently replaces the first: the storm, and the URBS results named after it. Each is
+    compared as it would be written with no suffix of its own, since that is what a run of it
+    left behind unless one was given.
+    """
+    mine = storm_names(selection_path, suffix)
+    here = os.path.abspath(str(selection_path))
+    return [other for other in selections
+            if os.path.abspath(str(other)) != here and mine & storm_names(other)]
+
+
+def suggested_suffix(selection_path, selections) -> str:
+    """A suffix that keeps this selection's files apart from the others', or '' if none is needed.
+
+    The leading word of the group name where that is enough to tell the clashing groups apart
+    (``RFSL_Design_GWL1p3`` and ``FSL_Design_GWL1p3`` give ``_RFSL`` and ``_FSL``), and the
+    whole group name where it is not.
+    """
+    others = clashes(selection_path, selections)
+    group = group_of(selection_path)
+    if not others or not group:
+        return ''
+    lead = group.split('_')[0]
+    if all(group_of(other).split('_')[0] != lead for other in others):
+        return f'_{lead}'
+    return f'_{group}'
+
+
+def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
     """What a run over this selection would write, and what would stop it.
 
     Nothing here is fatal on its own: a loading with no event picked is simply
@@ -106,7 +151,8 @@ def plan(selection_path, duration=None, gwl=None) -> Plan:
             problem = 'no warming level in the database name - give one'
         name = None
         if not problem:
-            name = f'{int(target.picked):06d}_{d:g}h_GWL{g:g}'.replace('.', 'p') + f'.{d:g}'
+            name = (f'{int(target.picked):06d}_{d:g}h_GWL{g:g}'.replace('.', 'p')
+                    + f'{suffix or ""}.{d:g}')
         out.storms.append(PlannedStorm(
             loading=f'{target.kind} {target.value:g}', result_type=target.result_type,
             realisation=int(target.picked), database=str(target.database),
@@ -115,7 +161,7 @@ def plan(selection_path, duration=None, gwl=None) -> Plan:
 
 
 def command(selection, config, model, bryan_python=None, duration=None, gwl=None,
-            rain_lag=0.0, suffix='', dry_run=False, sims_config=None) -> list:
+            rain_lag=0.0, suffix='', dry_run=False, sims_config=None, run_urbs=False) -> list:
     """The command line the run uses. Built here so a test can read it."""
     script = Path(__file__).resolve().parents[2] / 'DownstreamStorms.py'
     argv = [str(bryan_python or sys.executable), str(script),
@@ -133,6 +179,29 @@ def command(selection, config, model, bryan_python=None, duration=None, gwl=None
         argv += ['--suffix', suffix]
     if dry_run:
         argv += ['--dry-run']
+    elif run_urbs:
+        # never with --dry-run: that writes no storm for URBS to run, and the generator refuses
+        argv += ['--run-urbs']
+    return argv
+
+
+def boundaries_command(selection, model, dam_outflow, out, bryan_python=None, duration=None,
+                       gwl=None, suffix='', gate_scenario='', name_contains='') -> list:
+    """The command that puts a dam failure model's outflow into the regional inflow files."""
+    script = Path(__file__).resolve().parents[2] / 'DownstreamBoundaries.py'
+    argv = [str(bryan_python or sys.executable), str(script),
+            '--selection', str(selection), '--model', str(model),
+            '--dam-outflow', str(dam_outflow), '--out', str(out)]
+    if duration is not None:
+        argv += ['--duration', str(duration)]
+    if gwl is not None:
+        argv += ['--gwl', str(gwl)]
+    if suffix:
+        argv += ['--suffix', suffix]
+    if gate_scenario:
+        argv += ['--gate-scenario', gate_scenario]
+    if name_contains:
+        argv += ['--name-contains', name_contains]
     return argv
 
 

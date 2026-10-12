@@ -126,3 +126,75 @@ def test_summarise_flags_what_needs_a_look(tmp_path):
     out = downstream.summarise(str(csv))
     assert out['written'] == 3
     assert [r['filename'] for r in out['flagged']] == ['b.24', 'c.24']
+
+
+# -- two groups that share a realisation ---------------------------------------------
+
+def two_groups(tmp_path):
+    """RFSL and FSL selections holding the same realisation of the same database."""
+    db = database(tmp_path)
+    rfsl = selection(tmp_path, [target(db)], 'RFSL_Design_GWL1p3_representative_events.json')
+    fsl = selection(tmp_path, [target(db)], 'FSL_Design_GWL1p3_representative_events.json')
+    return rfsl, fsl
+
+
+def test_a_suffix_goes_before_the_extension(tmp_path):
+    plan = downstream.plan(selection(tmp_path, [target(database(tmp_path))]), suffix='_RFSL')
+    assert plan.storms[0].filename == '000042_24h_GWL1p3_RFSL.24'
+
+
+def test_two_groups_sharing_a_realisation_clash(tmp_path):
+    rfsl, fsl = two_groups(tmp_path)
+    assert downstream.clashes(rfsl, [rfsl, fsl]) == [fsl]
+    assert downstream.clashes(rfsl, [rfsl, fsl], suffix='_RFSL') == []
+
+
+def test_the_suggested_suffix_is_the_word_that_tells_the_groups_apart(tmp_path):
+    rfsl, fsl = two_groups(tmp_path)
+    assert downstream.suggested_suffix(rfsl, [rfsl, fsl]) == '_RFSL'
+    assert downstream.suggested_suffix(fsl, [rfsl, fsl]) == '_FSL'
+
+
+def test_no_suffix_is_suggested_where_nothing_clashes(tmp_path):
+    only = selection(tmp_path, [target(database(tmp_path))])
+    assert downstream.suggested_suffix(only, [only]) == ''
+
+
+def test_groups_with_the_same_leading_word_get_the_whole_name(tmp_path):
+    db = database(tmp_path)
+    one = selection(tmp_path, [target(db)], 'RFSL_Design_GWL1p3_representative_events.json')
+    two = selection(tmp_path, [target(db)], 'RFSL_Sens_GWL1p3_representative_events.json')
+    assert downstream.suggested_suffix(one, [one, two]) == '_RFSL_Design_GWL1p3'
+
+
+# -- running URBS, and the dam's outflow ----------------------------------------------
+
+def test_urbs_is_run_only_when_asked_and_never_on_a_check(tmp_path):
+    base = ('sel.json', 'cfg.json', 'model.json')
+    assert '--run-urbs' not in downstream.command(*base)
+    assert '--run-urbs' in downstream.command(*base, run_urbs=True)
+    checked = downstream.command(*base, run_urbs=True, dry_run=True)
+    assert '--dry-run' in checked and '--run-urbs' not in checked
+
+
+def test_the_suffix_and_the_sims_config_reach_the_generator():
+    argv = downstream.command('sel.json', 'cfg.json', 'model.json', suffix='_RFSL',
+                              sims_config='sims_config.json')
+    assert argv[argv.index('--suffix') + 1] == '_RFSL'
+    assert argv[argv.index('--sims-config') + 1] == 'sims_config.json'
+
+
+def test_the_boundaries_command_names_its_script_and_what_it_was_given():
+    argv = downstream.boundaries_command(
+        'sel.json', 'model.json', 'Simulation_List.xlsx', 'out', bryan_python='/py',
+        suffix='_RFSL', gate_scenario='gate_fail_1', name_contains='TFL_')
+    assert argv[0] == '/py' and argv[1].endswith('DownstreamBoundaries.py')
+    for flag, value in (('--dam-outflow', 'Simulation_List.xlsx'), ('--out', 'out'),
+                        ('--suffix', '_RFSL'), ('--gate-scenario', 'gate_fail_1'),
+                        ('--name-contains', 'TFL_')):
+        assert argv[argv.index(flag) + 1] == value
+
+
+def test_the_gates_working_case_passes_no_gate_scenario():
+    argv = downstream.boundaries_command('sel.json', 'model.json', 'list.xlsx', 'out')
+    assert '--gate-scenario' not in argv and '--name-contains' not in argv

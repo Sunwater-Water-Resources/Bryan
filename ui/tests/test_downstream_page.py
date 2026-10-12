@@ -72,3 +72,36 @@ async def test_a_project_with_no_saved_selection_says_so(user, tmp_path):
     _open(_project(tmp_path))
     await user.open("/downstream")
     await user.should_see("No saved event selections under this project.")
+
+
+@pytest.mark.asyncio
+async def test_two_groups_sharing_a_realisation_get_a_suffix_each(user, tmp_path):
+    # the same Monte Carlo run re-routed at two full supply levels: one realisation, one
+    # duration, one warming level, and so one storm file name between them
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    one = _selection(tmp_path, database)
+    one.rename(tmp_path / "FSL_Design_GWL1p3_representative_events.json")
+    two = _selection(tmp_path, database)
+    two.rename(tmp_path / "RFSL_Design_GWL1p3_representative_events.json")
+    _open(config)
+    await user.open("/downstream")
+    from nicegui import ui as nicegui_ui
+    table = next(iter(user.find(kind=nicegui_ui.table).elements))
+    file, = [row["file"] for row in table.rows]
+    assert file in ("000042_24h_GWL1p3_RFSL.24", "000042_24h_GWL1p3_FSL.24")
+    await user.should_not_see("one set replaces the other")
+
+
+@pytest.mark.asyncio
+async def test_the_page_offers_urbs_and_the_dam_failure_outflow(user, tmp_path):
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    _selection(tmp_path, database)
+    _open(config)
+    await user.open("/downstream")
+    await user.should_see("Run URBS on each storm")
+    await user.should_see("Dam outflow from a dam failure model")
+    await user.should_see("Write hydraulic model inflow files")

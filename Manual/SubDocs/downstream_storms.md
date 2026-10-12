@@ -19,7 +19,7 @@ The temporal pattern is the one the upstream event drew, rebuilt from the mcdf.
 
 ## What the launcher asks for
 
-The **Downstream** page takes five things:
+The **Downstream** page takes these to write the storm files:
 
 | Field | What it is |
 | --- | --- |
@@ -28,6 +28,13 @@ The **Downstream** page takes five things:
 | **GWL (°C)** | the same, read from `GWL<n>` in the database name. |
 | **Downstream storm config** | the JSON described below. This is the file to get right. |
 | **Regional model URBS config** | a normal Bryan [model config](config/ModelConfig.md) for the *regional* model — the one the storm files are being written for. |
+| **File name suffix** | added to each storm file's name, before the extension. See *Two groups that share a realisation* below; the page fills it in when it is needed. |
+| **Run URBS on each storm** | off, the storm files and a batch file each are written and URBS is left to be run by hand. On, each storm is run as it is written. |
+
+It also passes the open project's sims config to the generator, so an event whose embedded
+bursts were filtered keeps its filtered pattern (see below). **Open the sims config the
+selection was saved under**: a selection from another sims list has no row here to rebuild
+from, and a filtered event in it is refused.
 
 The two config paths are remembered **per project**, keyed on the sims config's resolved
 path, so they survive leaving the page and reloading the project. They are kept in
@@ -54,6 +61,19 @@ python DownstreamStorms.py --config <downstream config> --selection <selection j
 The selection records each event's database relative to the project folder. The command finds
 it from the selection file itself, which is saved inside the project, so it can be run from any
 folder. `--project` names the project folder for a selection that has been copied out of it.
+
+### Two groups that share a realisation
+
+A storm file is named for its realisation, duration and warming level. Two groups that share
+all three write the same name - the same Monte Carlo run re-routed at two full supply levels
+is the usual case - and the second replaces the first: the storm, and the URBS results named
+after it. The suffix keeps them apart. The page compares the selection with the others saved
+in the project and, where they would clash, fills in the leading word of the group name
+(```_RFSL``` for ```RFSL_Design_GWL1p3```), or the whole group name where that word is shared.
+It says so under the plan if a clash remains. Whatever is typed in the box is kept.
+
+The same suffix has to be given when the dam's outflow is put into the inflow files, since
+it is part of the name of the run.
 
 ### Events whose embedded bursts were filtered
 
@@ -91,6 +111,52 @@ second to run.
 ```set URBS_TFLW=TRUE``` in the batch file, and so what makes URBS write the subcatchment
 runoff and the flows at every print location to csv - the upstream boundaries this run exists
 to produce. The run warns if it is off rather than leaving you to find the missing files.
+
+### The dam's outflow, from a dam failure model
+
+With ```store_tuflow``` on, URBS writes ```<run>_i.csv```: the flow at every print location
+whose ```PRINT``` statement in the vec carries an asterisk after the name. These are a
+hydraulic model's upstream boundaries, and ```<run>_r.csv``` beside it, the routed runoff of
+each subarea, is its inflows along the reaches. One of the print locations is the dam, and
+its column is the regional model's own routing of the dam.
+
+Where the dam is routed in a dam failure model instead - Judyth - that column has to come
+from there, so that the no-failure boundary and the failure cases are routed by one model.
+The page's lower section does that, and is the command
+
+```
+python DownstreamBoundaries.py --selection <selection json> --model <regional URBS config>
+                               --dam-outflow <dam failure simulation list .xlsx> --out <folder>
+                               [--suffix S] [--gate-scenario NAME] [--name-contains TEXT]
+                               [--duration H] [--gwl G]
+```
+
+| Field | What it is |
+| --- | --- |
+| **Dam failure simulation list** | the dam failure model's simulation list. It is how a run is matched to an event. |
+| **Write the inflow files to** | a folder of its own. URBS's files are left as they are. |
+| **Gate scenario** | the ```Gate_scenario``` of the dam runs to use. Blank is the gates working. |
+| **Only simulations whose name contains** | narrows the list where it holds the same event more than once. |
+
+For each chosen event a copy of ```<run>_i.csv``` is written with the dam's column - the
+location named as ```max_keys``` ```outflow``` in the model config - replaced by the dam
+model's outflow at the same times, and a ```<group>_boundaries.csv``` records which run went
+into which file. With a gate scenario the files are named ```<run>_<scenario>_i.csv```.
+
+The run for an event is the row of the simulation list whose ```Inflow_id``` ends in the
+realisation (```sim08029```), whose ```Bryan_group``` is the selection's group, and whose
+```Gate_scenario``` is the one asked for. Exactly one row has to match; none or several is
+reported with what was looked for. ```Bryan_group``` is a column the dam failure project adds
+to its list for this purpose - without it, two groups sharing a realisation cannot be told
+apart, and the name filter has to do it.
+
+**The dam run has to reach the end of the regional run.** The regional model runs on after
+the upstream one stops, for the flood to pass down the valley, and the dam is still
+releasing over that time. A dam run that stops early is refused rather than padded.
+
+Only the dam's column changes. A print location on the main stem below the dam still holds
+URBS's total, which includes URBS's routing of the dam; it is not a boundary for a hydraulic
+model that starts at the dam.
 
 ### More than one dam
 

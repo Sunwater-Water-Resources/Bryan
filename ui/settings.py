@@ -109,11 +109,37 @@ class UiSettings:
         """Keep the two paths against this project. Blanks are kept as blanks rather
         than merged over, so clearing a field in the page clears it here too."""
         key = self._project_key(config_path)
-        if not config and not model:
-            self.downstream_configs.pop(key, None)
+        kept = {name: value for name, value in (self.downstream_configs.get(key) or {}).items()
+                if name in self.BOUNDARY_FIELDS and value}
+        if config or model:
+            kept.update(config=str(config or ""), model=str(model or ""))
+        if kept:
+            self.downstream_configs[key] = kept
         else:
-            self.downstream_configs[key] = {"config": str(config or ""),
-                                            "model": str(model or "")}
+            self.downstream_configs.pop(key, None)
+        self.save()
+
+    #: What the Downstream page keeps about the dam failure model's outflow, per project.
+    BOUNDARY_FIELDS = ("dam_outflow", "boundaries_folder", "name_contains")
+
+    def boundaries_for(self, config_path) -> dict:
+        """The dam failure list and output folder remembered for this project, or blanks."""
+        stored = self.downstream_configs.get(self._project_key(config_path)) or {}
+        return {name: str(stored.get(name, "")) for name in self.BOUNDARY_FIELDS}
+
+    def remember_boundaries(self, config_path, **fields) -> None:
+        key = self._project_key(config_path)
+        entry = dict(self.downstream_configs.get(key) or {})
+        for name in self.BOUNDARY_FIELDS:
+            if name in fields:
+                if fields[name]:
+                    entry[name] = str(fields[name])
+                else:
+                    entry.pop(name, None)
+        if entry:
+            self.downstream_configs[key] = entry
+        else:
+            self.downstream_configs.pop(key, None)
         self.save()
 
     def open_tables_for(self, study_path) -> set:
