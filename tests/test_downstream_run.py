@@ -158,3 +158,10 @@ def test_store_tuflow_off_is_warned_about(two_dam_model, capsys):
     writer = FakeWriter(two_dam_model)
     writer.run(event(), 'a_storm.24', 'a_storm', execute=False)
     assert 'store_tuflow' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('duration, key', [(72.0, '72'), (36, '36'), (4.5, '4p5'), (9.0, '9')])
+def test_the_simulation_period_is_looked_up_by_the_configs_own_key(duration, key):
+    """A whole-hour duration read from a database name is a float; the key is not."""
+    from lib.DownstreamStorms import period_key
+    assert period_key(duration) == key

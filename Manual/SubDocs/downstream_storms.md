@@ -45,10 +45,34 @@ The same run is available as a CLI, which is what the page shells out to:
 python DownstreamStorms.py --config <downstream config> --selection <selection json>
                            --model <regional URBS config> [--storm-config ...]
                            [--climate-config ...] [--duration H] [--gwl G]
-                           [--rain-lag H] [--suffix S] [--dry-run]
+                           [--rain-lag H] [--suffix S] [--dry-run] [--project FOLDER]
+                           [--sims-config <upstream sims config>]
 ```
 
 `--dry-run` reports without writing, and is the quickest way to see whether the config resolves.
+
+The selection records each event's database relative to the project folder. The command finds
+it from the selection file itself, which is saved inside the project, so it can be run from any
+folder. `--project` names the project folder for a selection that has been copied out of it.
+
+### Events whose embedded bursts were filtered
+
+The database records what a realisation *sampled* - which temporal pattern, at what rainfall -
+and not the series that came of it. Where the upstream run filtered an embedded burst the two
+differ: the same burst depth, spread so that no sub-duration exceeds its own IFD depth. A
+regional storm written from the sampled pattern carries the event's depth in a sharper burst
+than the event had, and the dam catchment nested in the regional model then floods harder than
+the event that was chosen. On Callide's E013 events that was a dam inflow peak 9 to 30 % high
+and a lake level up to 1.1 m high, with the volume right.
+
+```--sims-config``` names the upstream run's sims config - the one the Events page had open.
+With it each event's storm is rebuilt the way [```util/RepresentativeEvents.py```](utilities.md)
+rebuilds it for plotting, checked against the depths the run recorded, and the pattern written
+is the one the run applied. The launcher passes it for you. Without it, an event recorded as
+```Embedded burst filtered``` is refused rather than written with the wrong pattern.
+
+The record of what went into each storm (```..._downstream_storms.csv```) says which was used,
+in its ```temporal_pattern``` column.
 
 ### Running URBS
 

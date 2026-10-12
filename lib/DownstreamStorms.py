@@ -271,6 +271,18 @@ class DownstreamRainfall:
         return pd.DataFrame(rows).set_index('cond_target')
 
 
+def period_key(duration):
+    """A duration as the model config's ``simulation_periods`` keys it.
+
+    The keys are written the way the runs name durations - ``"72"``, ``"4p5"`` - and a
+    duration read out of a database name arrives as a float. ``str(72.0)`` is ``"72.0"``,
+    which matches no key, and the model then falls back to twice the duration without
+    stopping: right for 72 h by coincidence, and 48 h short of the configured period at
+    36 h.
+    """
+    return f'{float(duration):g}'.replace('.', 'p')
+
+
 class DownstreamStormWriter:
     """Turn a chosen representative event into a storm file for the regional model.
 
@@ -304,7 +316,12 @@ class DownstreamStormWriter:
         # quietly replace the event's own temporal pattern with a plausible
         # stranger.
         self.storm.area = driver_area_km2 or rainfall.driver_area_km2
-        self.model = UrbsModel(model_config)
+        # The main dam is the one the model config reports the lake level of, as in a
+        # design run (Simulator). Without it the model never reads its DAM ROUTE line, and
+        # has no full supply volume to set the event's antecedent storage against.
+        with open(model_config) as handle:
+            dam_location = json.load(handle).get('max_keys', {}).get('level')
+        self.model = UrbsModel(model_config, dam_location=dam_location)
         # Only used when a realisation has no ADV column of its own; the additional dams
         # always come from their own lake config, because nothing sampled them.
         self.main_lake_config = main_lake_config
@@ -314,11 +331,15 @@ class DownstreamStormWriter:
     def _import_patterns(self, duration):
         if duration in self._imported:
             return
-        self.storm.import_arr_areal_patterns([duration])
-        self.storm.import_arr_point_patterns([duration])
-        self.storm.import_gsdm_temporal_patterns([duration])
-        self.storm.import_gtsmr_temporal_patterns([duration])
+        # Each import replaces the pattern set it holds with the durations it is given,
+        # so every duration met so far is asked for again. Importing only the new one left
+        # a selection that returns to a duration - 72 h, 36 h, 72 h - without its first.
         self._imported.add(duration)
+        durations = sorted(self._imported)
+        self.storm.import_arr_areal_patterns(durations)
+        self.storm.import_arr_point_patterns(durations)
+        self.storm.import_gsdm_temporal_patterns(durations)
+        self.storm.import_gtsmr_temporal_patterns(durations)
 
     @staticmethod
     def read_event(mcdf_path, realisation):
@@ -471,8 +492,15 @@ class DownstreamStormWriter:
         return batch_path
 
     def write(self, event, duration, filename, gwl=0.0, rain_lag_hours=0.0,
-              il_scaling=1.0, cl_scaling=1.0, cl_floor=0.0, report=True):
-        """Write one storm file. Returns what went into it."""
+              il_scaling=1.0, cl_scaling=1.0, cl_floor=0.0, report=True, pattern=None):
+        """Write one storm file. Returns what went into it.
+
+        ``pattern`` is the event's temporal pattern as the upstream run applied it - percent
+        of the burst per timestep, on the index ``get_temporal_pattern`` uses. It is how an
+        event whose embedded bursts were filtered keeps its filtered pattern: the sampled
+        pattern, which is all this can read for itself, is the one from *before* the filter,
+        and carries the same depth in a sharper burst. Left out, the sampled pattern is used.
+        """
         self._import_patterns(duration)
         driver_aep = float(event['rain_aep'])
         method = str(event['storm_method'])
@@ -481,10 +509,17 @@ class DownstreamStormWriter:
         depths = self.rainfall.depths(duration, driver_aep, method) * scaling
         depths = depths.reindex(self.rainfall.subareas.index)
 
-        pattern = self.storm.get_temporal_pattern(
-            storm_method=method, duration=duration,
-            tp_sample=int(event['tp']), rain_sample_z=float(event['rain_z']))
-        period = self.model.get_simulation_period(duration)
+        rebuilt = pattern is not None
+        if not rebuilt:
+            pattern = self.storm.get_temporal_pattern(
+                storm_method=method, duration=duration,
+                tp_sample=int(event['tp']), rain_sample_z=float(event['rain_z']))
+            interval = self.storm.timesteps
+        else:
+            # the pattern arrives with its own timestep; this storm object has read none
+            steps = [float(t) for t in pattern.index]
+            interval = steps[1] - steps[0] if len(steps) > 1 else steps[0]
+        period = self.model.get_simulation_period(period_key(duration))
         if rain_lag_hours:
             pattern = shift_pattern(pattern, rain_lag_hours)
             period += abs(rain_lag_hours)
@@ -492,7 +527,7 @@ class DownstreamStormWriter:
         il, cl = self.losses(event, il_scaling, cl_scaling, cl_floor)
         self.model.create_storm_file(
             rainfall_depths=depths, temporal_pattern=pattern,
-            data_interval=self.storm.timesteps, filename=filename,
+            data_interval=interval, filename=filename,
             run_duration=period, storm_duration=duration,
             storm_duration_excl_pb=duration, initial_loss=il, continuing_loss=cl,
             ari=int(round(driver_aep)), ensemble=int(event['tp']))
@@ -503,10 +538,14 @@ class DownstreamStormWriter:
                       mean_depth_mm=round(float((depths * self.rainfall.subareas['area_km2']).sum()
                                                 / self.rainfall.subareas['area_km2'].sum()), 1),
                       embedded_bursts=str(event.get('embedded_bursts', '')),
+                      temporal_pattern='rebuilt from the run' if rebuilt else 'as sampled',
                       duration_dip=';'.join(self.duration_dip(duration, driver_aep)))
         if report:
             if record['embedded_bursts'] not in ('', 'No embedded bursts'):
-                print(f"  WARNING {filename}: {record['embedded_bursts']}")
+                print(f"  {'NOTE   ' if rebuilt else 'WARNING'} {filename}: "
+                      f"{record['embedded_bursts']}"
+                      + (' - the filtered pattern is applied' if rebuilt else
+                         ' - but the pattern applied here is the unfiltered one'))
             if record['duration_dip']:
                 print(f"  CHECK   {filename}: conditional depth falls from the duration below "
                       f"in {record['duration_dip']}")

@@ -61,6 +61,46 @@ def storm_name(target, duration, gwl, suffix):
     return f'{stem}{suffix}.{duration:g}'
 
 
+#: What the upstream run records against a realisation whose pattern it changed.
+FILTERED = 'Embedded burst filtered'
+
+
+class PatternRebuild:
+    """Each event's temporal pattern as the upstream run applied it.
+
+    The database records what was sampled - which pattern, at what rainfall - and not the
+    series that came of it. Where the run filtered an embedded burst the two differ: the
+    same burst depth, spread to keep every sub-duration inside its own IFD depth. The
+    regional storm has to carry the pattern the event had, or the dam catchment nested in
+    the regional model gets a sharper storm than the one that was chosen, and a larger
+    flood. ``util/RepresentativeEvents.py`` already replays the storm generation for one
+    realisation and checks the result against the depths the run recorded; this uses the
+    same code, so the pattern written here is the one it plots.
+    """
+
+    def __init__(self, sims_config):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'util'))
+        import RepresentativeEvents as extract
+        self.extract = extract
+        self.config = extract.load_config(sims_config)
+        self.frame = extract.read_sims_list(self.config['sims_list'])
+        self.storms = {}
+
+    def pattern(self, target, event):
+        """Percent of the burst per timestep, or None where it cannot be rebuilt."""
+        row = self.extract.find_row(self.frame, target.output_file)
+        source, note = self.extract.storm_row(self.frame, row)
+        if source is None:
+            print(f'  NOTE: the pattern was not rebuilt - {note}')
+            return None
+        hyeto = self.extract.rebuild_hyetograph(source, event, self.config, self.storms)
+        if not hyeto.trustworthy:
+            raise SystemExit(f'the storm rebuilt for realisation {target.picked} does not match '
+                             f'what the run recorded: ' + '; '.join(hyeto.problems))
+        burst = hyeto.depths[hyeto.depths.index >= 0]
+        return 100.0 * burst / burst.sum()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--config', required=True, help='the downstream storm config')
@@ -78,10 +118,21 @@ def main():
     ap.add_argument('--run-urbs', action='store_true',
                     help='run URBS on each storm as it is written. Without this the batch '
                          'file is still written and can be run by hand or in a batch later')
+    ap.add_argument('--sims-config',
+                    help="the upstream run's sims config - the one the Events page had open. "
+                         "With it each event's temporal pattern is rebuilt as the run applied "
+                         "it, embedded burst filtering included. Needed for any event whose "
+                         "embedded bursts were filtered")
+    ap.add_argument('--project',
+                    help='the project folder the selection was saved in. Only needed when '
+                         'its databases are not found from the selection file itself')
     ap.add_argument('--lake-config',
                     help="the main dam's lake config, used only where a realisation has no "
                          "ADV column of its own")
     args = ap.parse_args()
+    # URBS is run from the model folder, by a batch file that changes into it first, so a
+    # model config given relative to where this was typed points nowhere once it has.
+    args.model = os.path.abspath(args.model)
 
     with open(args.config) as handle:
         cfg = json.load(handle)
@@ -111,11 +162,19 @@ def main():
     writer = None if args.dry_run else DownstreamStormWriter(
         rainfall, storm_config, args.model, climate, main_lake_config=lake_config)
 
+    rebuild = PatternRebuild(args.sims_config) if args.sims_config else None
+
     records = []
     for target in chosen:
         duration = from_name(DURATION, target.database, args.duration, 'duration')
         gwl = from_name(GWL, target.database, args.gwl, 'warming level')
-        event = DownstreamStormWriter.read_event(target.database, int(target.picked))
+        # Saved relative to the project folder, which is not always where this is run.
+        database = events.locate_database(target.database, args.selection, args.project)
+        if not os.path.isfile(database):
+            raise SystemExit(f'the database for realisation {target.picked} is not on disk: '
+                             f'"{target.database}". It is saved relative to the project '
+                             f'folder - pass that as --project')
+        event = DownstreamStormWriter.read_event(database, int(target.picked))
         name = storm_name(target, duration, gwl, args.suffix)
         print(f'\n{target.kind} {target.value:g} ({target.result_type}) -> realisation '
               f'{target.picked}, {duration:g} h, GWL {gwl:g}')
@@ -125,8 +184,16 @@ def main():
                                 storm_method=str(event['storm_method'])))
             print(f'  would write {name}')
             continue
+        pattern = rebuild.pattern(target, event) if rebuild else None
+        if pattern is None and FILTERED in str(event.get('embedded_bursts', '')):
+            raise SystemExit(
+                f'realisation {target.picked} had its embedded bursts filtered in the run that '
+                f'produced it, and the pattern read from the database is the one from before '
+                f'the filter. Pass --sims-config (the upstream sims config) so the filtered '
+                f'pattern is rebuilt; without it the regional storm carries the same depth in '
+                f'a sharper burst than the event had.')
         records.append(writer.write(event, duration, name, gwl=gwl,
-                                    rain_lag_hours=args.rain_lag))
+                                    rain_lag_hours=args.rain_lag, pattern=pattern))
         print(f'  wrote {name}')
         # The batch file carries every dam's antecedent level beside the URBS command
         # line, so it is always written: it is the record of what the run was, whether

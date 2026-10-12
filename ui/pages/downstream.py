@@ -101,7 +101,8 @@ def downstream_page() -> None:
             argv = downstream.command(
                 state["selection"], state["config"], state["model"],
                 bryan_python=STATE.settings.bryan_python or None,
-                duration=state["duration"], gwl=state["gwl"], dry_run=dry_run)
+                duration=state["duration"], gwl=state["gwl"], dry_run=dry_run,
+                sims_config=project.config.config_path)
             log = Path(state["selection"]).with_suffix(".downstream.log")
             state["process"] = downstream.launch(argv, cwd=folder, log_path=log)
             ui.notify(f"{'Checking' if dry_run else 'Generating'} - output in {log.name}")

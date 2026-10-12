@@ -847,6 +847,40 @@ def read_selection(path) -> tuple:
     return targets, dict(data.get('settings', {}))
 
 
+def locate_database(database, selection_path, project_folder=None) -> str:
+    """Where a saved target's database is, from wherever the caller is running.
+
+    The Events page records the database **relative to the project folder**, so a
+    saved selection survives the project being moved or opened on another machine.
+    That only resolves when the reader happens to be running in the project folder -
+    which the launcher arranges, and a command line typed anywhere else does not.
+
+    So look in the project folder when one is given, then in the current folder, then
+    upwards from the selection file itself: it is saved inside the project, beside the
+    databases, so one of its parent folders is the one the path was written against.
+    The first that holds the file wins. Returned unchanged when none does, so the
+    caller's own "not on disk" message names the path as it was saved.
+    """
+    text = str(database or '')
+    if not text or os.path.isabs(text):
+        return text
+    relative = text.replace('\\', os.sep).replace('/', os.sep)
+    folders = [project_folder] if project_folder else []
+    folders.append(os.getcwd())
+    folder = os.path.dirname(os.path.abspath(str(selection_path)))
+    while True:
+        folders.append(folder)
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    for folder in folders:
+        candidate = os.path.normpath(os.path.join(str(folder), relative))
+        if os.path.isfile(candidate):
+            return candidate
+    return text
+
+
 def selection_payload(targets, settings=None) -> dict:
     return {
         'targets': [target.to_dict() for target in targets],

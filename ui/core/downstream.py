@@ -97,7 +97,8 @@ def plan(selection_path, duration=None, gwl=None) -> Plan:
         d = duration if duration is not None else read_from_name(DURATION, target.database)
         g = gwl if gwl is not None else read_from_name(GWL, target.database)
         problem = ''
-        if not target.database or not os.path.isfile(str(target.database)):
+        if not target.database or not os.path.isfile(
+                EVENTS.locate_database(target.database, selection_path)):
             problem = 'the database this event came from is not on disk'
         elif d is None:
             problem = 'no duration in the database name - give one'
@@ -114,11 +115,14 @@ def plan(selection_path, duration=None, gwl=None) -> Plan:
 
 
 def command(selection, config, model, bryan_python=None, duration=None, gwl=None,
-            rain_lag=0.0, suffix='', dry_run=False) -> list:
+            rain_lag=0.0, suffix='', dry_run=False, sims_config=None) -> list:
     """The command line the run uses. Built here so a test can read it."""
     script = Path(__file__).resolve().parents[2] / 'DownstreamStorms.py'
     argv = [str(bryan_python or sys.executable), str(script),
             '--config', str(config), '--selection', str(selection), '--model', str(model)]
+    if sims_config:
+        # so an event whose embedded bursts were filtered keeps its filtered pattern
+        argv += ['--sims-config', str(sims_config)]
     if duration is not None:
         argv += ['--duration', str(duration)]
     if gwl is not None:
