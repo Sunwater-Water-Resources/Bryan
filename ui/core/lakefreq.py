@@ -312,6 +312,7 @@ def build_job(config_path, settings: dict, groups: dict | None = None) -> JobPla
     fit = job["fit"]
     if fit["form"] == "shouldered" and job["fsl"] is None:
         plan.fit_problems.append("The shouldered form needs the full supply level.")
+    plan.fit_problems += RECORD.axis_problems(job["axes"])
 
     design = settings["design"]
     sources = []
@@ -610,10 +611,11 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
 
     ``positions`` is ``RecordView.positions``. ``results`` is the util script's
     output for the same job, or None when the curves have not been fitted.
-    ``whole_record`` widens the frame from the report figure's (1EY onwards) to
-    every maximum.
+    ``whole_record`` widens the frame from the report figure's (1EY onwards, or
+    the axis start the settings give) to every maximum.
     """
     settings = complete(settings)
+    axes = settings.get("axes") or {}
     rows = positions.to_dict("records")
     storm = [row for row in rows if not row["carried_over"]]
     carried = [row for row in rows if row["carried_over"]]
@@ -630,10 +632,21 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
     grid_z = (results or {}).get("grid", {}).get("z") or []
     fits = (results or {}).get("fits") or {}
     whole, storm_fit = fits.get("all") or {}, fits.get("storm") or {}
+    design = (results or {}).get("design") if show_design else None
+
+    # The frame starts at 1EY unless the settings start the axis elsewhere, and so,
+    # separately, do the fitted curves and their bands. The design floods follow
+    # the axis, and are not carried past 1EY by curves started further out.
+    maxima_z = [row["z"] for row in rows if _num(row["z"]) is not None]
+    z_rare = max(maxima_z + [grid_z[-1]] if design and grid_z else maxima_z)
+    frequent, curves_from = RECORD.frequent_limits(axes, RECORD.exceedance_of_variate(z_rare))
+    z_start = RECORD.normal_variate_of_probability(frequent)
+    z_curves = RECORD.normal_variate_of_probability(curves_from) - 1e-9
+    z_design = RECORD.normal_variate_of_probability(max(RECORD.EY1_AEP, frequent)) - 1e-9
 
     def extent(block):
         z_max = block.get("z_max") if block.get("form") == "shouldered" else None
-        return [z_max is None or z <= z_max for z in grid_z]
+        return [z >= z_curves and (z_max is None or z <= z_max) for z in grid_z]
 
     if whole.get("band_lo"):
         keep = extent(whole)
@@ -648,7 +661,6 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
                             itemStyle={"color": RECORD_COLOUR},
                             areaStyle={"color": RECORD_COLOUR, "opacity": 0.13}))
 
-    design = (results or {}).get("design") if show_design else None
     if design:
         for hours, curve in design["durations"].items():
             keep = [aep <= 0.5 for aep in curve["aep"]]
@@ -657,6 +669,7 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
                                 lineStyle={"width": 1, "opacity": 0.45},
                                 tooltip={"show": False}))
         series.append(_line("Design flood envelope", grid_z, design["envelope"],
+                            [z >= z_design for z in grid_z],
                             itemStyle={"color": DESIGN_COLOUR}, lineStyle={"width": 3}))
 
     series.append({"name": "Storm-driven maxima", "type": "scatter", "symbolSize": 8,
@@ -708,25 +721,23 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
                 "data": [{"name": f"{label} {level:g} m", "yAxis": level}
                          for label, level in references]}
 
-    zs = [row["z"] for row in rows if _num(row["z"]) is not None]
-    ey1 = RECORD.normal_variate_of_probability(1.0 - math.exp(-1.0))
-    z_max = max(zs + [grid_z[-1]] if design and grid_z else zs) + 0.1
-    axes = settings.get("axes") or {}
+    z_max = z_rare + 0.1
     y_min, y_max = _num(axes.get("level_min")), _num(axes.get("level_max"))
     if whole_record:
-        z_min = min([ey1] + zs) - 0.1
+        z_min = min([z_start] + maxima_z) - 0.1
     else:
-        # The report figure's frame: from 1EY, and levels from what is in it -
-        # the maxima, the all-maxima band and the envelope - so the frequent
-        # maxima and the storm-driven band's tail cannot squash the comparison.
-        z_min = ey1
+        # The report figure's frame: from 1EY or the axis start, and levels from
+        # what is in it - the maxima, the all-maxima band and the envelope - so the
+        # frequent maxima and the storm-driven band's tail cannot squash the
+        # comparison.
+        z_min = z_start
         seen = [row["level"] for row in rows if row["z"] >= z_min]
         if whole.get("band_lo"):
             keep = extent(whole)
             seen += [v for v, z, k in zip(whole["band_lo"], grid_z, keep) if k and z >= z_min]
             seen += [v for v, z, k in zip(whole["band_hi"], grid_z, keep) if k and z >= z_min]
         if design:
-            seen += design["envelope"]
+            seen += [v for v, z in zip(design["envelope"], grid_z) if z >= z_min - 1e-9]
         seen += [level for _, level in references]
         seen = [value for value in seen if _num(value) is not None]
         if seen and y_min is None:

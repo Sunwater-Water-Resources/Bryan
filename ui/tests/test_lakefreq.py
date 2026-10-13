@@ -248,6 +248,218 @@ def test_the_curve_options_reach_the_job_and_old_settings_get_the_defaults(proje
     assert set(lakefreq.UPPER_JOIN_LABELS) == {"free", "fsl"}
 
 
+# -- the frequent end of the axis: where it starts, and where the fitted curves do ------------
+
+AXIS_START, CURVE_START = "frequent_aep_1_in_x", "curve_frequent_aep_1_in_x"
+
+
+def z_of(one_in_x):
+    return lakefreq.RECORD.normal_variate_of_probability(1.0 / one_in_x)
+
+
+def charted(project, results=True, whole_record=False, grid_from=None, **axes):
+    """The chart for the synthetic record with these axis settings. ``grid_from``
+    starts the results' grid there instead of at -0.3, as a start past 1EY does."""
+    settings = settings_for(project)
+    settings["axes"].update(axes)
+    view = lakefreq.read_view(lakefreq.build_job(project.config.config_path, settings).job)
+    fitted = results_for(view.positions) if results else None
+    if grid_from is not None:
+        fitted["grid"]["z"] = [grid_from + 0.1 * i for i in range(30)]
+    return lakefreq.chart_options(view.positions, fitted, settings,
+                                  whole_record=whole_record)
+
+
+def first_z(options, name):
+    """The most frequent point of the series whose name starts with ``name``."""
+    return min(point["value"][0] if isinstance(point, dict) else point[0]
+               for series in options["series"]
+               if series["name"].startswith(name) for point in series["data"])
+
+
+def test_both_starts_are_blank_by_default_and_a_blank_chart_is_the_one_from_1ey(project):
+    axes = lakefreq.default_settings()["axes"]
+    assert axes[AXIS_START] is None and axes[CURVE_START] is None
+
+    blank = charted(project)
+    ey1 = lakefreq.RECORD.normal_variate_of_probability(lakefreq.RECORD.EY1_AEP)
+    assert blank["xAxis"]["min"] == ey1
+    # The whole grid is drawn, from its first point: results_for's starts at -0.3.
+    assert first_z(blank, "Fit to all") == first_z(blank, "Design flood envelope") == -0.3
+
+    # Settings written before the keys existed draw the same chart.
+    settings = settings_for(project)
+    del settings["axes"][AXIS_START], settings["axes"][CURVE_START]
+    view = lakefreq.read_view(lakefreq.build_job(project.config.config_path, settings).job)
+    for whole_record in (False, True):
+        old = lakefreq.chart_options(view.positions, results_for(view.positions), settings,
+                                     whole_record=whole_record)
+        assert old == charted(project, whole_record=whole_record)
+
+
+def test_the_axis_start_moves_the_frame_and_the_design_floods_follow_it(project):
+    blank, moved = charted(project), charted(project, **{AXIS_START: 5})
+    assert moved["xAxis"]["min"] == pytest.approx(z_of(5))
+    assert moved["xAxis"]["max"] == blank["xAxis"]["max"]
+    # Nothing is cut: the curves still start at 1EY and the envelope with them,
+    # and the frame clips both.
+    for name in ("Fit to all", "90% band, all", "Design flood envelope"):
+        assert first_z(moved, name) == -0.3, name
+    # The level axis is set by what is inside the frame.
+    assert moved["yAxis"]["min"] >= blank["yAxis"]["min"]
+    # The ticks are the ones inside the new frame.
+    ticks = list(json.loads(moved["xAxis"]["axisLabel"][":formatter"]
+                            .split("const m = ")[1].split(";")[0]).values())
+    assert ticks[:3] == ["1 in 5", "1 in 10", "1 in 20"]
+
+    # More frequent than 1EY the axis reads in EY.
+    wide = charted(project, **{AXIS_START: 1.1})
+    assert wide["xAxis"]["min"] == pytest.approx(z_of(1.1))
+    assert "2EY" in wide["xAxis"]["axisLabel"][":formatter"]
+    assert "2EY" not in blank["xAxis"]["axisLabel"][":formatter"]
+
+
+def test_a_blank_curve_start_is_1ey_wherever_the_axis_starts(project):
+    """The grid runs out to an axis started past 1EY; the curves do not follow it
+    there unless they are started there too. The design floods do."""
+    ey1 = lakefreq.RECORD.normal_variate_of_probability(lakefreq.RECORD.EY1_AEP)
+    out = z_of(1.1)
+    wide = charted(project, grid_from=out, **{AXIS_START: 1.1})
+    for name in ("Fit to all", "90% band, all", "band"):
+        assert ey1 - 1e-9 <= first_z(wide, name) < ey1 + 0.1, name
+    assert first_z(wide, "Design flood envelope") == pytest.approx(out)
+
+    both = charted(project, grid_from=out, **{AXIS_START: 1.1, CURVE_START: 1.2})
+    assert z_of(1.2) - 1e-9 <= first_z(both, "Fit to all") < z_of(1.2) + 0.1
+    assert both["xAxis"] == wide["xAxis"]
+
+    # Curves started past 1EY on a 1EY axis: there for the whole record view, and
+    # the design floods are not carried out there with them.
+    curves = charted(project, grid_from=out, whole_record=True, **{CURVE_START: 1.1})
+    assert first_z(curves, "Fit to all") == pytest.approx(out)
+    assert ey1 - 1e-9 <= first_z(curves, "Design flood envelope") < ey1 + 0.1
+
+
+def test_the_curve_start_cuts_only_the_fitted_curves_and_their_bands(project):
+    blank, cut = charted(project), charted(project, **{CURVE_START: 4})
+    assert cut["xAxis"] == blank["xAxis"]
+    for name in ("Fit to all", "90% band, all", "band", "Fit to storm-driven",
+                 "90% band, storm-driven"):
+        assert first_z(cut, name) >= z_of(4) - 1e-9, name
+        assert first_z(cut, name) < z_of(4) + 0.11, name          # the next grid point
+    assert first_z(cut, "Design flood envelope") == -0.3
+
+    def untouched(options):
+        return [series for series in options["series"]
+                if not series["name"].lower().startswith(("fit to", "90% band", "band"))]
+    assert untouched(cut) == untouched(blank)
+
+
+def test_the_two_starts_are_independent_and_the_axis_clips_the_curves(project):
+    both = charted(project, **{AXIS_START: 3, CURVE_START: 4})
+    assert both["xAxis"]["min"] == pytest.approx(z_of(3))
+    assert first_z(both, "Fit to all") >= z_of(4) - 1e-9
+
+    # A curve start more frequent than the axis start is clipped by the frame,
+    # which it does not move.
+    ahead = charted(project, **{AXIS_START: 3, CURVE_START: 2})
+    assert ahead["xAxis"] == both["xAxis"]
+    assert z_of(2) - 1e-9 <= first_z(ahead, "Fit to all") < z_of(3)
+
+
+def test_the_storm_driven_curve_still_starts_at_its_own_most_frequent_point(project):
+    settings = settings_for(project)
+    view = lakefreq.read_view(lakefreq.build_job(project.config.config_path, settings).job)
+    floor = view.positions.loc[~view.positions["carried_over"], "storm_z"].min()
+    # A grid reaching well past that point, as an axis started out there gives.
+    results = results_for(view.positions)
+    results["grid"]["z"] = [floor - 1.0 + 0.1 * i for i in range(30)]
+
+    def storm_start(**axes):
+        settings["axes"].update({AXIS_START: None, CURVE_START: None, **axes})
+        return first_z(lakefreq.chart_options(view.positions, results, settings),
+                       "Fit to storm-driven")
+
+    assert z_of(1.01) < floor < storm_start()                     # blank: from 1EY
+    assert storm_start(**{AXIS_START: 1.01}) == storm_start()     # the axis alone: still 1EY
+    for axes in ({CURVE_START: 1.02}, {AXIS_START: 1.01, CURVE_START: 1.02}):
+        assert floor <= storm_start(**axes) < floor + 0.1
+    assert storm_start(**{CURVE_START: 4}) >= z_of(4) - 1e-9 > floor
+
+
+def test_the_whole_record_still_shows_every_maximum_whatever_the_axis_start(project):
+    blank = charted(project, whole_record=True)
+    lowest = min(first_z(blank, "Storm-driven maxima"), first_z(blank, "Carried over"))
+    assert blank["xAxis"]["min"] == pytest.approx(lowest - 0.1)
+    moved = charted(project, whole_record=True, **{AXIS_START: 5})
+    assert moved["xAxis"] == blank["xAxis"]
+    # ...with the curves from 1EY, or from where they are started.
+    assert first_z(moved, "Fit to all") == -0.3
+    later = charted(project, whole_record=True, **{AXIS_START: 5, CURVE_START: 4})
+    assert z_of(4) - 1e-9 <= first_z(later, "Fit to all") < z_of(4) + 0.1
+
+
+def test_a_start_that_cannot_be_one_is_said_and_stops_only_the_curves(project):
+    config = project.config.config_path
+
+    def plan(**axes):
+        settings = settings_for(project)
+        settings["axes"].update(axes)
+        return lakefreq.build_job(config, settings)
+
+    assert plan().can_fit and plan(**{AXIS_START: 5, CURVE_START: 10}).can_fit
+    for value in (1, 0.5, -3):
+        bad = plan(**{AXIS_START: value})
+        assert bad.can_read and not bad.can_fit
+        assert "axis start" in bad.fit_problems[0] and "above 1" in bad.fit_problems[0]
+    behind = plan(**{CURVE_START: 2000})
+    assert "more frequent than where the axis reaches (1 in 2000)" in behind.fit_problems[0]
+    assert plan(**{AXIS_START: 50, "rare_aep_1_in_x": 20}).fit_problems
+
+    # The points are still drawn, in the frame a blank start gives.
+    assert charted(project, results=False, **{AXIS_START: 0.5}) == \
+        charted(project, results=False)
+    assert charted(project, **{AXIS_START: 1e6, CURVE_START: 1e6}) == charted(project)
+    assert lakefreq.RECORD.frequent_limits({AXIS_START: "x", CURVE_START: None}) == \
+        (lakefreq.RECORD.EY1_AEP, lakefreq.RECORD.EY1_AEP)
+
+
+def test_blank_starts_find_the_results_fitted_before_they_existed(project):
+    config = project.config.config_path
+    job = lakefreq.build_job(config, settings_for(project)).job
+    before = json.loads(json.dumps(job))
+    del before["axes"][AXIS_START], before["axes"][CURVE_START]
+    fingerprint = lakefreq.RECORD.fingerprint
+    assert fingerprint(job) == fingerprint(before)
+
+    # Either start is part of the job, so curves fitted for another are not shown.
+    path = lakefreq.results_path(config, job)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"fingerprint": fingerprint(job)}))
+    assert lakefreq.shown_results(config, before)[0] is not None
+    for key in (AXIS_START, CURVE_START):
+        changed = {**job, "axes": {**job["axes"], key: 5}}
+        assert fingerprint(changed) != fingerprint(job)
+        assert lakefreq.shown_results(config, changed) == (None, False)
+
+
+def test_the_starts_are_saved_and_an_old_settings_file_loads_blank(project):
+    config = project.config.config_path
+    path = lakefreq.settings_path(config)
+    path.write_text(json.dumps({"record": {"files": ["gauge/HW.csv"]}, "fsl": FSL,
+                                "axes": {"rare_aep_1_in_x": 500, "level_min": 210.0}}))
+    loaded = lakefreq.load_settings(config)
+    assert loaded["axes"] == {"rare_aep_1_in_x": 500, "level_min": 210.0, "level_max": None,
+                              AXIS_START: None, CURVE_START: None}
+    assert lakefreq.build_job(config, loaded).can_fit
+
+    loaded["axes"].update({AXIS_START: 2, CURVE_START: 5})
+    lakefreq.save_settings(config, loaded)
+    assert json.loads(path.read_text())["axes"][CURVE_START] == 5
+    job = lakefreq.build_job(config, lakefreq.load_settings(config)).job
+    assert (job["axes"][AXIS_START], job["axes"][CURVE_START]) == (2, 5)
+
+
 
 # -- with a study open: the record, water year and curve settings are the study's ------------
 

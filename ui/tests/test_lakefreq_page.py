@@ -170,6 +170,62 @@ async def test_a_band_from_too_few_resamples_is_warned_about(user, opened):
 
 
 @pytest.mark.asyncio
+async def test_the_axis_and_curve_starts_are_blank_then_saved_and_move_the_chart(user, opened):
+    from core import lakefreq
+
+    def chart():
+        return next(iter(user.find(marker="lake-chart").elements)).options
+
+    await user.open("/lake-levels")
+    await series_names(user, "Storm-driven maxima")
+    boxes = {key: next(iter(user.find(marker=marker).elements))
+             for key, marker in (("frequent_aep_1_in_x", "lake-axis-start"),
+                                 ("curve_frequent_aep_1_in_x", "lake-curve-start"))}
+    assert [box.value for box in boxes.values()] == [None, None]
+    from_1ey = chart()["xAxis"]["min"]
+    assert from_1ey == pytest.approx(lakefreq.RECORD.normal_variate_of_probability(
+        lakefreq.RECORD.EY1_AEP))
+
+    user.find(marker="lake-axis-start").type("5")
+    user.find(marker="lake-curve-start").type("10")
+    saved = json.loads((opened.parent / "lake_frequency.json").read_text())
+    assert saved["axes"]["frequent_aep_1_in_x"] == 5
+    assert saved["axes"]["curve_frequent_aep_1_in_x"] == 10
+    assert chart()["xAxis"]["min"] == pytest.approx(
+        lakefreq.RECORD.normal_variate_of_probability(0.2))
+
+    # Cleared, the chart is back in the 1EY frame; a start that cannot be one is said.
+    boxes["frequent_aep_1_in_x"].set_value(None)
+    assert chart()["xAxis"]["min"] == from_1ey
+    boxes["curve_frequent_aep_1_in_x"].set_value(0.5)
+    await user.should_see("is not an AEP")
+    assert chart()["xAxis"]["min"] == from_1ey
+
+
+@needs_bryan
+@pytest.mark.asyncio
+async def test_fitted_curves_start_where_the_page_says(user, opened, monkeypatch):
+    """Through the real script: the curves on the page start at the curve start,
+    and the design flood envelope where it always did."""
+    from core import lakefreq
+    from state import STATE
+    monkeypatch.setattr(STATE.settings, "bryan_python", BRYAN_PYTHON)
+    await user.open("/lake-levels")
+    await series_names(user, "Storm-driven maxima")
+    user.find(marker="lake-curve-start").type("4")
+    await user.should_see("press Fit curves")
+    user.find(marker="fit-curves").click()
+    await series_names(user, "Fit to all maxima", seconds=90)
+
+    chart = next(iter(user.find(marker="lake-chart").elements)).options
+    starts = {series["name"].split(" (")[0]: series["data"][0][0]
+              for series in chart["series"] if series["type"] == "line"}
+    z_of = lakefreq.RECORD.normal_variate_of_probability
+    assert z_of(0.25) - 1e-9 <= starts["Fit to all maxima"] < z_of(0.25) + 0.05
+    assert starts["Design flood envelope"] == pytest.approx(z_of(lakefreq.RECORD.EY1_AEP))
+
+
+@pytest.mark.asyncio
 async def test_with_a_study_the_list_s_record_is_kept_and_can_become_the_study_s(
         user, opened):
     """Kroombit's case: the gauge export was typed here before the study kept one.

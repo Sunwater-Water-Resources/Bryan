@@ -71,14 +71,19 @@ def run_analysis(job, progress=print):
     design = job["design"]
     sources = [(source["duration"], source["path"])
                for source in (design["sources"] or [])] if design["include"] else []
-    rare = 1.0 / float(job["axes"]["rare_aep_1_in_x"] or 2000)
+    rare = min(1.0 / float(job["axes"]["rare_aep_1_in_x"] or 2000),
+               float(positions["aep"].min()))
+    # The grid is what the curves are evaluated on, never what they are fitted to.
+    # It starts at 1EY, and further out only for an axis or curves started further out.
+    starts = record.frequent_limits(job["axes"], rare)
     analysis = frequency.analyse(
         positions, fsl=job["fsl"], form=fit["form"], degree=fit["degree"],
         plateau_tolerance=fit["plateau_tolerance"], plateau_gap=fit["plateau_gap"],
         upper_degree=fit["upper_degree"], upper_join=fit["upper_join"],
         storm_driven=fit["storm_driven"], draws=int(fit["draws"]),
         seed=int(fit["seed"]), design_sources=sources,
-        rare_aep=min(rare, float(positions["aep"].min())), progress=progress)
+        frequent_aep=max(frequency.EY1_AEP, *starts), rare_aep=rare,
+        progress=progress)
     analysis.update({
         "version": RESULTS_VERSION,
         "fingerprint": record.fingerprint(job),
@@ -185,12 +190,16 @@ def figure(results, path, with_design=True):
     job = results["job"]
     fsl = job["fsl"]
     with_design = with_design and bool(results.get("design"))
-    frequent = frequency.EY1_AEP
     rare = _rare_limit(results, with_design)
+    # Each is 1EY unless the job says otherwise: where the axis starts, and where
+    # the fitted curves and their bands do. The design floods follow the axis:
+    # they are not what the curve start is about.
+    frequent, curves_from = record.frequent_limits(job["axes"], rare)
     z_lo, z_hi = _z(frequent), _z(rare)
 
     grid_z = np.asarray(results["grid"]["z"], float)
     in_view = (grid_z >= z_lo - 1e-9) & (grid_z <= z_hi + 1e-9)
+    fitted_view = in_view & (grid_z >= _z(curves_from) - 1e-9)
     ams = results["ams"]
     z = np.array([row["z"] for row in ams], float)
     level = np.array([row["level"] for row in ams], float)
@@ -212,7 +221,7 @@ def figure(results, path, with_design=True):
         """Where a curve is drawn: the shouldered upper limb is a straight line,
         so neither it nor its band is carried past the rarest maximum it was
         fitted to."""
-        keep = in_view.copy()
+        keep = fitted_view.copy()
         if block.get("form") == frequency.SHOULDERED and block.get("z_max") is not None:
             keep &= grid_z <= block["z_max"]
         return keep
@@ -295,7 +304,9 @@ def figure(results, path, with_design=True):
 
     for label, value in references:
         ax.axhline(value, color=MUTED, linewidth=0.8, linestyle=":")
-        ax.text(_z(0.60), value + offset, f"{label} {level_text(value)} m",
+        # Just inside the frequent end of the axis, wherever that has been put.
+        ax.text(_z(0.60) + (z_lo - _z(frequency.EY1_AEP)), value + offset,
+                f"{label} {level_text(value)} m",
                 fontsize=BASE_FONTSIZE, color=INK)
 
     ax.set_xlim(z_lo, z_hi)
@@ -390,6 +401,11 @@ def main(argv=None):
         print("ERROR: input files not found:")
         for path in missing:
             print(" ", path)
+        return 2
+    problems = record.axis_problems(job["axes"])
+    if problems:
+        for problem in problems:
+            print(f"ERROR: {problem}")
         return 2
 
     if args.ams_csv:

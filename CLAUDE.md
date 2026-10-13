@@ -348,6 +348,15 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   handful of resamples: 335 of 400 against the published 338. `tests/test_lake_level_frequency.py`
   reproduces the Callide RMSEs (0.400, 0.559 m) and draw counts (338, 378) exactly when the
   private Callide study checkout (`callide-fsl-reinstate`) sits beside this one.
+- **The frequent end of the axis is two settings, and neither touches the fit**: `axes.frequent_aep_1_in_x`
+  (where the axis starts) and `axes.curve_frequent_aep_1_in_x` (where the fitted curves and bands
+  start). **Blank is 1EY for each, and neither follows the other** - a blank curve start that followed
+  the axis was tried first and was not what was wanted. `LakeLevelRecord.frequent_limits` reads both for
+  the page chart and the figure. The grid the curves are evaluated on still starts at 1EY and is widened
+  only for an axis or curves started further out, so a start inside the 1EY frame leaves the results
+  file's numbers unchanged. The design floods follow the axis, so the page chart cuts the envelope at
+  1EY when only the curves are started further out. `fingerprint` leaves the two keys out while blank,
+  so results fitted before they existed are still found.
 - Settings are `lake_frequency.json` **beside the sims_config.json**, not in `~/.bryan_ui.json`: they are
   analysis inputs and travel with the project. Fitted results are cached in `_lake_frequency/<fingerprint>.json`,
   where the fingerprint covers the job and the size and mtime of every input file.

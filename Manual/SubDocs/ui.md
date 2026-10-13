@@ -377,6 +377,15 @@ Each is fitted to all the maxima and, separately, to the storm-driven ones place
 
 With **Compare with the Monte Carlo results** on, the level curves of the chosen durations of one group are drawn with their envelope. Use the present-day warming level and the lake configuration the record was measured under.
 
+### The frequency axis
+
+The chart and the exported figure run from 1EY to **Axis reaches (1 in X)**. Two optional boxes move the frequent end, both as "1 in X" and both blank by default:
+
+- **Axis starts** - where the frequency axis begins. Blank is 1EY, which is 1 in 1.58. Give 1 in 5 to leave the frequent maxima out of the frame, or a value between 1 and 1.58 to take the axis out past 1EY, where it reads in EY. The design flood envelope follows the axis, and the Monte Carlo durations are drawn from 50% AEP as before.
+- **Curves start** - where the fitted curves and their bands begin. Blank is 1EY as well, whatever the axis start. Give a rarer value to draw the curves from there only, for a record whose frequent end the form does not describe, or a value between 1 and 1.58 to draw them out past 1EY.
+
+The two are independent. An axis started rarer than the curves clips them, and an axis started out past 1EY shows the curves only as far as they have been started, so set both to see the curves out there. Neither changes the fit: the same maxima are fitted, with the same parameters, RMSE and resamples, and the boxes only say what is drawn. The curve fitted to the storm-driven maxima still starts no more frequent than its own most frequent point. **Whole record** still shows every maximum whatever the axis start, with the curves from 1EY or from where they have been started, and the design flood envelope from 1EY or the axis start. A start has to be more frequent than where the axis reaches, and X has to be above 1; otherwise the page says so and draws no curves until it is put right. A start is part of the settings the fitted results are kept against, so after changing one press **Fit curves** again, and **Resample bands** for the bands.
+
 ### Exports
 
 **Export figure** writes ```<name>_validation.png``` (with the design floods) or ```<name>_record.png``` (without), each with a ```.json``` beside it recording the curve settings and the fit statistics they gave: 6.3 x 4.0 in at 300 dpi, for an A4 page, reading EY at the frequent end and "1 in X" past 50% AEP. **Export AMS CSV** writes ```<name>_ams.csv```, with the source files, water year and carry-over rule in ```#``` lines above the table.

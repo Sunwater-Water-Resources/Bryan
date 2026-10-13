@@ -372,6 +372,21 @@ class _LakeLevelsView:
                                                    _number(e.value) or 2000)
                       ).classes("w-full").props("dense")
             with ui.row().classes("w-full no-wrap gap-2"):
+                ui.number("Axis starts (1 in X)",
+                          value=settings["axes"].get("frequent_aep_1_in_x"), format="%g",
+                          on_change=lambda e: self.set("axes", "frequent_aep_1_in_x",
+                                                       _number(e.value))
+                          ).classes("grow").props("dense clearable").mark("lake-axis-start")
+                ui.number("Curves start (1 in X)",
+                          value=settings["axes"].get("curve_frequent_aep_1_in_x"),
+                          format="%g",
+                          on_change=lambda e: self.set("axes", "curve_frequent_aep_1_in_x",
+                                                       _number(e.value))
+                          ).classes("grow").props("dense clearable").mark("lake-curve-start")
+            ui.label("Blank is 1EY (1 in 1.58) for each: where the axis starts, and where "
+                     "the fitted curves and their bands do. Neither changes the fit."
+                     ).classes("text-xs text-muted")
+            with ui.row().classes("w-full no-wrap gap-2"):
                 ui.number("Level axis from", value=settings["axes"]["level_min"],
                           format="%g",
                           on_change=lambda e: self.set("axes", "level_min", _number(e.value))

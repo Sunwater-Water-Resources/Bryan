@@ -240,6 +240,187 @@ def test_the_axis_reads_in_ey_then_one_in_x():
     assert positions_ == sorted(positions_)
 
 
+# -- the frequent end of the axis: where it starts, and where the fitted curves do ----
+
+AXIS_START, CURVE_START = "frequent_aep_1_in_x", "curve_frequent_aep_1_in_x"
+
+
+def test_the_axis_reads_correctly_from_wherever_it_starts():
+    ticks = cli().frequency_ticks
+    assert ticks(1 / 5, 5e-4)[1] == ["1 in 5", "1 in 10", "1 in 20", "1 in 50", "1 in 100",
+                                     "1 in 500", "1 in 2,000"]
+    assert ticks(1 / 3, 5e-4)[1][0] == "1 in 5"          # no tick is made up at the limit
+    assert ticks(1 / 1.1, 0.1)[1] == ["2EY", "1EY", "1 in 2", "1 in 5", "1 in 10"]
+
+
+def test_the_starts_are_read_as_blank_unless_they_can_be_drawn():
+    limits, ey1 = record.frequent_limits, frequency.EY1_AEP
+    assert record.EY1_AEP == ey1
+    assert limits({}) == limits({AXIS_START: None, CURVE_START: ""}) == (ey1, ey1)
+    assert limits({AXIS_START: 5}) == (0.2, ey1)                    # each is its own
+    assert limits({CURVE_START: 10}) == (ey1, 0.1)
+    assert limits({AXIS_START: 1.25, CURVE_START: 10}) == (0.8, 0.1)
+    assert limits({AXIS_START: 5, CURVE_START: 2}) == (0.2, 0.5)     # the frame clips it
+    for bad in (1, 0.5, 0, -4, "x", float("nan"), float("inf")):
+        assert limits({AXIS_START: bad, CURVE_START: bad}) == (ey1, ey1)
+    # Not more frequent than the end the axis reaches: never a frame drawn backwards.
+    assert limits({AXIS_START: 50, CURVE_START: 100}, rare_aep=0.05) == (ey1, ey1)
+    assert limits({AXIS_START: 5, CURVE_START: 100}, rare_aep=0.05) == (0.2, ey1)
+
+    assert record.axis_problems({}) == record.axis_problems({AXIS_START: 5}) == []
+    assert "above 1" in record.axis_problems({CURVE_START: 0.5})[0]
+    assert "1 in 500" in record.axis_problems({AXIS_START: 500, "rare_aep_1_in_x": 500})[0]
+
+
+def analysed(tmp_path, name, **axes):
+    """The script's results for the synthetic job with these axis settings."""
+    folder = tmp_path / name
+    folder.mkdir()
+    job = job_file(folder, **({"axes": axes} if axes else {}))
+    results = folder / "results.json"
+    assert cli().main(["--job", str(job), "--results", str(results)]) == 0
+    return json.loads(results.read_text())
+
+
+def test_neither_start_changes_the_fit_and_only_a_wider_axis_changes_the_grid(tmp_path):
+    blank = analysed(tmp_path, "blank")
+    assert blank["job"]["axes"][AXIS_START] is None
+    assert blank["grid"]["aep"][0] == pytest.approx(frequency.EY1_AEP)
+
+    def fitted(results):
+        return {name: {key: block[key] for key in ("rmse", "params", "draws_used", "z_min",
+                                                   "z_max", "error", "warning")}
+                for name, block in results["fits"].items()}
+
+    # Starts inside the 1EY frame are a matter of what is drawn: the results are
+    # the blank ones to the last digit.
+    for name, axes in (("axis", {AXIS_START: 5}), ("curves", {CURVE_START: 10}),
+                       ("both", {AXIS_START: 3, CURVE_START: 10})):
+        got = analysed(tmp_path, name, **axes)
+        for key in ("grid", "fits", "design", "ams"):
+            assert got[key] == blank[key], (name, key)
+
+    # An axis, or curves, started further out are evaluated further out, on the
+    # same fit.
+    for name, axes in (("wide", {AXIS_START: 1.1, CURVE_START: 3}),
+                       ("ahead", {CURVE_START: 1.1})):
+        wide = analysed(tmp_path, name, **axes)
+        assert wide["grid"]["aep"][0] == pytest.approx(1 / 1.1)
+        assert wide["grid"]["aep"][-1] == pytest.approx(blank["grid"]["aep"][-1])
+        assert fitted(wide) == fitted(blank)
+        assert len(wide["design"]["envelope"]) == len(wide["grid"]["z"])
+
+
+def drawn(monkeypatch, tmp_path, results, with_design=True):
+    """The axes of the report figure, kept open to be read."""
+    import matplotlib.pyplot as plt
+    kept = []
+    with monkeypatch.context() as patched:
+        patched.setattr(plt, "close", kept.append)
+        cli().figure(results, str(tmp_path / "figure.png"), with_design=with_design)
+    axis = kept[0].axes[0]
+    lines = {line.get_label(): line.get_xdata() for line in axis.get_lines()}
+    lines.update({patch.get_label(): patch.get_paths()[0].vertices[:, 0]
+                  for patch in axis.collections
+                  if patch.get_label().startswith("90% band") and patch.get_paths()})
+    plt.close(kept[0])
+
+    def start(prefix):
+        return min(float(np.min(x)) for label, x in lines.items()
+                   if label.startswith(prefix) and len(x))
+    return axis.get_xlim(), [tick.get_text() for tick in axis.get_xticklabels()], start
+
+
+def test_the_figure_starts_the_axis_and_the_curves_where_the_job_says(tmp_path, monkeypatch):
+    script = cli()
+    blank = analysed(tmp_path, "blank")
+    ey1 = script._z(frequency.EY1_AEP)
+    xlim, labels, start = drawn(monkeypatch, tmp_path, blank)
+    assert xlim[0] == ey1 and labels[0] == "1EY"
+    assert start("Fit to all") == start("Design flood envelope") == pytest.approx(ey1)
+    assert start("90% band, all") == pytest.approx(ey1)
+
+    # Results written before the keys existed draw the same frame.
+    old = json.loads(json.dumps(blank))
+    del old["job"]["axes"][AXIS_START], old["job"]["axes"][CURVE_START]
+    assert drawn(monkeypatch, tmp_path, old)[:2] == (xlim, labels)
+
+    def redrawn(**axes):
+        results = json.loads(json.dumps(blank))
+        results["job"]["axes"].update(axes)
+        return drawn(monkeypatch, tmp_path, results)
+
+    # The axis start alone: the frame moves and clips the curves and the design
+    # floods, which are not cut.
+    moved, labels, start = redrawn(**{AXIS_START: 5})
+    assert moved == pytest.approx((script._z(0.2), xlim[1])) and labels[0] == "1 in 5"
+    assert start("Fit to all") >= script._z(0.2) - 1e-9
+    assert start("Design flood envelope") == pytest.approx(ey1)
+
+    # The curve start alone: the frame stays, the curves and their bands start later.
+    kept, labels, start = redrawn(**{CURVE_START: 10})
+    assert kept == xlim and labels[0] == "1EY"
+    for name in ("Fit to all", "90% band, all"):
+        assert script._z(0.1) - 1e-9 <= start(name) < script._z(0.1) + 0.05
+    assert start("Design flood envelope") == pytest.approx(ey1)
+
+    # Both, each doing its own; and a curve start out past the axis is clipped by it.
+    both, _, start = redrawn(**{AXIS_START: 3, CURVE_START: 10})
+    assert both[0] == pytest.approx(script._z(1 / 3))
+    assert start("Fit to all") >= script._z(0.1) - 1e-9
+    _, _, start = redrawn(**{AXIS_START: 3, CURVE_START: 1.2})
+    assert script._z(1 / 3) - 1e-9 <= start("Fit to all") < script._z(1 / 3) + 0.05
+
+    # An axis started past 1EY: the design floods go with it, and the curves stay
+    # at 1EY until they are started out there too.
+    wide = analysed(tmp_path, "wide", **{AXIS_START: 1.1})
+    out, _, start = drawn(monkeypatch, tmp_path, wide)
+    assert out[0] == pytest.approx(script._z(1 / 1.1))
+    assert start("Design flood envelope") == pytest.approx(out[0])
+    for name in ("Fit to all", "90% band, all"):
+        assert ey1 - 1e-9 <= start(name) < ey1 + 0.05
+    wide["job"]["axes"][CURVE_START] = 1.1
+    assert drawn(monkeypatch, tmp_path, wide)[2]("Fit to all") == pytest.approx(out[0])
+
+    # The record alone reaches only as far as its rarest maximum, and a start
+    # past that end is read as blank instead of turning the axis round.
+    short, labels, _ = redrawn(**{AXIS_START: 5000})
+    assert short == xlim
+    record_only, _, _ = drawn(monkeypatch, tmp_path, blank, with_design=False)
+    results = json.loads(json.dumps(blank))
+    results["job"]["axes"][AXIS_START] = 1 / (script._rare_limit(blank, False) * 0.9)
+    assert drawn(monkeypatch, tmp_path, results, with_design=False)[0] == record_only
+
+
+def test_blank_starts_reuse_results_and_a_start_that_cannot_be_one_is_refused(tmp_path,
+                                                                             capsys):
+    script = cli()
+    job = job_file(tmp_path)
+    results = tmp_path / "results.json"
+    assert script.main(["--job", str(job), "--results", str(results)]) == 0
+
+    # A job written before the keys existed, and one carrying them blank, are one job.
+    saved = json.loads(job.read_text())
+    assert "axes" not in saved
+    saved["axes"] = {AXIS_START: None, CURVE_START: None}
+    job.write_text(json.dumps(saved))
+    capsys.readouterr()
+    assert script.main(["--job", str(job), "--results", str(results)]) == 0
+    assert "Reusing" in capsys.readouterr().out
+
+    # A start is part of the job: the curves are not reused from another one's.
+    saved["axes"][CURVE_START] = 10
+    job.write_text(json.dumps(saved))
+    assert script.main(["--job", str(job), "--results", str(results)]) == 0
+    assert "Reusing" not in capsys.readouterr().out
+
+    for axes in ({AXIS_START: 0.5}, {CURVE_START: 5000}):
+        saved["axes"] = axes
+        job.write_text(json.dumps(saved))
+        assert script.main(["--job", str(job), "--results", str(results)]) == 2
+        assert "ERROR" in capsys.readouterr().out
+
+
 # -- the figure it was developed on ------------------------------------------------
 
 @pytest.mark.skipif(not (CALLIDE / "out" / "rfsl-215-5-rapid" / "ams.csv").is_file(),

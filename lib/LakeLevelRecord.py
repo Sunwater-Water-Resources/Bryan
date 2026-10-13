@@ -661,8 +661,17 @@ JOB_DEFAULTS = {
             "plateau_gap": 0.100, "upper_degree": 1, "upper_join": "free",
             "storm_driven": True, "draws": 400, "seed": 20260826},
     "design": {"include": False, "label": "", "sources": []},   # [{"duration", "path"}]
-    "axes": {"rare_aep_1_in_x": 2000, "level_min": None, "level_max": None},
+    "axes": {"rare_aep_1_in_x": 2000, "level_min": None, "level_max": None,
+             # The frequent end, both as 1 in X and both optional: where the axis
+             # starts and where the fitted curves and their bands start. Blank is
+             # 1EY for each.
+             "frequent_aep_1_in_x": None, "curve_frequent_aep_1_in_x": None},
 }
+
+# The keys of "axes" added after results files were first written. They are left
+# out of the fingerprint while blank, so results fitted before they existed are
+# still found.
+OPTIONAL_AXES = ("frequent_aep_1_in_x", "curve_frequent_aep_1_in_x")
 
 
 def complete_job(job: dict) -> dict:
@@ -699,6 +708,8 @@ def fingerprint(job: dict) -> str:
     import os
 
     job = complete_job(job)
+    job["axes"] = {key: value for key, value in job["axes"].items()
+                   if not (key in OPTIONAL_AXES and value in (None, ""))}
     stamps = []
     for path in job_inputs(job):
         try:
@@ -708,6 +719,61 @@ def fingerprint(job: dict) -> str:
             stamps.append([path, None, None])
     text = json.dumps({"job": job, "inputs": stamps}, sort_keys=True, default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+# -- the frequent end of the frequency axis ----------------------------------------
+#
+# The report figure starts at 1EY, and so do the fitted curves. A job can start
+# either elsewhere, each on its own. Both only say what is drawn: the maxima that
+# are fitted, and the fit, do not depend on either.
+
+EY1_AEP = float(1.0 - math.exp(-1.0))
+
+
+def aep_of_one_in_x(value):
+    """The AEP of a "1 in X" setting, or None where it is blank or cannot be one."""
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    return 1.0 / x if math.isfinite(x) and x > 1.0 else None
+
+
+def frequent_limits(axes: dict, rare_aep=None) -> tuple:
+    """``(axis, curves)``: the AEPs the frequency axis and the fitted curves start at.
+
+    Blank is 1EY for each, and neither follows the other: curves started more
+    frequent than the axis are clipped by the frame, and shown by a wider one. A
+    start that is not more frequent than ``rare_aep``, the end the axis reaches,
+    is read as blank, so a frame is never drawn backwards.
+    """
+    def start(key):
+        aep = aep_of_one_in_x((axes or {}).get(key))
+        if aep is None or (rare_aep is not None and aep <= rare_aep):
+            return EY1_AEP
+        return aep
+
+    return start("frequent_aep_1_in_x"), start("curve_frequent_aep_1_in_x")
+
+
+def axis_problems(axes: dict) -> list:
+    """What is wrong with the frequent end of the axis as it has been set."""
+    axes = axes or {}
+    reaches = float(axes.get("rare_aep_1_in_x") or 2000)
+    problems = []
+    for key, what in (("frequent_aep_1_in_x", "The axis start"),
+                      ("curve_frequent_aep_1_in_x", "The fitted curves' start")):
+        value = axes.get(key)
+        if value in (None, ""):
+            continue
+        aep = aep_of_one_in_x(value)
+        if aep is None:
+            problems.append(f"{what} (1 in {value}) is not an AEP - give an X above 1, "
+                            f"or leave it blank.")
+        elif aep <= 1.0 / reaches:
+            problems.append(f"{what} (1 in {value:g}) has to be more frequent than "
+                            f"where the axis reaches (1 in {reaches:g}).")
+    return problems
 
 
 def ams_for_job(job: dict) -> tuple:
