@@ -357,6 +357,13 @@ All core logic lives in `lib/`. The top-level scripts are thin dispatchers.
   file's numbers unchanged. The design floods follow the axis, so the page chart cuts the envelope at
   1EY when only the curves are started further out. `fingerprint` leaves the two keys out while blank,
   so results fitted before they existed are still found.
+- **The page tables the fitted parameters** under the chart (`core/lakefreq.fit_table`, a pure function
+  of the results the chart is drawn from, so the two cannot disagree). Its labels say what each number
+  multiplies: the shoulder is FSL plus a polynomial in (z - z1) with no constant, the upper limb a
+  polynomial in (z - z2) whose constant is its own level at z2 (`free`) or FSL (`fsl`).
+  `test_the_table_of_a_real_fit_redraws_the_curve_it_describes` works the curve out from the table
+  alone, so a relabelled or reordered coefficient fails it. It is copied through `clipboard.copy_buttons`
+  like every other table (`fit_clipboard_table`).
 - Settings are `lake_frequency.json` **beside the sims_config.json**, not in `~/.bryan_ui.json`: they are
   analysis inputs and travel with the project. Fitted results are cached in `_lake_frequency/<fingerprint>.json`,
   where the fingerprint covers the job and the size and mtime of every input file.

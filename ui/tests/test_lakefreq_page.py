@@ -225,6 +225,124 @@ async def test_fitted_curves_start_where_the_page_says(user, opened, monkeypatch
     assert starts["Design flood envelope"] == pytest.approx(z_of(lakefreq.RECORD.EY1_AEP))
 
 
+def fit_tables(user):
+    try:
+        return list(user.find(marker="lake-fit-table").elements)
+    except AssertionError:              # find raises while there is no table
+        return []
+
+
+def number(text):
+    """'0.5958401 (1 in 4)' -> 0.5958401."""
+    return float(text.split(" (")[0])
+
+
+def curve_from_table(rows, column, z):
+    """The level at ``z`` worked out from the table alone, by what its labels say."""
+    cell = {row["quantity"]: row[column] for row in rows}
+    fsl = number(cell["Full supply level (m AHD)"])
+    z1, z2 = number(cell["Plateau starts, z1"]), number(cell["Plateau ends, z2"])
+
+    def series(prefix, variable):
+        total, order = 0.0, 1
+        while f"{prefix} ({variable})" + ("" if order == 1 else f"^{order}") in cell:
+            label = f"{prefix} ({variable})" + ("" if order == 1 else f"^{order}")
+            total += number(cell[label]) * (z - (z1 if "z1" in variable else z2)) ** order
+            order += 1
+        return total
+
+    if z < z1:
+        return fsl + series("Below FSL: coefficient of", "z - z1")
+    if z <= z2:
+        return fsl
+    start = number(cell.get("Above the plateau: level at z2 (m AHD)", str(fsl)))
+    return start + series("Above the plateau: coefficient of", "z - z2")
+
+
+@pytest.mark.asyncio
+async def test_the_fitted_curves_are_tabled_from_the_results_the_chart_shows(
+        user, opened, monkeypatch):
+    """No table before a fit, the table of the cached fit - which can be copied -
+    and none again once a setting has changed and those results are no longer
+    the page's."""
+    from nicegui import ui as nicegui_ui
+    from core import events, lakefreq
+    from state import STATE
+    from test_lakefreq import fitted_results
+
+    groups = events.sources_by_group(STATE.project)
+    settings = lakefreq.load_settings(opened)
+    settings["design"]["group"] = next(iter(groups))     # as the page picks it
+    job = lakefreq.build_job(opened, settings, groups).job
+    results = fitted_results()
+    results["grid"] = {"z": [0.0, 0.5], "aep": [0.5, 0.3]}
+    for block in results["fits"].values():
+        block.update(curve=[214.0, 215.0], band_lo=[213.0, 214.0], band_hi=[215.0, 216.0])
+    results["fingerprint"] = lakefreq.RECORD.fingerprint(job)
+    path = lakefreq.results_path(opened, job)
+
+    await user.open("/lake-levels")
+    await series_names(user, "Storm-driven maxima")
+    assert fit_tables(user) == []
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(results))
+    await user.open("/lake-levels")
+    await series_names(user, "Fit to all maxima")
+    await user.should_see("Fitted curves")
+    table = fit_tables(user)[0]
+    assert [column["label"] for column in table.columns] == \
+        ["Quantity", "All maxima", "Storm-driven maxima"]
+    rows = {row["quantity"]: row for row in table.rows}
+    assert rows["RMSE (m)"]["all"] == "0.1448"
+    assert rows["Resamples fitted, of those drawn"]["storm"] == "378 of 400"
+    assert rows["Plateau starts, z1"]["all"] == "0 (1 in 2)"
+
+    # Copy as text: the table as shown, tab-separated under its header row.
+    copied = []
+    monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
+    await user.should_see(marker="copy-word-lake-fit")
+    user.find(marker="copy-text-lake-fit").click()
+    await user.should_see("Copied as text")
+    lines = copied[0].splitlines()
+    assert lines[0].split("\t") == ["Quantity", "All maxima", "Storm-driven maxima"]
+    assert [line.split("\t")[0] for line in lines[1:-1]] == \
+        [row["quantity"] for row in table.rows]
+    assert "RMSE (m)\t0.1448\t0.3184" in lines
+
+    # Another setting: these are not its results, and the table goes with the curves.
+    user.find(marker="lake-curve-start").type("4")
+    await user.should_see("press Fit curves")
+    assert fit_tables(user) == []
+
+
+@needs_bryan
+@pytest.mark.asyncio
+async def test_the_table_of_a_real_fit_redraws_the_curve_it_describes(user, opened,
+                                                                    monkeypatch):
+    """The labels say what each number multiplies; worked out from the table
+    alone, the levels are the fitted curve's own."""
+    from core import lakefreq
+    from state import STATE
+    monkeypatch.setattr(STATE.settings, "bryan_python", BRYAN_PYTHON)
+    await user.open("/lake-levels")
+    await series_names(user, "Storm-driven maxima")
+    user.find(marker="fit-curves").click()
+    await series_names(user, "Fit to all maxima", seconds=90)
+
+    table = fit_tables(user)[0]
+    rows = {row["quantity"]: row for row in table.rows}
+    assert rows["Form"]["all"] == "Shouldered plateau"
+    assert "Resamples fitted, of those drawn" not in rows           # Fit curves: no bands
+    results = next(saved for saved in (json.loads(path.read_text()) for path in
+                                       (opened.parent / "_lake_frequency").glob("*.json"))
+                   if "fits" in saved)
+    assert rows["Maxima fitted"]["all"] == str(len(results["ams"]))
+    for name, block in results["fits"].items():
+        for z, level in list(zip(results["grid"]["z"], block["curve"]))[::25]:
+            assert curve_from_table(table.rows, name, z) == pytest.approx(level, abs=1e-5)
+
+
 @pytest.mark.asyncio
 async def test_with_a_study_the_list_s_record_is_kept_and_can_become_the_study_s(
         user, opened):

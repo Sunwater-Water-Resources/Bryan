@@ -34,6 +34,7 @@ from pathlib import Path
 
 from . import dam as dams, processes
 from . import study as studies
+from . import wordtable
 from .bryan import BRYAN_ROOT, lake_level_record
 from .palette import BODY, MUTED, PALETTE, SURFACE
 from .paths import atomic_write_json, clean_path_text, normalise_sep, read_json
@@ -765,6 +766,134 @@ def chart_options(positions, results=None, settings=None, *, show_design=True,
                      {"type": "inside", "yAxisIndex": 0, "filterMode": "none"}],
         "series": series,
     }
+
+
+# -- the fitted curves, as a table ------------------------------------------------------
+
+FIT_COLUMNS = {"all": "All maxima", "storm": "Storm-driven maxima"}
+
+UPPER_JOIN_SHORT = {"free": "Free", "fsl": "At full supply"}
+
+FIT_NOTES = {
+    "shouldered": (
+        "z is the standard normal variate of the annual exceedance probability. "
+        "More frequent than z1 the level is FSL plus the sum of the coefficients below "
+        "FSL times (z - z1), (z - z1)^2 and so on. From z1 to z2 it is FSL. Rarer than "
+        "z2 it is {upper}. The curve is drawn as far as the rarest maximum it was "
+        "fitted to."),
+    "logistic": (
+        "z is the standard normal variate of the annual exceedance probability. "
+        "Level = floor + (ceiling - floor) / (1 + exp(-k (z - z0)))."),
+}
+
+UPPER_NOTES = {
+    "free": "the level at z2 plus the sum of the coefficients above the plateau times "
+            "(z - z2), (z - z2)^2 and so on",
+    "fsl": "FSL plus the sum of the coefficients above the plateau times (z - z2), "
+           "(z - z2)^2 and so on",
+}
+
+
+def _figures(value) -> str:
+    """Eight significant figures: enough to redraw the curve from the table."""
+    number = _num(value)
+    return "" if number is None else f"{number:.8g}"
+
+
+def _variate_text(z) -> str:
+    """A z with the frequency it stands for, in the chart's own labels."""
+    number = _num(z)
+    if number is None:
+        return ""
+    aep = RECORD.exceedance_of_variate(number)
+    return f"{number:.8g} ({frequency_label(aep)})" if 0.0 < aep < 1.0 else f"{number:.8g}"
+
+
+def _power(variable, order) -> str:
+    return f"({variable})" if order == 1 else f"({variable})^{order}"
+
+
+def _fit_rows(block, fitted) -> list:
+    """(label, text) for one fitted curve, in the order the table shows them."""
+    form, params = block["form"], block["params"]
+    rows = [("Form", FORM_LABELS.get(form, form)),
+            ("RMSE (m)", f"{block['rmse']:.4f}")]
+    if fitted is not None:
+        rows.append(("Maxima fitted", f"{fitted:,}"))
+    if block.get("band_lo"):
+        rows.append(("Resamples fitted, of those drawn",
+                     f"{block['draws_used']:,} of {block['draws']:,}"))
+    if form == "shouldered":
+        join = params["upper_join"]
+        rows += [("Full supply level (m AHD)", _figures(params["fsl"])),
+                 ("Plateau starts, z1", _variate_text(params["z1"])),
+                 ("Plateau ends, z2", _variate_text(params["z2"]))]
+        rows += [(f"Below FSL: coefficient of {_power('z - z1', order)}", _figures(value))
+                 for order, value in enumerate(params["coef"], start=1)]
+        rows.append(("Curve above FSL starts", UPPER_JOIN_SHORT.get(join, join)))
+        upper = list(params["upper_coef"])
+        if join == "free":
+            rows.append(("Above the plateau: level at z2 (m AHD)", _figures(upper.pop(0))))
+        rows += [(f"Above the plateau: coefficient of {_power('z - z2', order)}",
+                  _figures(value)) for order, value in enumerate(upper, start=1)]
+        rows.append(("Step up at the end of the plateau (m)", _figures(params["step"])))
+    elif form == "logistic":
+        rows += [("Floor (m AHD)", _figures(params["floor"])),
+                 ("Ceiling (m AHD)", _figures(params["ceiling"])),
+                 ("Steepness, k (per unit of z)", _figures(params["k"])),
+                 ("Midpoint, z0", _variate_text(params["z0"]))]
+    else:
+        # A form this table has no labels for: its parameters under their own names.
+        rows += [(key, _figures(value) or str(value)) for key, value in params.items()]
+    return rows
+
+
+def fit_table(results) -> dict | None:
+    """The fitted curves as a table: one column per fit, one row per quantity.
+
+    ``results`` is what the chart is drawn from, so the two cannot disagree. A
+    fit that failed has no column, and with no fit at all there is no table.
+    Returns ``{"columns": [(key, label)], "rows": [{...}], "note": str}``.
+    """
+    fits = (results or {}).get("fits") or {}
+    blocks = {name: fits[name] for name in FIT_COLUMNS
+              if (fits.get(name) or {}).get("params")
+              and _num(fits[name].get("rmse")) is not None}
+    if not blocks:
+        return None
+    ams = results.get("ams")
+    fitted = {"all": None if ams is None else len(ams),
+              "storm": None if ams is None
+              else sum(1 for row in ams if not row["carried_over"])}
+    labels, cells = [], {}
+    for name, block in blocks.items():
+        for label, text in _fit_rows(block, fitted[name]):
+            if label not in labels:
+                labels.append(label)
+            cells[label, name] = text
+    first = next(iter(blocks.values()))
+    note = FIT_NOTES.get(first["form"], "")
+    if first["form"] == "shouldered":
+        note = note.format(upper=UPPER_NOTES.get(first["params"]["upper_join"], ""))
+    return {"columns": [("quantity", "Quantity")]
+                       + [(name, FIT_COLUMNS[name]) for name in blocks],
+            "rows": [{"quantity": label, **{name: cells.get((label, name), "")
+                                            for name in blocks}} for label in labels],
+            "note": note}
+
+
+def fit_clipboard_table(table) -> wordtable.ReportTable | None:
+    """A :func:`fit_table` as the clipboard takes it: its header, a row for each
+    quantity and the equation beneath. ``wordtable.to_text`` makes that the
+    tab-separated text Excel pastes as a table."""
+    if table is None:
+        return None
+    copied = wordtable.ReportTable(header=[label for _, label in table["columns"]],
+                                   title="Fitted curves",
+                                   footnotes=[table["note"]] if table["note"] else [])
+    for row in table["rows"]:
+        copied.add([row[key] for key, _ in table["columns"]])
+    return copied
 
 
 # -- water year options ---------------------------------------------------------------

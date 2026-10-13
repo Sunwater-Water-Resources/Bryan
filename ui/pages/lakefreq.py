@@ -21,6 +21,7 @@ from pathlib import Path
 
 from nicegui import app, run, ui
 
+from clipboard import copy_buttons
 from core import dam as dams, events, lakefreq, study as studies
 from layout import page_frame, require_project, severity_banner
 from theme import house_echart
@@ -228,6 +229,7 @@ class _LakeLevelsView:
                 self.messages = ui.column().classes("w-full gap-1")
                 self.chart = house_echart({"series": []}).classes("w-full h-[34rem]") \
                     .mark("lake-chart")
+                self.fit_area = ui.column().classes("w-full gap-1")
                 with ui.expansion("Annual maxima", icon="list").classes("w-full"):
                     self.table_area = ui.column().classes("w-full")
                 with ui.expansion("Water year options", icon="date_range"
@@ -447,6 +449,7 @@ class _LakeLevelsView:
             self.chart.options.clear()
             self.chart.options.update({"series": []})
             self.chart.update()
+            self.fit_area.clear()
             self.table_area.clear()
             return
 
@@ -476,7 +479,27 @@ class _LakeLevelsView:
         self.chart.options.clear()
         self.chart.options.update(options)
         self.chart.update()
+        self._fit_table()
         self._table()
+
+    def _fit_table(self) -> None:
+        """The fitted curves' parameters, from the results the chart was drawn from."""
+        self.fit_area.clear()
+        table = lakefreq.fit_table(self.results)
+        if table is None:
+            return
+        with self.fit_area:
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("Fitted curves").classes("font-bold")
+                with ui.row().classes("gap-1"):
+                    # Built when pressed, from the results the page shows then.
+                    copy_buttons(lambda: lakefreq.fit_clipboard_table(
+                        lakefreq.fit_table(self.results)), mark="lake-fit")
+            ui.table(columns=[{"name": key, "label": label, "field": key, "align": "left"}
+                              for key, label in table["columns"]],
+                     rows=table["rows"], row_key="quantity").classes("w-full") \
+                .props("dense flat").mark("lake-fit-table")
+            ui.label(table["note"]).classes("text-xs text-muted")
 
     def _table(self) -> None:
         self.table_area.clear()

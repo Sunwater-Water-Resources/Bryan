@@ -460,6 +460,127 @@ def test_the_starts_are_saved_and_an_old_settings_file_loads_blank(project):
     assert (job["axes"][AXIS_START], job["axes"][CURVE_START]) == (2, 5)
 
 
+# -- the fitted curves as a table ---------------------------------------------------------
+
+SHOULDERED = {"coef": [2.130803834, -2.958037438, -3.905986403, -1.373811495],
+              "z1": 0.0, "z2": 0.5958401014, "upper_coef": [215.17714998, 0.4770768766],
+              "upper_join": "free", "fsl": 215.0, "step": 0.17714998}
+LOGISTIC = {"floor": 209.25, "k": 1.875, "z0": -0.8416212336, "ceiling": 216.125}
+
+
+def fitted_results(form="shouldered", params=SHOULDERED, banded=True, storm=True):
+    """Results as the script writes them for a fit that worked."""
+    block = {"form": form, "rmse": 0.144836638, "params": params, "curve": [214.0],
+             "band_lo": [213.0] if banded else None, "band_hi": [215.0] if banded else None,
+             "draws_used": 338 if banded else 0, "draws": 400 if banded else 0,
+             "z_min": -2.0, "z_max": 2.0, "error": None, "warning": None}
+    fits = {"all": block}
+    if storm:
+        fits["storm"] = dict(block, rmse=0.318445864, draws_used=378 if banded else 0)
+    return {"grid": {"z": [0.0], "aep": [0.5]}, "fits": fits, "design": None,
+            "ams": [{"carried_over": index < 8} for index in range(31)]}
+
+
+def cells(table, column="all"):
+    return {row["quantity"]: row[column] for row in table["rows"]}
+
+
+def test_the_shouldered_curve_is_tabled_one_column_a_fit_and_one_row_a_quantity():
+    table = lakefreq.fit_table(fitted_results())
+    assert table["columns"] == [("quantity", "Quantity"), ("all", "All maxima"),
+                                ("storm", "Storm-driven maxima")]
+    assert [row["quantity"] for row in table["rows"]] == [
+        "Form", "RMSE (m)", "Maxima fitted", "Resamples fitted, of those drawn",
+        "Full supply level (m AHD)", "Plateau starts, z1", "Plateau ends, z2",
+        "Below FSL: coefficient of (z - z1)", "Below FSL: coefficient of (z - z1)^2",
+        "Below FSL: coefficient of (z - z1)^3", "Below FSL: coefficient of (z - z1)^4",
+        "Curve above FSL starts", "Above the plateau: level at z2 (m AHD)",
+        "Above the plateau: coefficient of (z - z2)",
+        "Step up at the end of the plateau (m)"]
+    whole, storm = cells(table), cells(table, "storm")
+    assert (whole["Form"], whole["RMSE (m)"], storm["RMSE (m)"]) == \
+        ("Shouldered plateau", "0.1448", "0.3184")
+    assert (whole["Maxima fitted"], storm["Maxima fitted"]) == ("31", "23")
+    assert whole["Resamples fitted, of those drawn"] == "338 of 400"
+    assert storm["Resamples fitted, of those drawn"] == "378 of 400"
+    # z with the frequency it stands for, as the axis labels it.
+    assert whole["Plateau starts, z1"] == "0 (1 in 2)"
+    assert whole["Plateau ends, z2"].startswith("0.5958401 (1 in 4")
+    # Enough figures to redraw the curve.
+    assert whole["Below FSL: coefficient of (z - z1)^2"] == "-2.9580374"
+    assert whole["Above the plateau: level at z2 (m AHD)"] == "215.17715"
+    assert whole["Curve above FSL starts"] == "Free"
+    assert "the level at z2 plus" in table["note"]
+
+
+def test_an_upper_limb_starting_at_full_supply_has_no_level_of_its_own():
+    params = dict(SHOULDERED, upper_join="fsl", upper_coef=[1.25, -0.125], step=0.0,
+                  coef=[2.5], z1=-0.25, z2=-0.25)
+    table = lakefreq.fit_table(fitted_results(params=params, banded=False, storm=False))
+    assert table["columns"] == [("quantity", "Quantity"), ("all", "All maxima")]
+    whole = cells(table)
+    assert "Above the plateau: level at z2 (m AHD)" not in whole
+    assert "Resamples fitted, of those drawn" not in whole          # no bands yet
+    assert whole["Above the plateau: coefficient of (z - z2)"] == "1.25"
+    assert whole["Above the plateau: coefficient of (z - z2)^2"] == "-0.125"
+    assert "Below FSL: coefficient of (z - z1)^2" not in whole
+    # More frequent than 50% AEP the frequency reads in EY.
+    assert whole["Plateau starts, z1"].startswith("-0.25 (0.") and "EY)" in whole["Plateau starts, z1"]
+    assert whole["Curve above FSL starts"] == "At full supply"
+    assert "it is FSL plus the sum of the coefficients above the plateau" in table["note"]
+
+
+def test_the_logistic_curve_is_tabled_with_its_four_parameters():
+    table = lakefreq.fit_table(fitted_results("logistic", LOGISTIC))
+    assert [row["quantity"] for row in table["rows"]][4:] == [
+        "Floor (m AHD)", "Ceiling (m AHD)", "Steepness, k (per unit of z)", "Midpoint, z0"]
+    whole = cells(table)
+    assert (whole["Form"], whole["Floor (m AHD)"], whole["Ceiling (m AHD)"]) == \
+        ("Logistic", "209.25", "216.125")
+    assert whole["Steepness, k (per unit of z)"] == "1.875"
+    assert whole["Midpoint, z0"] == "-0.84162123 (1.61EY)"
+    assert "exp(-k (z - z0))" in table["note"]
+
+
+def test_a_failed_fit_has_no_column_and_no_fit_has_no_table():
+    failed = {"form": "shouldered", "rmse": None, "params": None, "curve": None,
+              "error": "no annual maximum within 25 mm of full supply"}
+    assert lakefreq.fit_table(None) is None
+    assert lakefreq.fit_table({"fits": {}, "design": None}) is None      # form "none"
+    assert lakefreq.fit_table({"fits": {"all": failed, "storm": failed}}) is None
+
+    # One of the two failing leaves the other's column alone.
+    results = fitted_results()
+    results["fits"]["storm"] = failed
+    assert lakefreq.fit_table(results)["columns"] == [("quantity", "Quantity"),
+                                                      ("all", "All maxima")]
+
+    # Results without the maxima (not what the script writes) still table the fit.
+    del results["ams"]
+    assert "Maxima fitted" not in cells(lakefreq.fit_table(results))
+
+
+def test_the_table_is_copied_as_tab_separated_text_under_a_header_row():
+    from core import wordtable
+    table = lakefreq.fit_table(fitted_results())
+    copied = lakefreq.fit_clipboard_table(table)
+    lines = wordtable.to_text(copied).splitlines()
+
+    assert lines[0].split("\t") == ["Quantity", "All maxima", "Storm-driven maxima"]
+    assert lines[1].split("\t") == ["Form", "Shouldered plateau", "Shouldered plateau"]
+    assert lines[2].split("\t") == ["RMSE (m)", "0.1448", "0.3184"]
+    assert "Plateau ends, z2\t0.5958401 (1 in 4" in "\n".join(lines)
+    # A line a row, every row the table's width, and the equation last.
+    assert len(lines) == 1 + len(table["rows"]) + 1
+    assert all(len(line.split("\t")) == 3 for line in lines[:-1])
+    assert lines[-1] == table["note"]
+    assert "<table" in wordtable.to_html(copied)           # and as a table for Word
+
+    assert lakefreq.fit_clipboard_table(lakefreq.fit_table(None)) is None
+    one = lakefreq.fit_clipboard_table(lakefreq.fit_table(fitted_results(storm=False)))
+    assert wordtable.to_text(one).splitlines()[0] == "Quantity\tAll maxima"
+
+
 
 # -- with a study open: the record, water year and curve settings are the study's ------------
 
