@@ -35,3 +35,16 @@ def resolve_all(folder, filepaths):
     for key, relpath in filepaths.items():
         filepaths[key] = resolve(folder, relpath)
     return filepaths
+
+
+def regional_results_folder(config_file, config_data):
+    """Where a regional model's event results are: its ``results_folder``, else its model folder.
+
+    URBS writes its results into the folder it is run from. ``DownstreamStorms.py`` runs
+    the regional model from the folder this returns and ``DownstreamBoundaries.py`` reads
+    the results back from it, so the two cannot disagree. A config with no
+    ``results_folder`` keeps the results beside the model, as they were before the key
+    was read.
+    """
+    folder = os.path.dirname(os.path.abspath(config_file))
+    return resolve(folder, config_data.get('results_folder') or config_data['model_folder'])

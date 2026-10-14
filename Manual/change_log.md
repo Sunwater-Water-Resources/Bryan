@@ -287,3 +287,9 @@ The first tagged release, and the version cited for the Callide Dam design flood
 - **Engine:** the design-run code (```Main.py```, ```RouteFlows.py```, ```StormInstance.py``` and the run modules in ```lib```) is unchanged since 79a0458 (22 September 2026), the last change before the E013 runs of 25-26 September 2026. Re-running E013 on v1.0.0 gives the same results.
 - **Analysis tools** behind the report: lake record homogenisation, antecedent storage, the inflow record, lake level frequency (curve fit and resampled bands as separate steps) and the sub-burst check (```util/SubBurstCheck.py```).
 - **UI:** the run launcher, with the Study, Simulations, Run, Results (including Sub-bursts), Ensemble, PMF, Events, Report, Figures, Lake record and Lake levels pages. The lake level margin is in metres, pasted paths are cleaned, and the UI tests never write to the user's ```~/.bryan_ui.json```.
+
+
+# 14 October 2026 -- Richard
+- The regional model's event results now go to the folder named by ```results_folder``` in the regional model's URBS config. ```DownstreamStorms.py``` runs URBS from that folder and ```DownstreamBoundaries.py``` reads the results back from it. Before this they were always written beside the model files. A config with no ```results_folder``` behaves as before.
+- This only affects the downstream run. The design runs (```Main.py```) do not read ```results_folder``` from a URBS config and are unchanged, so no design result changes.
+- **A regional config that already has a ```results_folder``` will start using it.** Results from earlier runs stay where they were, beside the model, and are not found by ```DownstreamBoundaries.py``` until they are moved or the events are run again.

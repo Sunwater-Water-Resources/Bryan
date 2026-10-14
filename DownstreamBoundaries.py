@@ -1,7 +1,7 @@
 """Put a dam failure model's outflow into the regional model's inflow files.
 
     python DownstreamBoundaries.py --selection sims_mc\\results\\GWL1p3_representative_events.json ^
-        --model runs\\Regional_E001\\urbs_config_rev2.json ^
+        --model runs\\Regional_E001\\urbs_config_rev2_RFSL.json ^
         --dam-outflow ..\\dam_failure\\Simulation_List.xlsx --out runs\\Regional_E001\\boundaries
 
 ``DownstreamStorms.py --run-urbs`` runs the regional model for each chosen event, and URBS
@@ -39,7 +39,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib import RepresentativeEvents as events                    # noqa: E402
-from lib.ConfigPaths import resolve                               # noqa: E402
+from lib.ConfigPaths import regional_results_folder, resolve      # noqa: E402
 
 DURATION = re.compile(r'_(\d+(?:p\d+)?)h_')
 GWL = re.compile(r'GWL(\d+(?:p\d+)?)')
@@ -132,7 +132,8 @@ def main(argv=None):
 
     with open(args.model) as handle:
         model = json.load(handle)
-    model_folder = resolve(os.path.dirname(os.path.abspath(args.model)), model['model_folder'])
+    # where DownstreamStorms.py ran the events: the config's results_folder, else its model folder
+    model_folder = regional_results_folder(args.model, model)
     column = model.get('max_keys', {}).get('outflow')
     if not column:
         raise SystemExit('the model config names no max_keys "outflow", so there is no dam '

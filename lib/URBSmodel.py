@@ -263,6 +263,28 @@ class UrbsModel:
         self.header = [line for line in self.header if not line.startswith(prefix)]
         self.header.append(f'{prefix}{value}')
 
+    def run_from(self, folder):
+        """Run URBS from ``folder``, so its results are written there and not beside the model.
+
+        URBS writes into the folder it is started in and reads the catchment data file from
+        there, so the folder gets its own copy of that file, as a simulation's sub-folder
+        does. The batch file header named the old folder in four lines; those are the lines
+        changed, matched whole so that a ratings folder that happens to sit inside the model
+        folder is left alone.
+        """
+        folder = os.path.normpath(folder)
+        if os.path.normpath(self.output_folder) == folder:
+            return
+        old = self.output_folder
+        os.makedirs(folder, exist_ok=True)
+        swap = {f'cd {old}': f'cd {folder}',
+                f'del {old}\\urbserr.log': f'del {folder}\\urbserr.log',
+                f'del {old}\\urbsout.log': f'del {folder}\\urbsout.log',
+                f'set URBS_LOGD={old}': f'set URBS_LOGD={folder}'}
+        self.header = [swap.get(line, line) for line in self.header]
+        self.output_folder = folder
+        self.copy_catchment_data_file()
+
     def set_initial_lake_level(self):
         search_vol = self.full_supply_volume - self.volume_below_fsl
         search_level = self.get_level_from_volume(search_vol)

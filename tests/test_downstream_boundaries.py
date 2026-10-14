@@ -112,3 +112,15 @@ def test_the_regional_run_has_to_exist(tmp_path):
     with pytest.raises(SystemExit, match='Run the regional model first'):
         boundaries.main(['--selection', str(selection), '--model', str(config),
                          '--dam-outflow', str(sims), '--out', str(out)])      # no suffix
+
+
+def test_the_inflow_file_is_read_from_the_results_folder_the_config_names(tmp_path):
+    selection, config, sims, out = project(tmp_path)
+    regional = tmp_path / 'regional'
+    (regional / 'model').rename(regional / 'results')
+    (regional / 'model').mkdir()
+    data = json.loads(config.read_text())
+    data['results_folder'] = 'results'
+    config.write_text(json.dumps(data))
+    assert run(selection, config, sims, out) in (0, None)
+    assert list(out.glob('*_i.csv'))

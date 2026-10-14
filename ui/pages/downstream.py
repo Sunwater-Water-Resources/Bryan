@@ -156,7 +156,8 @@ def downstream_page() -> None:
             ui.switch("Run URBS on each storm",
                       on_change=lambda e: state.update(run_urbs=bool(e.value)))
         ui.label("Without it a batch file is written beside each storm, to run by hand. "
-                 "With it the results land in the regional model's folder, and the inflow "
+                 "With it the results land in the results folder named in the regional model's "
+                 "config, or beside the model where it names none, and the inflow "
                  "file for a hydraulic model is <storm name>_i.csv.").classes("text-sm")
 
         # -- the dam's outflow, from a dam failure model -------------------------------

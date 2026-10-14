@@ -2,7 +2,7 @@
 
     python DownstreamStorms.py --config downstream_storm_config_CLD_01.json ^
         --selection sims_mc\\results\\GWL1p3_representative_events.json ^
-        --model runs\\Regional_E001\\urbs_config_rev2.json
+        --model runs\\Regional_E001\\urbs_config_rev2_RFSL.json
 
 The launcher's Events page picks one realisation per design loading and saves
 the list as ``<group>_representative_events.json``. This turns that list into a

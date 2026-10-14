@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import ndtr, ndtri
 
-from lib.ConfigPaths import resolve
+from lib.ConfigPaths import regional_results_folder, resolve
 from lib.StormGenerator import ArealReduction
 
 def z_of(aep):
@@ -320,8 +320,12 @@ class DownstreamStormWriter:
         # design run (Simulator). Without it the model never reads its DAM ROUTE line, and
         # has no full supply volume to set the event's antecedent storage against.
         with open(model_config) as handle:
-            dam_location = json.load(handle).get('max_keys', {}).get('level')
+            model_data = json.load(handle)
+        dam_location = model_data.get('max_keys', {}).get('level')
         self.model = UrbsModel(model_config, dam_location=dam_location)
+        # The events are run from the config's results_folder where it has one, so the
+        # model folder holds the model and not 900 result files beside it.
+        self.model.run_from(regional_results_folder(model_config, model_data))
         # Only used when a realisation has no ADV column of its own; the additional dams
         # always come from their own lake config, because nothing sampled them.
         self.main_lake_config = main_lake_config

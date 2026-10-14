@@ -165,3 +165,36 @@ def test_the_simulation_period_is_looked_up_by_the_configs_own_key(duration, key
     """A whole-hour duration read from a database name is a float; the key is not."""
     from lib.DownstreamStorms import period_key
     assert period_key(duration) == key
+
+
+def test_the_events_run_from_the_results_folder_when_the_config_names_one(two_dam_model):
+    from lib.ConfigPaths import regional_results_folder
+    config = json.loads((two_dam_model / 'urbs_config.json').read_text())
+    config['results_folder'] = 'results'
+    (two_dam_model / 'urbs_config.json').write_text(json.dumps(config))
+    writer = FakeWriter(two_dam_model)
+    model_folder = writer.model.output_folder
+    writer.model.run_from(regional_results_folder(str(two_dam_model / 'urbs_config.json'), config))
+
+    results = two_dam_model / 'results'
+    assert Path(writer.model.output_folder) == results
+    # URBS reads the catchment data file from the folder it is run in
+    assert list(results.glob('*.dat')), 'the results folder needs its own catchment data file'
+    path = writer.run(event(), '000123_24h_GWL1p3.24', '000123_24h_GWL1p3', execute=False)
+    assert Path(path).parent == results
+    text = Path(path).read_text()
+    assert f'cd {results}' in text and f'set URBS_LOGD={results}' in text
+    assert f'cd {model_folder}' not in text
+    # the vec is still read from the model folder, and the ratings from theirs
+    assert str(Path(model_folder) / writer.model.vec_file) in text
+    assert f'set URBS_RATS={writer.model.ratings_folder}' in text
+
+
+def test_a_config_with_no_results_folder_runs_beside_the_model(two_dam_model):
+    from lib.ConfigPaths import regional_results_folder
+    config = json.loads((two_dam_model / 'urbs_config.json').read_text())
+    config.pop('results_folder', None)
+    writer = FakeWriter(two_dam_model)
+    before = (writer.model.output_folder, list(writer.model.header))
+    writer.model.run_from(regional_results_folder(str(two_dam_model / 'urbs_config.json'), config))
+    assert (writer.model.output_folder, writer.model.header) == before
