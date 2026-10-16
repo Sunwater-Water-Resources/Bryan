@@ -53,6 +53,10 @@ class _FiguresView:
     def __init__(self) -> None:
         self.study = STATE.study
         self.body = None
+        # Which figure cards are open, by figure id. Every redraw rebuilds the
+        # cards, so without this a relabel or an export shuts the card being
+        # worked on. A card's preview is built only once it is opened.
+        self.open_figures: set[str] = set()
 
     def build(self) -> None:
         if self.study is None:
@@ -85,8 +89,10 @@ class _FiguresView:
             for spec in specs:
                 _FigureCard(self, spec).build()
 
-    def store(self, spec) -> dict:
+    def store(self, spec, *, open_it=False) -> dict:
         stored = figures.put(self.study, spec)
+        if open_it:
+            self.open_figures.add(stored.get("id"))
         self.save()
         self.redraw()
         return stored
@@ -126,28 +132,57 @@ class _FigureCard:
         self.study = view.study
         self.spec = spec
         self.figure_id = spec.get("id")
+        self.body = None              # built the first time the card is opened
 
     def build(self) -> None:
+        is_open = self.figure_id in self.view.open_figures
         with ui.card().classes("w-full").mark(f"figure-{self.figure_id}"):
-            with ui.row().classes("w-full items-start justify-between no-wrap"):
-                with ui.column().classes("gap-0"):
-                    ui.label(self.spec.get("filename") or self.figure_id).classes("font-bold")
-                    ui.label(f"{TYPES.get(self.spec.get('type'), self.spec.get('type'))} - "
-                             f"{len(self.spec.get('curves') or [])} curves - "
-                             f"{figures.output_path(self.study, self.spec)}") \
-                        .classes("text-xs text-muted")
-                with ui.row().classes("gap-1 no-wrap"):
-                    ui.button("Export PNG", icon="image", on_click=self._export) \
-                        .props("dense no-caps").mark(f"export-{self.figure_id}")
-                    ui.button(icon="edit", on_click=self._edit) \
-                        .props("flat dense round").tooltip("Edit").mark(f"edit-{self.figure_id}")
-                    ui.button(icon="content_paste_go", on_click=self._duplicate) \
-                        .props("flat dense round").tooltip(
-                            "Duplicate - swap a curve for a sensitivity figure")
-                    ui.button(icon="delete", on_click=self._ask_delete) \
-                        .props("flat dense round").tooltip("Remove") \
-                        .mark(f"remove-{self.figure_id}")
-            with ui.row().classes("w-full items-start gap-4 no-wrap"):
+            self.expansion = ui.expansion(
+                value=is_open, on_value_change=lambda e: self._toggled(e.value)) \
+                .classes("w-full").mark(f"open-{self.figure_id}")
+            with self.expansion.add_slot("header"):
+                self._header()
+            if is_open:
+                self._build_body()
+
+    def _header(self) -> None:
+        with ui.row().classes("grow items-start justify-between no-wrap"):
+            with ui.column().classes("gap-0"):
+                ui.label(self.spec.get("filename") or self.figure_id).classes("font-bold")
+                ui.label(f"{TYPES.get(self.spec.get('type'), self.spec.get('type'))} - "
+                         f"{len(self.spec.get('curves') or [])} curves - "
+                         f"{figures.output_path(self.study, self.spec)}") \
+                    .classes("text-xs text-muted")
+            # A click on a button must not also open or shut the card.
+            with ui.row().classes("gap-1 no-wrap") \
+                    .on("click", js_handler="(e) => e.stopPropagation()"):
+                ui.button("Export PNG", icon="image", on_click=self._export) \
+                    .props("dense no-caps").mark(f"export-{self.figure_id}")
+                ui.button(icon="edit", on_click=self._edit) \
+                    .props("flat dense round").tooltip("Edit").mark(f"edit-{self.figure_id}")
+                ui.button(icon="content_paste_go", on_click=self._duplicate) \
+                    .props("flat dense round").tooltip(
+                        "Duplicate - swap a curve for a sensitivity figure")
+                ui.button(icon="delete", on_click=self._ask_delete) \
+                    .props("flat dense round").tooltip("Remove") \
+                    .mark(f"remove-{self.figure_id}")
+
+    def _toggled(self, is_open) -> None:
+        """Remember an open card and build its body the first time - no redraw.
+
+        Redrawing here would destroy the expansion that raised the event.
+        """
+        if is_open:
+            self.view.open_figures.add(self.figure_id)
+            if self.body is None:
+                self._build_body()
+        else:
+            self.view.open_figures.discard(self.figure_id)
+
+    def _build_body(self) -> None:
+        """The preview, the labels and the last export; the preview fills off-thread."""
+        with self.expansion:
+            with ui.row().classes("w-full items-start gap-4 no-wrap") as self.body:
                 self.chart_box = ui.column().classes("grow min-w-0")
                 with self.chart_box:
                     ui.spinner()
@@ -165,7 +200,7 @@ class _FigureCard:
                         ui.label("Last export").classes("text-sm text-muted pt-2")
                         ui.image(png).classes("w-full").props("fit=contain") \
                             .mark(f"last-export-{self.figure_id}")
-        ui.timer(0.01, self._fill, once=True)
+            ui.timer(0.01, self._fill, once=True)
 
     async def _fill(self) -> None:
         data = await _off_thread(figures.build, self.study, self.spec)
@@ -216,6 +251,7 @@ class _FigureCard:
 
     def _delete(self) -> None:
         figures.remove(self.study, self.figure_id)
+        self.view.open_figures.discard(self.figure_id)
         self.view.save()
         self.view.redraw()
 
@@ -243,7 +279,7 @@ class _FigureEditor:
         if not str(self.spec.get("filename") or "").strip():
             ui.notify("Give the figure a file name", type="warning")
             return
-        self.view.store(self.spec)
+        self.view.store(self.spec, open_it=self.is_new)
         self.dialog.close()
 
     def _path_base(self) -> dict:

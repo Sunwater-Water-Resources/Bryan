@@ -53,6 +53,10 @@ async def seen(user, marker, seconds=10.0):
     raise AssertionError(f"{marker} never appeared")
 
 
+def open_card(user, figure_id="levels"):
+    next(iter(user.find(marker=f"open-{figure_id}").elements)).set_value(True)
+
+
 @pytest.mark.asyncio
 async def test_without_a_study_the_page_sends_you_to_the_study_page(user, private_settings):
     from state import STATE
@@ -65,6 +69,7 @@ async def test_without_a_study_the_page_sends_you_to_the_study_page(user, privat
 @pytest.mark.asyncio
 async def test_the_figure_is_previewed_with_its_label(user, opened):
     await user.open("/figures")
+    open_card(user)
     chart = await seen(user, "preview-levels")
     assert [s["name"] for s in chart.options["series"]] == ["GWL 1.3"]
 
@@ -73,6 +78,7 @@ async def test_the_figure_is_previewed_with_its_label(user, opened):
 async def test_a_label_edited_beside_the_preview_is_kept_for_this_figure(user, opened):
     from core import figures, study as studies
     await user.open("/figures")
+    open_card(user)
     await seen(user, "preview-levels")
     box = next(iter(user.find(marker="label-levels-0").elements))
     box.set_value("Near-term")
@@ -90,5 +96,39 @@ async def test_a_figure_from_stale_results_says_so(user, opened):
     from test_staleness import make_stale
     make_stale(opened)
     await user.open("/figures")
+    open_card(user)
     await seen(user, "preview-levels")
     await user.should_see("dam.sq changed after the run")
+
+
+@pytest.mark.asyncio
+async def test_a_card_starts_shut_and_builds_its_preview_only_when_opened(user, opened):
+    await user.open("/figures")
+    await user.should_see("levels")
+    await user.should_see(marker="export-levels")
+    await asyncio.sleep(0.3)
+    expansion = next(iter(user.find(marker="open-levels").elements))
+    assert expansion.value is False
+    await user.should_not_see(marker="preview-levels")
+    await user.should_not_see(marker="label-levels-0")
+    open_card(user)
+    await seen(user, "preview-levels")
+
+
+@pytest.mark.asyncio
+async def test_a_redraw_keeps_the_open_card_open(user, opened):
+    await user.open("/figures")
+    open_card(user)
+    await seen(user, "preview-levels")
+    old = next(iter(user.find(marker="open-levels").elements))
+    box = next(iter(user.find(marker="label-levels-0").elements))
+    box.set_value("Near-term")
+    user.find(marker="label-levels-0").trigger("blur")
+    for _ in range(50):
+        if old.is_deleted:
+            break
+        await asyncio.sleep(0.1)
+    assert old.is_deleted, "the relabel did not redraw the page"
+    expansion = next(iter(user.find(marker="open-levels").elements))
+    assert expansion.value is True
+    await seen(user, "preview-levels")

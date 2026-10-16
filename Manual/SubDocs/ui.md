@@ -488,7 +488,7 @@ A straight read off the realisations without a fit is too noisy up there - a doz
 
 ## Report figures
 
-The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Study page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped.
+The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Study page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped. Each figure is a card that opens on its name; the header keeps the file name, the output path and the Export PNG, Edit, Duplicate and Remove buttons, and the preview is only drawn once the card is opened, so a long list opens quickly. An open card stays open while its labels are edited or it is exported.
 
 - **Curves**: a group's design curve (the envelope over its durations, as the Results page draws it); a curve from a file with the AEP ('1 in X') in its first column and the result as a column, for a previous study's adopted curve; or an **FFA** - an RMC Bestfit export, drawn as v03 drew it: the posterior mode (solid) and/or mean (dashed) in black, the 90% credible interval in faint grey when there is only one FFA on the figure, the annual maxima as dots and any paleoflood lower bounds as upward triangles.
 - **Labels** belong to the figure. The same group can be 'URBS' on the FFA comparison and 'GWL 1.3 °C' among the horizons; edit a label in the box beside the preview and the figure redraws.

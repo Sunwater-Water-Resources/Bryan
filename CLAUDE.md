@@ -562,6 +562,10 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   the figure. A curve's label belongs to the figure, not the curve - the analyst relabels on the
   fly. **`Study.all_sources` must cover every place a run is named** - tables, PMF groups and figure
   curves - or renaming a run orphans them; a test caught the figures missing from it.
+  Each figure is a `ui.expansion` whose body (and its off-thread `_fill`) is built on first
+  open; which are open is kept by figure id (`open_figures`), as on the Events page. The
+  buttons sit in the expansion's header slot, so their row stops click propagation - without
+  it every Export or Edit also opens or shuts the card.
 - `ui/tests/test_results_page.py` renders the page through `nicegui.testing.user_simulation`,
   which is why `pytest-asyncio` is in `requirements-ui.txt`. It builds its own fixture instead of
   enabling the nicegui pytest plugin, so the rest of the suite still runs without nicegui
