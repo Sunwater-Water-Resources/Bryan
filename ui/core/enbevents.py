@@ -257,17 +257,37 @@ def summary_rows(choices) -> list:
 
 
 def duration_rows(choice) -> list:
-    """The per-duration table under a loading's card, the duration the rule took marked."""
+    """The per-duration table under a loading's card, the duration the rule took marked.
+
+    The values are numbers, not text, so the page's table sorts them as numbers - "4.5 h"
+    as text sorts after "36 h" (``DURATION_COLUMNS``)."""
     table = choice.table
     if table is None or table.empty:
         return []
     rows = []
     for duration, row in table.iterrows():
-        rows.append({"duration": f"{duration:g} h", "n": int(row["n"]),
-                     "median": f"{row['median']:.3f}", "median pattern": row["median_pattern"],
-                     "highest": f"{row['max']:.3f}", "highest pattern": row["max_pattern"],
+        rows.append({"duration": float(duration), "n": int(row["n"]),
+                     "median": round(float(row["median"]), 3),
+                     "median pattern": row["median_pattern"],
+                     "highest": round(float(row["max"]), 3),
+                     "highest pattern": row["max_pattern"],
                      "chosen": bool(choice.found and duration == choice.duration)})
     return rows
+
+
+#: The per-duration table's columns, every one sortable - click a heading, again for highest
+#: first. Plain numbers with the unit in the heading: a formatted "4.5 h" would sort as text,
+#: after "36 h", and NiceGUI does not evaluate a column's ":format" function.
+DURATION_COLUMNS = [
+    {"name": "duration", "label": "duration (h)", "field": "duration", "sortable": True},
+    {"name": "n", "label": "n", "field": "n", "sortable": True},
+    {"name": "median", "label": "median", "field": "median", "sortable": True},
+    {"name": "median pattern", "label": "median pattern", "field": "median pattern",
+     "sortable": True},
+    {"name": "highest", "label": "highest", "field": "highest", "sortable": True},
+    {"name": "highest pattern", "label": "highest pattern", "field": "highest pattern",
+     "sortable": True},
+]
 
 
 def _fmt(value, digits) -> str:

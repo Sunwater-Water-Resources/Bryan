@@ -236,10 +236,11 @@ class EnsembleEventsView:
                 .mark(f"chosen-{position}")
             rows = enbevents.duration_rows(choice)
             if rows:
-                columns = [{"name": key, "label": key, "field": key}
-                           for key in rows[0] if key != "chosen"]
-                table = ui.table(columns=columns, rows=rows, row_key="duration") \
-                    .classes("w-full").props("dense flat bordered")
+                ui.label("Click a heading to sort; click again for highest first."
+                         ).classes("text-xs text-muted")
+                table = ui.table(columns=enbevents.DURATION_COLUMNS, rows=rows,
+                                 row_key="duration").classes("w-full") \
+                    .props("dense flat bordered").mark(f"durations-{position}")
                 table.props(f":row-class='{CHOSEN_ROW_JS}'")
 
     def _draw_summary(self) -> None:

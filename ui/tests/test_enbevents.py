@@ -66,7 +66,11 @@ def test_a_design_aep_is_the_median_pattern_at_the_critical_duration(tmp_path):
     assert choice.rule == "median" and choice.duration == 9.0
     assert choice.event == 10 + 5 and choice.pattern == "GSDM: 5"
     rows = enbevents.duration_rows(choice)
-    assert [row["duration"] for row in rows if row["chosen"]] == ["9 h"]
+    assert [row["duration"] for row in rows if row["chosen"]] == [9.0]
+    # numbers, so the page's table sorts 4.5 h before 12 h rather than after it as text
+    assert all(isinstance(row[key], float) for row in rows
+               for key in ("duration", "median", "highest"))
+    assert all(column.get("sortable") for column in enbevents.DURATION_COLUMNS)
 
 
 def test_a_duration_overrides_the_critical_one(tmp_path):
