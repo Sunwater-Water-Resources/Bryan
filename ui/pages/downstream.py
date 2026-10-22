@@ -360,6 +360,33 @@ class _DownstreamView:
         charts = ui.column().classes("w-full")
         draw([first] if first else [])
 
+        # the peaks at every * location, for the report
+        loading_of = {os.path.splitext(s.filename)[0]: s.loading
+                      for s in plan.storms if s.filename}
+        shown = {"what": urbsresults.PEAK}
+
+        def peaks() -> list:
+            return urbsresults.peaks_rows(flows, loading_of, shown["what"])
+
+        def draw_peaks() -> None:
+            peaks_box.clear()
+            rows = peaks()
+            with peaks_box:
+                ui.table(columns=[{"name": key, "label": key, "field": key,
+                                   "align": "left" if key in ("loading", "run") else "right"}
+                                  for key in rows[0]], rows=rows, row_key="run") \
+                    .classes("w-full").props("dense flat bordered").mark("peaks-table")
+
+        with ui.row().classes("items-center gap-3"):
+            ui.label("Peaks at every print location").classes("font-bold")
+            ui.toggle({urbsresults.PEAK: "Peak flow (m³/s)", urbsresults.TIME: "Time of peak (h)"},
+                      value=urbsresults.PEAK,
+                      on_change=lambda e: (shown.update(what=e.value), draw_peaks())
+                      ).props("no-caps dense").mark("peaks-show")
+            copy_buttons(lambda: table_from_rows(list(peaks()[0]), peaks()), mark="peaks")
+        peaks_box = ui.column().classes("w-full")
+        draw_peaks()
+
     def _dams(self, model, found, plan) -> None:
         """Every dam against its reference levels: shown where the model has more than one
         dam or the config gives dam_levels, and nowhere else."""

@@ -220,3 +220,7 @@ async def test_the_results_tab_draws_the_print_locations_and_checks_the_ends(use
     await user.open("/downstream?tab=Results")
     await user.should_see("All 1 runs have receded")
     await user.should_see(marker="flows-GOOVIGEN")
+    table = next(iter(user.find(marker="peaks-table").elements))
+    row, = table.rows
+    assert row["run"] == "005044_72h_GWL1p3" and row["GOOVIGEN"]
+    await user.should_see(marker="copy-word-peaks")

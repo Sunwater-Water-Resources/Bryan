@@ -220,3 +220,16 @@ def test_the_first_location_shown_is_the_dams_outflow_or_the_last(tmp_path):
     config.write_text(json.dumps({"max_keys": {"outflow": "CLD_OUTFLOW_RFSL"}}))
     assert ur.default_location(config, ["A", "CLD_OUTFLOW_RFSL", "B"]) == "CLD_OUTFLOW_RFSL"
     assert ur.default_location(config, ["A", "B"]) == "B"
+
+
+
+def test_the_peak_table_has_events_down_and_locations_across(flows_folder):
+    flows = {REAL: ur.read_flows(flows_folder, REAL)}
+    row, = ur.peaks_rows(flows, {REAL: "1 in 100"})
+    assert row["loading"] == "1 in 100" and row["run"] == REAL
+    assert set(row) == {"loading", "run", "STAGCK_WEIR", "MALAKOFF", "RAINBOW_CK", "96_KM",
+                        "CLD_INFLOW", "GERRARD", "GOOVIGEN"}
+    peak = flows[REAL]["GOOVIGEN"].max()
+    assert row["GOOVIGEN"] == f"{peak:,.0f}"
+    timed, = ur.peaks_rows(flows, {}, ur.TIME)
+    assert timed["GOOVIGEN"] == f"{flows[REAL]['GOOVIGEN'].idxmax():g}"

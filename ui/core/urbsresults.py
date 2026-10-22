@@ -253,6 +253,28 @@ def end_of_run(flows) -> list:
     return [location for location in flows.columns if cut_off(flows[location])]
 
 
+PEAK = "peak"
+TIME = "time"
+
+
+def peaks_rows(flows_by_run: dict, loading_of: dict, show: str = PEAK) -> list:
+    """Events down the side, ``*`` print locations across: the peak flow (m3/s, whole
+    numbers) or the time it came (hours), for the report's table of downstream flows."""
+    rows = []
+    for run, flows in flows_by_run.items():
+        row = {"loading": loading_of.get(run, ""), "run": run}
+        for location in flows.columns:
+            values = flows[location].dropna()
+            if values.empty:
+                row[location] = ""
+            elif show == TIME:
+                row[location] = f"{float(values.idxmax()):g}"
+            else:
+                row[location] = f"{float(values.max()):,.0f}"
+        rows.append(row)
+    return rows
+
+
 def read_levels(results_folder, run_name) -> pd.DataFrame | None:
     """A run's level hydrographs by location (eight characters), or None if not there."""
     try:

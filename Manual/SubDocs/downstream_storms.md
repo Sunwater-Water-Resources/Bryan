@@ -282,6 +282,10 @@ passed, and is named with the locations. The regional model's ```simulation_peri
 upstream periods plus 48 h, which is provisional; this is the check that confirms them. All 42
 Callide runs of 21 October 2026 pass it.
 
+Last, **the peaks**: events down the side and every ```*``` location across, as the peak flow in
+m³/s or, switched, the time it came in hours - with **Copy for Word** and **Copy as text** for the
+report.
+
 ## The downstream storm config
 
 All paths are relative to **this config file**, and are resolved through the same helper the
