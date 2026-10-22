@@ -61,7 +61,10 @@ def storm_name(target, duration, gwl, suffix, method=events.MONTE_CARLO):
     event = (f'e{int(target.picked):05d}' if method == events.ENSEMBLE
              else f'{int(target.picked):06d}')
     stem = f'{event}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p')
-    return f'{stem}{suffix}.{duration:g}'
+    # The extension too: '.4.5' has a second dot, and the run is named by what is left of
+    # the file name before the last one - 'e00022_4p5h_GWL2p7_RFSL.4', for which URBS wrote
+    # nothing. Whole hours keep '.9', '.72', as every run so far is named.
+    return f'{stem}{suffix}.' + f'{duration:g}'.replace('.', 'p')
 
 
 def which_event(method):

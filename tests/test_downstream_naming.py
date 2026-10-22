@@ -59,3 +59,14 @@ def test_a_name_without_a_duration_stops_the_generator_and_flags_the_launcher():
     assert launcher.read_from_name(launcher.DURATION, name) is None
     with pytest.raises(SystemExit):
         generator.from_name(generator.DURATION, name, None, 'duration')
+
+
+def test_a_part_hour_storm_has_one_dot_so_its_run_name_is_whole():
+    # '.4.5' left the run named 'e00022_4p5h_GWL2p7_RFSL.4', and URBS wrote no results for it
+    import os
+    target = SimpleNamespace(picked=22)
+    name = generator.storm_name(target, 4.5, 2.7, '_RFSL', 'ensemble')
+    assert name == 'e00022_4p5h_GWL2p7_RFSL.4p5'
+    assert os.path.splitext(name)[0] == 'e00022_4p5h_GWL2p7_RFSL'
+    # whole hours keep the extension every run so far was named with
+    assert generator.storm_name(target, 9, 1.3, '_RFSL', 'ensemble') == 'e00022_9h_GWL1p3_RFSL.9'

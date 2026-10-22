@@ -197,7 +197,8 @@ def storm_filename(picked, duration, gwl, suffix='', method='monte carlo') -> st
     of its own database, is ``e`` and five digits so it can never take a realisation's."""
     event = f'e{int(picked):05d}' if method == EVENTS.ENSEMBLE else f'{int(picked):06d}'
     return (f'{event}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p')
-            + f'{suffix or ""}.{duration:g}')
+            # 'p' in the extension as well: '.4.5' made the run name end '.4'
+            + f'{suffix or ""}.' + f'{duration:g}'.replace('.', 'p'))
 
 
 def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
