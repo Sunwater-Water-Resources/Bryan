@@ -350,6 +350,16 @@ def new_study(path, name: str = "") -> Study:
     return study
 
 
+def is_study_file(path) -> bool:
+    """Whether a JSON file is a study file rather than a sims config: it carries the
+    study format key. Unreadable is False - the caller's own open reports why."""
+    try:
+        data = read_json(Path(path))
+    except Exception:                                # noqa: BLE001 - unreadable is "no"
+        return False
+    return isinstance(data, dict) and FORMAT_KEY in data
+
+
 def load_study(path) -> Study:
     path = Path(clean_path_text(path)).expanduser()
     if path.is_dir():

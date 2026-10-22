@@ -23,7 +23,8 @@ def main() -> None:
         prog="bryan-ui",
         description="Choose and run Bryan simulations from a sims list")
     parser.add_argument("config", nargs="?", default=None,
-                        help="sims_config.json to open on startup")
+                        help="sims_config.json to open on startup, or a bryan_study.json "
+                             "to open as the study")
     # This computer only by default. NiceGUI's own default in a browser tab is
     # 0.0.0.0 - every network the computer is on - and the launcher has no login,
     # yet it starts processes and reads and writes project files.
@@ -75,8 +76,15 @@ def main() -> None:
         path = Path(args.config).expanduser()
         if not path.is_file():
             parser.error(f"config file not found: {path}")
+        from core import study as studies
         try:
-            STATE.open_project(path)
+            # A study file is a study, not a sims config: a batch file beside the study
+            # naming it would otherwise fail with "no 'simulation_list' key".
+            if studies.is_study_file(path):
+                study = STATE.open_study(path)
+                print(f"opened the study {study.name or path.name}; pick a run on the Study page")
+            else:
+                STATE.open_project(path)
         except Exception as exc:      # noqa: BLE001 - report, do not crash the UI
             print(f"could not open {path}: {exc}", file=sys.stderr)
 
