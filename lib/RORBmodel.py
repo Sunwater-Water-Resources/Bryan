@@ -422,7 +422,7 @@ class RorbModel:
             break
         
         # df = pd.read_fwf(result_path, skiprows=skiprows, encoding = 'unicode_escape').set_index('Time')
-        df = pd.read_csv(result_path, skiprows=skiprows, encoding='unicode_escape', sep="\s+").set_index('Time')
+        df = pd.read_csv(result_path, skiprows=skiprows, encoding='unicode_escape', sep=r"\s+").set_index('Time')
         
         if 'storage_name' in max_keys:
             inflow_label = f'Hyd{hyd_no + 1:03}'

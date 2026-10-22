@@ -298,7 +298,7 @@ class DamRouter:
             while line:
                 line = line.strip()
                 if line:
-                    s, q = re.split('\s+', line.strip())
+                    s, q = re.split(r'\s+', line.strip())
                     sq_curve.loc[counter, 'Storage'] = float(s)
                     sq_curve.loc[counter, 'Flow'] = float(q)
                     line = f.readline()  # Read the next line

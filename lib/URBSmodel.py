@@ -821,7 +821,7 @@ class UrbsModel:
         
         # print('\nHeaders: ', headers)
         # df = pd.read_fwf(result_path, skiprows=16, skipfooter=5, names=headers)
-        df = pd.read_csv(result_path, skiprows=skiprow, skipfooter=5, sep="\s+", names=headers, engine = 'python')
+        df = pd.read_csv(result_path, skiprows=skiprow, skipfooter=5, sep=r"\s+", names=headers, engine = 'python')
         df.set_index('Time', inplace=True)
         # print('\nDataframe:\n', df)
         inflow_label = max_keys['inflow'][:8]                   # URBS automatically truncates label to 8 char
@@ -868,7 +868,7 @@ class UrbsModel:
             
         # read the data
         # df = pd.read_fwf(result_path, skiprows=16, skipfooter=1, names=headers)
-        df = pd.read_csv(result_path, skiprows=skiprow, skipfooter=1, sep="\s+", names=headers, engine = 'python')
+        df = pd.read_csv(result_path, skiprows=skiprow, skipfooter=1, sep=r"\s+", names=headers, engine = 'python')
         df.set_index('Time', inplace=True)
         current_level = df[level_label]
         current_level.name = sim_label

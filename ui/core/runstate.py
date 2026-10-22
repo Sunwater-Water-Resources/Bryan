@@ -83,7 +83,7 @@ class RunRecord:
         return Path(self.folder) / RUN_STATE_FILENAME
 
     def relocate(self, folder) -> None:
-        """Re-point every stored path at where the record now sits.
+        r"""Re-point every stored path at where the record now sits.
 
         The paths are written absolute, as the machine that launched the run
         reached the project - ``F:\Models\...`` on one machine is a network

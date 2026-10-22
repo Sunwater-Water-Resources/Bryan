@@ -320,7 +320,7 @@ def test_groups_are_named_by_what_tells_them_apart_and_files_by_the_last_part(tm
     assert sorted(subburst.display_names(found).values()) == ["GWL1p3", "GWL1p3_noEBF"]
     tested = next(iter(found.values()))
     assert subburst.build_job(project, tested).job["tested"]["label"] == "CLD_mc_GWL1p3"
-    assert subburst.short_label("sims_mc\results\CLD_mc_GWL1p3") == "CLD_mc_GWL1p3"
+    assert subburst.short_label(r"sims_mc\results\CLD_mc_GWL1p3") == "CLD_mc_GWL1p3"
     assert subburst.short_label("sims_mc/results/x") == "x"
 
 
