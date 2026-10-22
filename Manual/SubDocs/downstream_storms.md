@@ -37,10 +37,12 @@ it stops the line says how it ended: the number of storm files and how many need
 the error and the log to read. The full output is in ```<selection>.downstream.log``` beside the
 selection, written as it goes. That line is the only thing on the page that updates by itself.
 
-It also passes the open project's sims config to the generator, so an event whose embedded
-bursts were filtered keeps its filtered pattern (see below). **Open the sims config the
-selection was saved under**: a selection from another sims list has no row here to rebuild
-from, and a filtered event in it is refused.
+It also passes the generator the sims config the events came from, so an event whose embedded
+bursts were filtered keeps its filtered pattern (see below). The selection file records which
+one that was, so it does not matter which sims config is open. A selection saved before
+22 October 2026 records none, and the open one is used: **open the sims config it was saved
+under**, since a selection from another sims list has no row there to rebuild from, and a
+filtered event in it is refused.
 
 The two config paths are remembered **per project**, keyed on the sims config's resolved
 path, so they survive leaving the page and reloading the project. They are kept in

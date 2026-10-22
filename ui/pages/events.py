@@ -819,7 +819,11 @@ class _EventsView:
             stored.append(copy)
         path = events.selection_path(self.folder, self.group)
         try:
-            events.save_targets(path, stored, self._settings())
+            # The sims config the events came from, so the Downstream page rebuilds a
+            # filtered event's pattern from the right run whichever project is open.
+            events.save_targets(path, stored, self._settings(),
+                                sims_config=events.project_relative(
+                                    self.project, self.project.config.config_path))
         except OSError as exc:
             self._saved(f"NOT saved: {exc}")
             ui.notify(f"Could not save {Path(path).name}: {exc}", type="warning")

@@ -656,5 +656,11 @@ def load_targets(path) -> tuple:
     return EVENTS.read_selection(path)
 
 
-def save_targets(path, targets, settings=None) -> None:
-    atomic_write_json(Path(path), EVENTS.selection_payload(targets, settings))
+def load_selection(path):
+    """The whole saved selection: targets, settings, method and sims config."""
+    return EVENTS.read_selection_file(path)
+
+
+def save_targets(path, targets, settings=None, method=EVENTS.MONTE_CARLO, sims_config="") -> None:
+    atomic_write_json(Path(path), EVENTS.selection_payload(targets, settings, method,
+                                                           sims_config))

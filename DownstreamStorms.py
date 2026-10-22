@@ -122,7 +122,8 @@ def main():
                     help="the upstream run's sims config - the one the Events page had open. "
                          "With it each event's temporal pattern is rebuilt as the run applied "
                          "it, embedded burst filtering included. Needed for any event whose "
-                         "embedded bursts were filtered")
+                         "embedded bursts were filtered. Defaults to the one the selection "
+                         "file records")
     ap.add_argument('--project',
                     help='the project folder the selection was saved in. Only needed when '
                          'its databases are not found from the selection file itself')
@@ -144,7 +145,14 @@ def main():
     if climate:
         climate = climate if os.path.isabs(climate) else resolve(folder, climate)
 
-    targets, settings = events.read_selection(args.selection)
+    selection = events.read_selection_file(args.selection)
+    targets = selection.targets
+    if not args.sims_config and selection.sims_config:
+        # recorded relative to the project, like the databases, and found the same way
+        found = events.locate_database(selection.sims_config, args.selection, args.project)
+        if os.path.isfile(found):
+            args.sims_config = found
+            print(f'sims config from the selection: {found}')
     chosen = [t for t in targets if t.picked is not None]
     print(f'{len(targets)} loadings in {os.path.basename(args.selection)}, '
           f'{len(chosen)} with an event picked')

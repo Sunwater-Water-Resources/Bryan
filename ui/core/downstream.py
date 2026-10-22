@@ -127,6 +127,18 @@ def suggested_suffix(selection_path, selections) -> str:
     return f'_{group}'
 
 
+def sims_config_for(selection_path, project_folder, fallback=None) -> str | None:
+    """The sims config to rebuild the selection's patterns from: the one the selection
+    records, where it is on disk, else ``fallback`` - the open project's. A selection saved
+    before the file recorded one only works with the sims config it was saved under open."""
+    recorded = EVENTS.read_selection_file(selection_path).sims_config
+    if recorded:
+        found = EVENTS.locate_database(recorded, selection_path, project_folder)
+        if os.path.isfile(found):
+            return found
+    return str(fallback) if fallback else None
+
+
 def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
     """What a run over this selection would write, and what would stop it.
 

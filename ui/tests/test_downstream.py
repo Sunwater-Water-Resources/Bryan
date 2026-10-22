@@ -207,3 +207,20 @@ def test_the_outcome_reads_the_generators_closing_lines():
         True, "Finished. 7 storm files. 3 need a look - see duration_dip and embedded_bursts.")
     ok, said = downstream.outcome(1, "Traceback...\nSystemExit: no such file\n", "x.log")
     assert not ok and "exit code 1" in said and "x.log" in said and "no such file" in said
+
+
+def test_the_sims_config_comes_from_the_selection_where_it_records_one(tmp_path):
+    from core.bryan import representative_events
+    events = representative_events()
+    (tmp_path / "runs").mkdir()
+    recorded = tmp_path / "runs" / "CLD_RFSL_mc_sims_01.json"
+    recorded.write_text("{}")
+    selection = tmp_path / "RFSL_Design_GWL1p3_representative_events.json"
+    selection.write_text(json.dumps(events.selection_payload(
+        [], sims_config="runs\CLD_RFSL_mc_sims_01.json")))
+    assert downstream.sims_config_for(selection, tmp_path, "open.json") == str(recorded)
+    # one saved before the file recorded it, or recording one no longer on disk: the open one
+    selection.write_text(json.dumps({"targets": []}))
+    assert downstream.sims_config_for(selection, tmp_path, "open.json") == "open.json"
+    selection.write_text(json.dumps(events.selection_payload([], sims_config="gone.json")))
+    assert downstream.sims_config_for(selection, tmp_path, "open.json") == "open.json"

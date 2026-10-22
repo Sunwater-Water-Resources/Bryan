@@ -128,7 +128,8 @@ def downstream_page() -> None:
                 bryan_python=STATE.settings.bryan_python or None,
                 duration=state["duration"], gwl=state["gwl"], dry_run=dry_run,
                 suffix=state["suffix"], run_urbs=state["run_urbs"],
-                sims_config=project.config.config_path)
+                sims_config=downstream.sims_config_for(state["selection"], folder,
+                                                       project.config.config_path))
             if state["process"] is not None and state["process"].poll() is None:
                 ui.notify("The last run is still going.", type="warning")
                 return

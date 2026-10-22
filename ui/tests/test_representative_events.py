@@ -315,6 +315,32 @@ def test_a_selection_saved_before_names_existed_still_reads(tmp_path):
     assert target.name == "" and target.title == "1 in 100"
 
 
+def test_a_selection_records_its_method_and_sims_config(tmp_path):
+    pmf = events.Target(kind="pmf", picked=42, duration=9.0, rule="highest",
+                        notional_aep=8e6, name="PMF")
+    path = tmp_path / events.SELECTION_FILE
+    path.write_text(json.dumps(events.selection_payload(
+        [pmf], method=events.ENSEMBLE, sims_config="runs\\E013\\PMF_sims.json")))
+    selection = events.read_selection_file(path)
+    assert selection.method == events.ENSEMBLE
+    assert selection.sims_config == "runs\\E013\\PMF_sims.json"
+    loaded = selection.targets[0]
+    assert (loaded.duration, loaded.rule, loaded.notional_aep) == (9.0, "highest", 8e6)
+    assert loaded.label == "PMF" and loaded.title == "PMF (PMF)"
+
+
+def test_a_selection_saved_before_the_method_was_recorded_is_monte_carlo(tmp_path):
+    # every selection file E013 saved looks like this
+    path = tmp_path / events.SELECTION_FILE
+    path.write_text(json.dumps({"targets": [{"kind": "level", "value": 219.13, "picked": 8029}],
+                                "settings": {}}))
+    selection = events.read_selection_file(path)
+    assert selection.method == events.MONTE_CARLO and selection.sims_config == ""
+    target = selection.targets[0]
+    assert target.duration is None and target.rule == "" and target.notional_aep is None
+    assert events.read_selection_file(tmp_path / "missing.json").targets == []
+
+
 # -- the AEP of the PMP ------------------------------------------------------
 
 def test_the_pmp_aep_is_read_from_the_ifd_files_config(tmp_path):

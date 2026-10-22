@@ -780,9 +780,14 @@ class Target:
     """One loading to find an event for.
 
     ``kind`` is 'aep' - a design AEP - or 'level', a lake level read off the
-    level frequency curve first. ``source`` names the sims-list row whose
-    database the event comes from; the UI fills it in with the row whose
-    duration is critical at that AEP.
+    level frequency curve first, or 'pmf', the probable maximum flood of an
+    ensemble. ``source`` names the sims-list row whose database the event comes
+    from; the UI fills it in with the row whose duration is critical at that AEP.
+
+    Three fields are for ensemble selections and stay empty in a Monte Carlo one:
+    ``duration`` (an ensemble database holds every duration, so its name does not
+    say which the event is), ``rule`` ('highest' or 'median', how the event was
+    chosen) and ``notional_aep`` (the PMF's, 1 in X - a label, never an input).
     """
 
     kind: str = 'aep'
@@ -796,11 +801,16 @@ class Target:
     picked: int | None = None
     comment: str = ''
     name: str = ''             # the analyst's, e.g. 'dam crest flood'; optional
+    duration: float | None = None
+    rule: str = ''
+    notional_aep: float | None = None
 
     @property
     def label(self) -> str:
         """The loading by its value - what files are named by, so a name can
         change without orphaning the plots already written."""
+        if self.kind == 'pmf':
+            return 'PMF'
         if self.kind == 'level':
             return f'{self.value:g} m AHD'
         return f'1 in {self.value:,.0f}'
@@ -818,7 +828,8 @@ class Target:
             'source': self.source, 'output_file': self.output_file,
             'database': self.database, 'count': self.count,
             'picked': self.picked, 'comment': self.comment,
-            'name': self.name,
+            'name': self.name, 'duration': self.duration, 'rule': self.rule,
+            'notional_aep': self.notional_aep,
         }
 
     @classmethod
@@ -830,21 +841,51 @@ class Target:
         picked = known.get('picked')
         known['picked'] = None if picked in (None, '') else int(picked)
         known['name'] = str(known.get('name') or '')
+        known['rule'] = str(known.get('rule') or '')
+        for key in ('duration', 'notional_aep'):
+            value = known.get(key)
+            known[key] = None if value in (None, '') else float(value)
         return cls(**known)
 
 
 SELECTION_FILE = 'representative_events.json'
 
+#: The two kinds of selection. A file holds one or the other, and says which: the
+#: Downstream page sets the antecedent storage and names the runs by it.
+MONTE_CARLO = 'monte carlo'
+ENSEMBLE = 'ensemble'
 
-def read_selection(path) -> tuple:
-    """(targets, settings) from a saved selection file. Missing is empty."""
+
+@dataclass
+class Selection:
+    """A saved selection: its loadings, the page's settings, which kind of run the events
+    came from, and that run's sims config (relative to the project; '' where unrecorded)."""
+
+    targets: list = field(default_factory=list)
+    settings: dict = field(default_factory=dict)
+    method: str = MONTE_CARLO
+    sims_config: str = ''
+
+
+def read_selection_file(path) -> Selection:
+    """The whole selection file. Missing is empty. A file written before the method was
+    recorded is Monte Carlo, which is all the Events page could save then."""
     try:
         with open(path) as handle:
             data = json.load(handle)
     except (OSError, ValueError):
-        return [], {}
-    targets = [Target.from_dict(item) for item in data.get('targets', [])]
-    return targets, dict(data.get('settings', {}))
+        return Selection()
+    method = str(data.get('method') or MONTE_CARLO).strip().lower()
+    return Selection([Target.from_dict(item) for item in data.get('targets', [])],
+                     dict(data.get('settings', {})),
+                     ENSEMBLE if method == ENSEMBLE else MONTE_CARLO,
+                     str(data.get('sims_config') or ''))
+
+
+def read_selection(path) -> tuple:
+    """(targets, settings) from a saved selection file. Missing is empty."""
+    selection = read_selection_file(path)
+    return selection.targets, selection.settings
 
 
 def locate_database(database, selection_path, project_folder=None) -> str:
@@ -881,8 +922,10 @@ def locate_database(database, selection_path, project_folder=None) -> str:
     return text
 
 
-def selection_payload(targets, settings=None) -> dict:
+def selection_payload(targets, settings=None, method=MONTE_CARLO, sims_config='') -> dict:
     return {
+        'method': method,
+        'sims_config': str(sims_config or ''),
         'targets': [target.to_dict() for target in targets],
         'settings': dict(settings or {}),
     }

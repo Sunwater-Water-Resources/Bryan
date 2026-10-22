@@ -372,6 +372,9 @@ async def test_every_change_is_saved_as_it_is_made(user, project):
     assert [t["name"] for t in saved["targets"]] == ["", "Dam crest flood", ""]
     # every loading carries its event, the automatic ones included, for the extract
     assert all(t["picked"] is not None for t in saved["targets"])
+    # and says which kind of run, and which sims config, the events came from
+    assert saved["method"] == "monte carlo"
+    assert saved["sims_config"].endswith(".json") and not saved["sims_config"].startswith(("/", "C:"))
     status = next(iter(user.find(marker="saved-state").elements)).text
     assert status.startswith("saved ")
 
