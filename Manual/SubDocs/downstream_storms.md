@@ -24,7 +24,8 @@ about: the **Event selection** and the **Regional model URBS config**. A line be
 how each dam will start for that kind of event - from the event's ```lake_z``` for a Monte Carlo
 selection, at full supply (or the model config's ```ensemble_start```) for an ensemble one.
 
-The **Storms** tab writes the storm files from these:
+The **Storms** tab writes the storm files. Its inputs are in the **Storm inputs** card at the top,
+above the plan:
 
 | Field | What it is |
 | --- | --- |
@@ -82,8 +83,10 @@ all three write the same name - the same Monte Carlo run re-routed at two full s
 is the usual case - and the second replaces the first: the storm, and the URBS results named
 after it. The suffix keeps them apart. It starts blank and is only ever what is typed in the
 box. The page compares the selection with the others saved in the project and, where they
-would clash, says so under the plan and suggests one: the leading word of the group name
-(```_RFSL``` for ```RFSL_Design_GWL1p3```), or the whole group name where that word is shared.
+would clash, says so under the plan and suggests one - the words of the group name no clashing
+group has: ```_RFSL``` for ```RFSL_Design_GWL1p3``` against ```FSL_Design_GWL1p3```, and for
+```CLD_enb_PMF_..._GWL1p3_RFSL``` against ```..._FSL```, or the whole name where no word is its
+own. **Use** beside the warning puts it in the box.
 
 The suffix is part of the name of the run, which is how a dam failure project finds the
 regional results for an event - so a group keeps the suffix it was first run with.

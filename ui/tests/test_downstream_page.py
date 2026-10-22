@@ -94,6 +94,10 @@ async def test_the_suffix_starts_blank_and_a_clash_suggests_one(user, tmp_path):
     assert file == "000042_24h_GWL1p3.24"
     await user.should_see("one set replaces the other")
     await user.should_see("would keep them apart")
+    # one click takes the suggestion, and the clash goes
+    user.find(marker="use-suffix").click()
+    await user.should_not_see("one set replaces the other")
+    assert next(iter(user.find(marker="suffix").elements)).value in ("_FSL", "_RFSL")
 
 
 @pytest.mark.asyncio

@@ -164,18 +164,19 @@ def clashes(selection_path, selections, suffix='') -> list:
 def suggested_suffix(selection_path, selections) -> str:
     """A suffix that keeps this selection's files apart from the others', or '' if none is needed.
 
-    The leading word of the group name where that is enough to tell the clashing groups apart
-    (``RFSL_Design_GWL1p3`` and ``FSL_Design_GWL1p3`` give ``_RFSL`` and ``_FSL``), and the
-    whole group name where it is not.
+    The words of the group name - split at underscores - that no clashing group has, in order:
+    ``RFSL_Design_GWL1p3`` against ``FSL_Design_GWL1p3`` gives ``_RFSL``, and so does
+    ``CLD_enb_PMF_..._GWL1p3_RFSL`` against ``..._FSL``, where the word that differs is last.
+    Only the leading word used to be tried, and a shared one fell back to the whole group name.
+    That is still the answer where no word of the name is its own.
     """
     others = clashes(selection_path, selections)
     group = group_of(selection_path)
     if not others or not group:
         return ''
-    lead = group.split('_')[0]
-    if all(group_of(other).split('_')[0] != lead for other in others):
-        return f'_{lead}'
-    return f'_{group}'
+    theirs = {word for other in others for word in group_of(other).split('_')}
+    own = [word for word in group.split('_') if word and word not in theirs]
+    return '_' + '_'.join(own) if own else f'_{group}'
 
 
 def sims_config_for(selection_path, project_folder, fallback=None) -> str | None:

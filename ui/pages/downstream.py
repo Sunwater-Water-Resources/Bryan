@@ -114,21 +114,33 @@ class _DownstreamView:
 
     def _storms_tab(self) -> None:
         state = self.state
-        with ui.row().classes("w-full items-end gap-4"):
-            self.duration_box = ui.number(
-                label="Duration (h)", value=None, format="%g",
-                on_change=lambda e: (state.update(duration=e.value), self.refresh_plan())
-            ).props("clearable").classes("w-32").tooltip(
-                "Blank reads it from the database name.")
-            ui.number(label="GWL (°C)", value=None, format="%g",
-                      on_change=lambda e: (state.update(gwl=e.value), self.refresh_plan())
-                      ).props("clearable").classes("w-32") \
-                .tooltip("Blank reads it from the database name.")
-            ui.input(label="File name suffix", value=state["suffix"],
-                     on_change=lambda e: self._typed_suffix(e.value)).classes("w-40")
-            path_input("Downstream storm config", state["config"], base=self.folder,
-                       base_name="the project folder", suffixes=(".json",), classes="grow",
-                       on_change=lambda text: self._set_path("config", text))
+        # The inputs in a card of their own: under the tabs they read as the plan table's
+        # header row and were easy to miss.
+        with ui.card().classes("w-full gap-2").mark("storm-inputs"):
+            ui.label("Storm inputs").classes("font-bold")
+            with ui.row().classes("w-full items-end gap-4"):
+                path_input("Downstream storm config", state["config"], base=self.folder,
+                           base_name="the project folder", suffixes=(".json",),
+                           classes="grow",
+                           on_change=lambda text: self._set_path("config", text))
+            with ui.row().classes("w-full items-end gap-4"):
+                self.suffix_box = ui.input(
+                    label="File name suffix", value=state["suffix"],
+                    placeholder="e.g. _RFSL",
+                    on_change=lambda e: self._typed_suffix(e.value)).classes("w-48") \
+                    .props("outlined dense").mark("suffix")
+                self.duration_box = ui.number(
+                    label="Duration (h)", value=None, format="%g",
+                    on_change=lambda e: (state.update(duration=e.value), self.refresh_plan())
+                ).props("clearable outlined dense").classes("w-36").tooltip(
+                    "Blank reads it from the database name.")
+                ui.number(label="GWL (°C)", value=None, format="%g",
+                          on_change=lambda e: (state.update(gwl=e.value), self.refresh_plan())
+                          ).props("clearable outlined dense").classes("w-36") \
+                    .tooltip("Blank reads it from the database name.")
+            ui.label("The suffix is added to every storm and run name. Duration and GWL are "
+                     "read from the database name when left blank."
+                     ).classes("text-xs text-muted")
         self.plan_area = ui.column().classes("w-full gap-2")
         with ui.row().classes("items-center gap-3"):
             ui.button("Check without writing",
@@ -171,10 +183,14 @@ class _DownstreamView:
             if clashing:
                 names = ", ".join(downstream.group_of(c) or Path(c).name for c in clashing)
                 suggested = downstream.suggested_suffix(state["selection"], self.selections)
-                ui.label(f"These file names are also what {names} would write, so one "
-                         f"set replaces the other - storms and URBS results. Give this "
-                         f"selection a suffix ({suggested} would keep them apart)."
-                         ).classes("text-attention")
+                with ui.row().classes("items-center gap-3"):
+                    ui.label(f"These file names are also what {names} would write, so one "
+                             f"set replaces the other - storms and URBS results. Give this "
+                             f"selection a suffix ({suggested} would keep them apart)."
+                             ).classes("text-attention")
+                    ui.button(f"Use {suggested}",
+                              on_click=lambda: setattr(self.suffix_box, "value", suggested)) \
+                        .props("outline dense no-caps").mark("use-suffix")
 
     def _choose(self, selection) -> None:
         self.state["selection"] = selection

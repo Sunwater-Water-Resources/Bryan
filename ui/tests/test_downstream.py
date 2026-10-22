@@ -160,11 +160,25 @@ def test_no_suffix_is_suggested_where_nothing_clashes(tmp_path):
     assert downstream.suggested_suffix(only, [only]) == ''
 
 
-def test_groups_with_the_same_leading_word_get_the_whole_name(tmp_path):
+def test_the_suggestion_is_the_word_that_differs_wherever_it_is(tmp_path):
     db = database(tmp_path)
     one = selection(tmp_path, [target(db)], 'RFSL_Design_GWL1p3_representative_events.json')
     two = selection(tmp_path, [target(db)], 'RFSL_Sens_GWL1p3_representative_events.json')
-    assert downstream.suggested_suffix(one, [one, two]) == '_RFSL_Design_GWL1p3'
+    assert downstream.suggested_suffix(one, [one, two]) == '_Design'
+    # the PMF groups share their leading word; the full supply level is last
+    rfsl = selection(tmp_path, [target(db)],
+                     'CLD_enb_PMF_E013_ebf_no-pbp_L0-1.7_GWL1p3_RFSL_representative_events.json')
+    fsl = selection(tmp_path, [target(db)],
+                    'CLD_enb_PMF_E013_ebf_no-pbp_L0-1.7_GWL1p3_FSL_representative_events.json')
+    assert downstream.suggested_suffix(rfsl, [rfsl, fsl]) == '_RFSL'
+    assert downstream.suggested_suffix(fsl, [rfsl, fsl]) == '_FSL'
+
+
+def test_a_group_with_no_word_of_its_own_gets_its_whole_name(tmp_path):
+    db = database(tmp_path)
+    one = selection(tmp_path, [target(db)], 'A_B_representative_events.json')
+    two = selection(tmp_path, [target(db)], 'B_A_representative_events.json')
+    assert downstream.suggested_suffix(one, [one, two]) == '_A_B'
 
 
 # -- running URBS, and the dam's outflow ----------------------------------------------
