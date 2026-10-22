@@ -67,7 +67,7 @@ def downstream_page() -> None:
                     ui.label("No loading in this selection has an event picked.")
                     return
                 rows = [{"loading": s.loading, "type": s.result_type,
-                         "realisation": s.realisation,
+                         "event": s.event_label,
                          "duration": "" if s.duration is None else f"{s.duration:g} h",
                          "gwl": "" if s.gwl is None else f"{s.gwl:g}",
                          "file": s.filename or "-", "problem": s.problem}

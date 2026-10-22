@@ -129,3 +129,59 @@ def test_a_model_with_one_dam_is_unchanged(tmp_path):
     assert model.lake_level_variable == 'initial_lake_level'
     model.set_volume_below_fsl(5000.0)
     assert model.header[-1].startswith('set initial_lake_level=')
+
+
+# -- an ensemble event: no lake_z, so every other dam starts from its ensemble_start ---
+
+def _writer(model):
+    from lib.DownstreamStorms import DownstreamStormWriter
+    writer = DownstreamStormWriter.__new__(DownstreamStormWriter)
+    writer.model, writer.antecedent = model, ''
+    return writer
+
+
+def _set_level(model, variable):
+    return float(next(line for line in model.header
+                      if line.startswith(f'set {variable}=')).split('=')[-1])
+
+
+def test_an_ensemble_event_starts_the_other_dams_at_full_supply(two_dams):
+    import pandas as pd
+    model = model_for(two_dams)
+    writer = _writer(model)
+    adv = model.full_supply_volume - 3000.0
+    levels = writer.antecedent_levels(pd.Series({'ADV': adv, 'rain_aep': 1.9e6}), 'ensemble')
+    assert set(levels) == {'initial_lake_level', 'upper_lake_level'}
+    assert _set_level(model, 'upper_lake_level') == pytest.approx(209.0, abs=0.01)
+    assert _set_level(model, 'initial_lake_level') < model.full_supply_level
+    assert 'upper_lake_level full supply' in writer.antecedent
+    assert 'from the event ADV' in writer.antecedent
+
+
+def test_ensemble_start_can_name_a_volume(two_dams):
+    import pandas as pd
+    config_path = two_dams / 'urbs_config.json'
+    config = json.loads(config_path.read_text())
+    probe = model_for(two_dams)
+    half = probe.extra_dams[0]['full_supply_volume'] / 2
+    config['additional_dams'] = [{'location': 'UPPER', 'ensemble_start': half}]
+    config_path.write_text(json.dumps(config))
+    model = model_for(two_dams)
+    _writer(model).antecedent_levels(pd.Series({'ADV': model.full_supply_volume}), 'ensemble')
+    assert _set_level(model, 'upper_lake_level') < 209.0
+
+
+@pytest.mark.parametrize('start', ['half', -1, 1e12])
+def test_an_ensemble_start_that_is_not_a_volume_of_the_dam_is_refused(two_dams, start):
+    config_path = two_dams / 'urbs_config.json'
+    config = json.loads(config_path.read_text())
+    config['additional_dams'] = [{'location': 'UPPER', 'ensemble_start': start}]
+    config_path.write_text(json.dumps(config))
+    with pytest.raises(Exception, match='ensemble_start for "UPPER"'):
+        model_for(two_dams)
+
+
+def test_an_ensemble_event_without_an_adv_is_refused(two_dams):
+    import pandas as pd
+    with pytest.raises(Exception, match='no ADV column'):
+        _writer(model_for(two_dams)).antecedent_levels(pd.Series({'rain_aep': 1.9e6}), 'ensemble')

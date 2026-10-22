@@ -168,6 +168,47 @@ A lake config whose ceiling does not match the dam's full supply volume is refus
 fitted to another storage returns a volume on the wrong scale, and the level that comes back
 is just somewhere else on the ```.els``` - plausible, and wrong.
 
+### Ensemble events: the PMF and the PMPF
+
+A selection saved from an **ensemble** group on the Events page (```"method": "ensemble"```)
+goes through the same page and the same generator, with three differences.
+
+- **The duration is the event's own**, recorded in the selection: an ensemble database holds
+  every duration, so its name says none.
+- **The starting storage.** An ensemble event has no ```lake_z``` - the run held one starting
+  volume for every event. The main dam starts from that ```ADV```; every other dam starts at
+  its ```ensemble_start```, which is full supply unless the model config gives a volume:
+
+  ```json
+  "additional_dams": [
+    {"location": "KROOMBIT", "lake_config": "model/kroombit_lake_config.json",
+     "ensemble_start": "fsl"}
+  ]
+  ```
+
+- **The run name** starts with ```e``` and five digits - ```e00042_9h_GWL1p3_RFSL``` - because
+  an ensemble event is a row of its own database, not a realisation, and the two must never
+  share a name.
+
+**The concurrent rainfall is set by the event's rainfall AEP**, as for any event - for the PMF
+that is the AEP of the PMP, 1 in 1.9 million at Callide, the top of JPA's conditional table. The
+PMF's notional AEP (1 in 8 million at Callide) is a label, written to the log and the record,
+and is never used for depths: it is the AEP of the flood, which includes the full starting
+storage and the choice of the highest pattern, not of the rain.
+
+**An ensemble event whose embedded bursts were filtered is refused for now.** The pattern
+rebuild replays a Monte Carlo row's storm, and an ensemble row's sampled pattern would carry
+the same depth in a sharper burst than the event had. The PMF ensembles at Callide have no
+filtered events.
+
+### Durations the downstream inputs do not cover
+
+JPA's conditional AEPs and areal IFDs are tabulated for a set of durations - **6 to 120 h at
+Callide**. An event of any other length cannot be taken downstream: the run reports it as
+**SKIPPED** with its duration, carries on with the others, and says how many it skipped at the
+end. At Callide that is any 4.5 h event - the PMPF at GWL 1.3 and the PMF at GWL 2.7 among
+them - until the tables are extended. **Check without writing** reports it too.
+
 ## The downstream storm config
 
 All paths are relative to **this config file**, and are resolved through the same helper the
@@ -268,7 +309,9 @@ because reading its curve above 1 in 2,000 goes through the fitted GEV like any 
 
 One URBS storm file per chosen event, named
 ```<realisation>_<duration>h_GWL<gwl><suffix>.<duration>``` with the decimal point written as
-`p`, plus a CSV of the applied depths beside the selection. The launcher shows the names first;
+`p` (```e<event>_...``` for an ensemble event), plus a CSV beside the selection recording what
+went into each: the depths, losses and pattern, and the method, event, loading, run name,
+notional AEP and each dam's starting storage. The launcher shows the names first;
 if one is reported that never appears, the naming in the page and the naming in the generator
 have drifted apart — they are written twice deliberately (the page cannot import scipy) and
 ```tests/test_downstream_naming.py``` exists to stop exactly that.

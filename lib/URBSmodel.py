@@ -400,11 +400,30 @@ class UrbsModel:
             }
             dam['full_supply_volume'] = self.get_volume_from_level(
                 dam['full_supply_level'], curve)
+            dam['ensemble_start'] = self._ensemble_start(entry, dam)
             print(f'Additional dam "{location}": FSL {dam["full_supply_level"]} m AHD, '
                   f'FSV {dam["full_supply_volume"]} ML, level written to '
                   f'"{dam["variable"]}"')
             self.extra_dams.append(dam)
         return self.extra_dams
+
+    @staticmethod
+    def _ensemble_start(entry, dam):
+        """Where this dam starts for an ensemble event, which carries no lake_z to read its
+        curve at: "fsl" (the default, as a PMF is run) or a volume in ML."""
+        start = entry.get('ensemble_start', 'fsl')
+        if isinstance(start, str) and start.strip().lower() == 'fsl':
+            return 'fsl'
+        try:
+            volume = float(start)
+        except (TypeError, ValueError):
+            raise Exception(f'ensemble_start for "{dam["location"]}" is "{start}": give "fsl" '
+                            'or a volume in ML.')
+        if not 0 <= volume <= dam['full_supply_volume']:
+            raise Exception(f'ensemble_start for "{dam["location"]}" is {volume:,.0f} ML, '
+                            f'outside 0 to its full supply volume of '
+                            f'{dam["full_supply_volume"]:,.0f} ML.')
+        return volume
 
     def set_additional_dam_volume(self, location, volume_below_fsl):
         """Start this dam at its full supply volume less `volume_below_fsl` (ML)."""

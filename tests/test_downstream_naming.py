@@ -30,17 +30,20 @@ import DownstreamStorms as generator                                 # noqa: E40
 from core import downstream as launcher                              # noqa: E402
 
 
-def launcher_name(picked, duration, gwl):
-    """What core/downstream.plan puts in front of the user."""
-    return f'{int(picked):06d}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p') + f'.{duration:g}'
-
-
 @pytest.mark.parametrize('duration, gwl', [
     (24, 1.3), (6, 0.0), (120, 2.7), (4.5, 0.3), (96, 1.0),
 ])
-def test_the_two_sides_name_a_storm_file_the_same(duration, gwl):
+@pytest.mark.parametrize('method', ['monte carlo', 'ensemble'])
+@pytest.mark.parametrize('suffix', ['', '_RFSL'])
+def test_the_two_sides_name_a_storm_file_the_same(duration, gwl, method, suffix):
     target = SimpleNamespace(picked=42)
-    assert generator.storm_name(target, duration, gwl, '') == launcher_name(42, duration, gwl)
+    assert generator.storm_name(target, duration, gwl, suffix, method) ==         launcher.storm_filename(42, duration, gwl, suffix, method)
+
+
+def test_an_ensemble_event_can_never_take_a_realisations_name():
+    target = SimpleNamespace(picked=42)
+    assert generator.storm_name(target, 9, 1.3, '_RFSL') == '000042_9h_GWL1p3_RFSL.9'
+    assert generator.storm_name(target, 9, 1.3, '_RFSL', 'ensemble') == 'e00042_9h_GWL1p3_RFSL.9'
 
 
 def test_the_launcher_reads_a_database_name_the_way_the_generator_does():

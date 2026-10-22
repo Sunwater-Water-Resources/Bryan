@@ -819,7 +819,7 @@ class Target:
     def title(self) -> str:
         """The name with the value, or the value alone: what a reader is shown."""
         name = (self.name or '').strip()
-        return f'{name} ({self.label})' if name else self.label
+        return f'{name} ({self.label})' if name and name != self.label else self.label
 
     def to_dict(self) -> dict:
         return {

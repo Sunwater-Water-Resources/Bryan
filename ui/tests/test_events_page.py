@@ -481,7 +481,7 @@ async def test_an_ensemble_group_is_offered_and_chosen_by_rule(user, with_ensemb
     await user.should_not_see("Same result within")         # no ranking controls
     table = next(iter(user.find(marker="summary-table").elements))
     chosen = {row["loading"]: (row["rule"], row["event"]) for row in table.rows}
-    assert chosen == {"PMF (PMF)": ("highest", 7), "PMPF (1 in 1,900,000)": ("median", 15)}
+    assert chosen == {"PMF": ("highest", 7), "PMPF (1 in 1,900,000)": ("median", 15)}
     # nothing is saved by opening the group; naming a loading saves it, as an ensemble one
     next(iter(user.find(marker="loading-name-0").elements)).set_value("Probable maximum flood")
     await user.should_see("Probable maximum flood (PMF)")

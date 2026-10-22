@@ -55,16 +55,24 @@ class PlannedStorm:
     gwl: float | None
     filename: str | None = None
     problem: str = ''
+    method: str = 'monte carlo'
 
     @property
     def ready(self) -> bool:
         return not self.problem
+
+    @property
+    def event_label(self) -> str:
+        """'sim 4920' for a realisation, 'event 42' for an ensemble row."""
+        return (f'event {self.realisation}' if self.method == EVENTS.ENSEMBLE
+                else f'sim {self.realisation}')
 
 
 @dataclass
 class Plan:
     selection: str
     storms: list = field(default_factory=list)
+    method: str = 'monte carlo'
 
     @property
     def ready(self):
@@ -139,6 +147,15 @@ def sims_config_for(selection_path, project_folder, fallback=None) -> str | None
     return str(fallback) if fallback else None
 
 
+def storm_filename(picked, duration, gwl, suffix='', method='monte carlo') -> str:
+    """The storm file's name. ``DownstreamStorms.storm_name`` writes the same, and
+    ``tests/test_downstream_naming.py`` holds the two together: an ensemble event, a row
+    of its own database, is ``e`` and five digits so it can never take a realisation's."""
+    event = f'e{int(picked):05d}' if method == EVENTS.ENSEMBLE else f'{int(picked):06d}'
+    return (f'{event}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p')
+            + f'{suffix or ""}.{duration:g}')
+
+
 def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
     """What a run over this selection would write, and what would stop it.
 
@@ -146,12 +163,15 @@ def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
     not a storm, and one whose duration cannot be read is reported so it can be
     given explicitly rather than guessed at.
     """
-    targets, _ = EVENTS.read_selection(selection_path)
-    out = Plan(selection=str(selection_path))
-    for target in targets:
+    selection = EVENTS.read_selection_file(selection_path)
+    out = Plan(selection=str(selection_path), method=selection.method)
+    for target in selection.targets:
         if target.picked is None:
             continue
-        d = duration if duration is not None else read_from_name(DURATION, target.database)
+        # an ensemble database holds every duration; the selection records the event's own
+        d = (duration if duration is not None
+             else target.duration if target.duration is not None
+             else read_from_name(DURATION, target.database))
         g = gwl if gwl is not None else read_from_name(GWL, target.database)
         problem = ''
         if not target.database or not os.path.isfile(
@@ -163,12 +183,11 @@ def plan(selection_path, duration=None, gwl=None, suffix='') -> Plan:
             problem = 'no warming level in the database name - give one'
         name = None
         if not problem:
-            name = (f'{int(target.picked):06d}_{d:g}h_GWL{g:g}'.replace('.', 'p')
-                    + f'{suffix or ""}.{d:g}')
+            name = storm_filename(target.picked, d, g, suffix, selection.method)
         out.storms.append(PlannedStorm(
-            loading=f'{target.kind} {target.value:g}', result_type=target.result_type,
+            loading=target.title, result_type=target.result_type,
             realisation=int(target.picked), database=str(target.database),
-            duration=d, gwl=g, filename=name, problem=problem))
+            duration=d, gwl=g, filename=name, problem=problem, method=selection.method))
     return out
 
 
@@ -237,7 +256,7 @@ def outcome(returncode: int, log_text: str, log_name: str) -> tuple:
             line = line.strip()
             if re.match(r'\d+ storm files', line):
                 said.append(line.split(';')[0] + '.')
-            elif 'need a look' in line:
+            elif 'need a look' in line or re.match(r'\d+ skipped', line):
                 said.append(line + '.')
         return True, " ".join(["Finished."] + said)
     return False, (f"Stopped with an error (exit code {returncode}) - see {log_name}. "

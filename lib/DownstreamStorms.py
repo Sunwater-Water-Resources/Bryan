@@ -110,6 +110,13 @@ class DownstreamRainfall:
         self._arf = {}
         self._last_conditional = None
 
+    @property
+    def durations(self) -> list:
+        """The durations the JPA inputs cover. A storm of any other length has no
+        conditional AEPs to be built from - Callide's run 6 to 120 h, so a 4.5 h event
+        cannot be taken downstream until JPA's tables are extended to it."""
+        return sorted(float(d) for d in self.conditional.index.get_level_values('Duration_h').unique())
+
     # -- inputs ------------------------------------------------------------
     def ifd(self, duration):
         """Point depths, a row per subarea and a column per AEP."""
@@ -331,6 +338,7 @@ class DownstreamStormWriter:
         self.main_lake_config = main_lake_config
         self.climate_config = climate_config
         self._imported = set()
+        self.antecedent = ''              # the last event's starting storage, said in words
 
     def _import_patterns(self, duration):
         if duration in self._imported:
@@ -392,7 +400,7 @@ class DownstreamStormWriter:
         return sorted(t for t in here.index if here[t] < under[t] - 1e-9)
 
     # -- the run ------------------------------------------------------------
-    def antecedent_levels(self, event):
+    def antecedent_levels(self, event, method='monte carlo'):
         """The starting lake level for every dam in the model, from this event's lake_z.
 
         A representative event carries one ``lake_z`` - the standardised variate the
@@ -403,8 +411,16 @@ class DownstreamStormWriter:
         is a joint probability analysis of the two storages, and if that is ever done this
         is the method to replace.
 
-        Returns {variable name: level}, which is what goes into the batch file.
+        An **ensemble** event has no lake_z: the run held one starting volume for every
+        event. The main dam starts from that ADV, and every other dam from its
+        ``ensemble_start`` in the model config - full supply unless a volume is given,
+        which is how a PMF is run.
+
+        Returns {variable name: level}, which is what goes into the batch file, and keeps
+        a one-line account of it as ``self.antecedent`` for the record of the run.
         """
+        if method == 'ensemble':
+            return self._ensemble_levels(event)
         if 'lake_z' not in event.index:
             raise Exception(
                 'This realisation has no "lake_z" column, so there is no antecedent '
@@ -450,6 +466,32 @@ class DownstreamStormWriter:
             levels[dam['variable']] = level
             print(f'  {dam["variable"]}: {volume:,.0f} ML at lake_z {lake_z:+.3f} '
                   f'({below:,.0f} ML below FSL) -> {level} m AHD')
+        self.antecedent = f'lake_z {lake_z:+.3f}: ' + '; '.join(
+            f'{name} {value}' for name, value in levels.items())
+        return levels
+
+    def _ensemble_levels(self, event):
+        levels, said = {}, []
+        if self.model.dam_routing_method == 'level':
+            if 'ADV' not in event.index or pd.isna(event['ADV']):
+                raise Exception('This ensemble event has no ADV column, so the main dam has '
+                                'no starting storage to set.')
+            volume = float(event['ADV'])
+            below = self.model.full_supply_volume - volume
+            self.model.set_volume_below_fsl(below)
+            levels[self.model.lake_level_variable] = self.model.header[-1].split('=')[-1]
+            said.append(f'{self.model.lake_level_variable} {volume:,.0f} ML from the event ADV')
+            print(f'  {self.model.lake_level_variable}: {volume:,.0f} ML from the event ADV '
+                  f'({below:,.0f} ML below FSL)')
+        for dam in self.model.extra_dams:
+            start = dam.get('ensemble_start', 'fsl')
+            below = 0.0 if start == 'fsl' else dam['full_supply_volume'] - float(start)
+            level = self.model.set_additional_dam_volume(dam['location'], below)
+            levels[dam['variable']] = level
+            what = 'full supply' if start == 'fsl' else f'{float(start):,.0f} ML'
+            said.append(f'{dam["variable"]} {what}')
+            print(f'  {dam["variable"]}: {what} (ensemble_start) -> {level} m AHD')
+        self.antecedent = '; '.join(said)
         return levels
 
     @staticmethod
@@ -468,7 +510,7 @@ class DownstreamStormWriter:
         raise Exception(f'No exceedance curve layer in {lake_config} covers '
                         f'lake_z of {lake_z}.')
 
-    def run(self, event, storm_filename, result_name, execute=False):
+    def run(self, event, storm_filename, result_name, execute=False, method='monte carlo'):
         """Write the batch file for one event's storm, and optionally run URBS.
 
         The batch file is always written: it records the antecedent level of every dam
@@ -482,7 +524,7 @@ class DownstreamStormWriter:
                   'to csv. Those are the\n           upstream boundaries this run exists '
                   'to produce - set it to true.')
         print(f'  antecedent storage for {result_name}:')
-        self.antecedent_levels(event)
+        self.antecedent_levels(event, method)
         if execute:
             self.model.run_storm(storm_name=storm_filename, result_name=result_name)
             return None

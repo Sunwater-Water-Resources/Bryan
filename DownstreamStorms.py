@@ -53,12 +53,19 @@ def from_name(pattern, name, override, what):
     return number(found.group(1))
 
 
-def storm_name(target, duration, gwl, suffix):
+def storm_name(target, duration, gwl, suffix, method=events.MONTE_CARLO):
     # 'p' for the decimal point in the stem, the way the runs already name
     # durations and warming levels; the extension is URBS's, and is the
-    # duration as written.
-    stem = f'{int(target.picked):06d}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p')
+    # duration as written. An ensemble event is a row of its own database, not a
+    # realisation, and an 'e' in front means the two can never share a name.
+    event = (f'e{int(target.picked):05d}' if method == events.ENSEMBLE
+             else f'{int(target.picked):06d}')
+    stem = f'{event}_{duration:g}h_GWL{gwl:g}'.replace('.', 'p')
     return f'{stem}{suffix}.{duration:g}'
+
+
+def which_event(method):
+    return 'event' if method == events.ENSEMBLE else 'realisation'
 
 
 #: What the upstream run records against a realisation whose pattern it changed.
@@ -172,9 +179,17 @@ def main():
 
     rebuild = PatternRebuild(args.sims_config) if args.sims_config else None
 
-    records = []
+    method = selection.method
+    if method == events.ENSEMBLE:
+        print('ensemble events: the main dam starts from the event ADV, every other dam from '
+              'its ensemble_start (full supply unless the model config says otherwise)')
+    records, skipped = [], []
     for target in chosen:
-        duration = from_name(DURATION, target.database, args.duration, 'duration')
+        # An ensemble database holds every duration, so its name says none; the selection
+        # records the event's own.
+        duration = (args.duration if args.duration is not None
+                    else target.duration if target.duration is not None
+                    else from_name(DURATION, target.database, None, 'duration'))
         gwl = from_name(GWL, target.database, args.gwl, 'warming level')
         # Saved relative to the project folder, which is not always where this is run.
         database = events.locate_database(target.database, args.selection, args.project)
@@ -183,37 +198,65 @@ def main():
                              f'"{target.database}". It is saved relative to the project '
                              f'folder - pass that as --project')
         event = DownstreamStormWriter.read_event(database, int(target.picked))
-        name = storm_name(target, duration, gwl, args.suffix)
-        print(f'\n{target.kind} {target.value:g} ({target.result_type}) -> realisation '
+        name = storm_name(target, duration, gwl, args.suffix, method)
+        if float(duration) not in rainfall.durations:
+            covered = rainfall.durations
+            print(f'\n{target.title}: SKIPPED - {which_event(method)} {target.picked} is '
+                  f'{duration:g} h, and the downstream inputs (the conditional AEPs and areal '
+                  f'IFDs) cover {covered[0]:g} to {covered[-1]:g} h only')
+            skipped.append(target.title)
+            continue
+        which = which_event(method)
+        print(f'\n{target.title} ({target.result_type}) -> {which} '
               f'{target.picked}, {duration:g} h, GWL {gwl:g}')
+        if target.notional_aep:
+            print(f'  notional AEP 1 in {target.notional_aep:,.0f} - a label; the rain is set '
+                  f'by the event rainfall AEP, 1 in {float(event["rain_aep"]):,.0f}')
+        about = dict(method=method, event_id=int(target.picked), loading=target.title,
+                     run_name=os.path.splitext(name)[0], notional_aep=target.notional_aep or '')
         if args.dry_run:
             records.append(dict(filename=name, duration=duration, gwl=gwl,
                                 driver_aep=float(event['rain_aep']),
-                                storm_method=str(event['storm_method'])))
+                                storm_method=str(event['storm_method']), **about))
             print(f'  would write {name}')
             continue
-        pattern = rebuild.pattern(target, event) if rebuild else None
-        if pattern is None and FILTERED in str(event.get('embedded_bursts', '')):
+        filtered = FILTERED in str(event.get('embedded_bursts', ''))
+        if method == events.ENSEMBLE:
+            # The rebuild replays a Monte Carlo row's storm. An ensemble row's sampled
+            # pattern is the one it applied unless a burst was filtered, which is refused.
+            if filtered:
+                raise SystemExit(
+                    f'ensemble event {target.picked} had its embedded bursts filtered, and the '
+                    f'filtered pattern of an ensemble event cannot be rebuilt yet: its sampled '
+                    f'pattern would carry the same depth in a sharper burst than the event had.')
+            pattern = None
+        else:
+            pattern = rebuild.pattern(target, event) if rebuild else None
+        if pattern is None and filtered:
             raise SystemExit(
                 f'realisation {target.picked} had its embedded bursts filtered in the run that '
                 f'produced it, and the pattern read from the database is the one from before '
                 f'the filter. Pass --sims-config (the upstream sims config) so the filtered '
                 f'pattern is rebuilt; without it the regional storm carries the same depth in '
                 f'a sharper burst than the event had.')
-        records.append(writer.write(event, duration, name, gwl=gwl,
-                                    rain_lag_hours=args.rain_lag, pattern=pattern))
+        record = writer.write(event, duration, name, gwl=gwl,
+                              rain_lag_hours=args.rain_lag, pattern=pattern)
         print(f'  wrote {name}')
         # The batch file carries every dam's antecedent level beside the URBS command
         # line, so it is always written: it is the record of what the run was, whether
         # URBS is run now or by hand afterwards.
         result_name = os.path.splitext(name)[0]
-        writer.run(event, name, result_name, execute=args.run_urbs)
+        writer.run(event, name, result_name, execute=args.run_urbs, method=method)
+        records.append({**record, **about, 'antecedent': writer.antecedent})
 
     table = pd.DataFrame(records)
     out = os.path.splitext(args.selection)[0] + '_downstream_storms.csv'
     table.to_csv(out, index=False)
     print(f'\n{len(records)} storm files; what went into them: {out}')
-    if not args.dry_run:
+    if skipped:
+        print(f'{len(skipped)} skipped - outside the durations the downstream inputs cover: '
+              + ', '.join(skipped))
+    if not args.dry_run and records:
         flagged = table[(table.duration_dip != '') |
                         (~table.embedded_bursts.isin(['', 'No embedded bursts']))]
         if len(flagged):

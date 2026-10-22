@@ -326,7 +326,7 @@ def test_a_selection_records_its_method_and_sims_config(tmp_path):
     assert selection.sims_config == "runs\\E013\\PMF_sims.json"
     loaded = selection.targets[0]
     assert (loaded.duration, loaded.rule, loaded.notional_aep) == (9.0, "highest", 8e6)
-    assert loaded.label == "PMF" and loaded.title == "PMF (PMF)"
+    assert loaded.label == "PMF" and loaded.title == "PMF"     # not "PMF (PMF)"
 
 
 def test_a_selection_saved_before_the_method_was_recorded_is_monte_carlo(tmp_path):
