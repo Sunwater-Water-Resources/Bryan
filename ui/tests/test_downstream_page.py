@@ -228,3 +228,21 @@ async def test_the_results_tab_draws_the_print_locations_and_checks_the_ends(use
     row, = table.rows
     assert row["run"] == "005044_72h_GWL1p3" and row["GOOVIGEN"]
     await user.should_see(marker="copy-word-peaks")
+
+
+
+@pytest.mark.asyncio
+async def test_coming_back_finds_the_runs_under_the_suffix_they_were_written_with(user, tmp_path):
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    selection = _selection(tmp_path, database)
+    (tmp_path / "GWL1p3_representative_events_downstream_storms.csv").write_text(
+        "filename,run_name\n000042_24h_GWL1p3_RFSL.24,000042_24h_GWL1p3_RFSL\n")
+    model = _model(tmp_path)
+    (model.parent / "results" / "000042_24h_GWL1p3_RFSL.q").write_text("")
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model=str(model))
+    await user.open("/downstream?tab=Results&selection=GWL1p3")
+    await user.should_see("1 finished")
+    assert next(iter(user.find(marker="suffix").elements)).value == "_RFSL"

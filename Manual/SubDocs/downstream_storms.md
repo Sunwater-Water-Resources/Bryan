@@ -81,8 +81,9 @@ folder. `--project` names the project folder for a selection that has been copie
 A storm file is named for its realisation, duration and warming level. Two groups that share
 all three write the same name - the same Monte Carlo run re-routed at two full supply levels
 is the usual case - and the second replaces the first: the storm, and the URBS results named
-after it. The suffix keeps them apart. It starts blank and is only ever what is typed in the
-box. The page compares the selection with the others saved in the project and, where they
+after it. The suffix keeps them apart. For a selection that has been run, the box shows the
+suffix that run used, read off the names it wrote, so a rerun keeps its names; for one never run
+it starts blank. Otherwise it is only ever what is typed. The page compares the selection with the others saved in the project and, where they
 would clash, says so under the plan and suggests one - the words of the group name no clashing
 group has: ```_RFSL``` for ```RFSL_Design_GWL1p3``` against ```FSL_Design_GWL1p3```, and for
 ```CLD_enb_PMF_..._GWL1p3_RFSL``` against ```..._FSL```, or the whole name where no word is its
@@ -220,7 +221,10 @@ them - until the tables are extended. **Check without writing** reports it too.
 ## The Results tab
 
 The **Results** tab reads the runs back - when it is opened, on **Reload**, and once when a run
-ends; it never polls. One row per storm the plan names, with its status and what went into it:
+ends; it never polls. It finds each run by the name the last run wrote, from the selection's
+```_downstream_storms.csv```, whatever is in the suffix box now, so the results are there when
+the page is opened again later. The page's address names the selection and the tab, so a
+bookmark or a refresh comes back to the same view. One row per storm the plan names, with its status and what went into it:
 the losses, the mean depth, the pattern, each dam's starting storage and any flags.
 
 | Status | Means |

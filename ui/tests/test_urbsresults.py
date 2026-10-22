@@ -233,3 +233,48 @@ def test_the_peak_table_has_events_down_and_locations_across(flows_folder):
     assert row["GOOVIGEN"] == f"{peak:,.0f}"
     timed, = ur.peaks_rows(flows, {}, ur.TIME)
     assert timed["GOOVIGEN"] == f"{flows[REAL]['GOOVIGEN'].idxmax():g}"
+
+
+
+# -- coming back later: the runs as the last run named them ---------------------------------
+
+def _planned(**overrides):
+    base = dict(filename="e00042_9h_GWL1p3.9", realisation=42, duration=9.0, gwl=1.3,
+                method="ensemble", loading="PMF", event_label="event 42")
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_a_selection_comes_back_with_the_suffix_its_last_run_used(tmp_path):
+    selection = tmp_path / "PMF_representative_events.json"
+    plan = SimpleNamespace(storms=[_planned()])
+    assert ur.recorded_suffix(plan, selection) == ""            # never run: blank
+    (tmp_path / "PMF_representative_events_downstream_storms.csv").write_text(
+        "filename,run_name\ne00042_9h_GWL1p3_PMF_RFSL.9,e00042_9h_GWL1p3_PMF_RFSL\n")
+    assert ur.recorded_suffix(plan, selection) == "_PMF_RFSL"
+
+
+def test_results_are_read_under_the_names_the_run_wrote_whatever_the_box_says(tmp_path, found):
+    selection = tmp_path / "PMF_representative_events.json"
+    (tmp_path / "PMF_representative_events_downstream_storms.csv").write_text(
+        "filename,run_name\ne00042_9h_GWL1p3_PMF_RFSL.9,e00042_9h_GWL1p3_PMF_RFSL\n")
+    _touch(found.results / "e00042_9h_GWL1p3_PMF_RFSL.q")
+    plan = SimpleNamespace(storms=[_planned()])               # planned with an empty suffix
+    ran = ur.as_run(plan, selection)
+    assert ran.storms[0].filename == "e00042_9h_GWL1p3_PMF_RFSL.9"
+    assert plan.storms[0].filename == "e00042_9h_GWL1p3.9"     # the plan itself is untouched
+    row, = ur.runs_rows(ran, found, ur.storms_record(selection))
+    assert row["status"] == "finished"
+    # a storm the record does not have keeps its planned name
+    other = SimpleNamespace(storms=[_planned(filename="e00022_4p5h_GWL2p7.4p5", realisation=22,
+                                             duration=4.5, gwl=2.7)])
+    assert ur.as_run(other, selection).storms[0].filename == "e00022_4p5h_GWL2p7.4p5"
+
+
+def test_a_record_written_before_run_names_were_recorded_still_gives_the_suffix(tmp_path):
+    selection = tmp_path / "RFSL_Design_GWL1p3_representative_events.json"
+    (tmp_path / "RFSL_Design_GWL1p3_representative_events_downstream_storms.csv").write_text(
+        "filename\n005044_72h_GWL1p3_RFSL.72\n")
+    plan = SimpleNamespace(storms=[_planned(filename="005044_72h_GWL1p3.72", realisation=5044,
+                                            duration=72.0, method="monte carlo")])
+    assert ur.recorded_suffix(plan, selection) == "_RFSL"

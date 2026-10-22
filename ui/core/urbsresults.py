@@ -112,6 +112,55 @@ def storms_record(selection) -> dict:
     return {name: row.to_dict() for name, (_, row) in zip(names, frame.iterrows())}
 
 
+def _unsuffixed_stem(storm) -> str | None:
+    """The run name a planned storm would have with no suffix."""
+    from .downstream import storm_filename                 # local: downstream is the planner
+    if storm.duration is None or storm.gwl is None:
+        return None
+    return os.path.splitext(storm_filename(storm.realisation, storm.duration, storm.gwl,
+                                           '', storm.method))[0]
+
+
+def _recorded_name(storm, names) -> str | None:
+    """The run name the last run actually wrote for this storm: the recorded name that is
+    its unsuffixed name, or that name and a suffix."""
+    stem = _unsuffixed_stem(storm)
+    if stem is None:
+        return None
+    found = [name for name in names if name == stem or name.startswith(stem + "_")]
+    return min(found, key=len) if found else None
+
+
+def recorded_suffix(plan, selection) -> str:
+    """The suffix the selection's last run used, read off the names it wrote - so a selection
+    that has been run comes back with its suffix, and one that never has comes back blank."""
+    names = list(storms_record(selection))
+    for storm in plan.storms:
+        name = _recorded_name(storm, names)
+        if name is not None:
+            return name[len(_unsuffixed_stem(storm)):]
+    return ""
+
+
+def as_run(plan, selection):
+    """The plan with each storm named as the last run wrote it, where it was run.
+
+    The Results tab reads runs by name, and a name carries the suffix: rebuilt from an empty
+    suffix box, ``e00042_9h_GWL1p3`` found nothing of ``e00042_9h_GWL1p3_PMF_RFSL`` and
+    reported it not written. A storm the record does not have keeps the planned name."""
+    import copy
+    names = list(storms_record(selection))
+    out = copy.copy(plan)
+    out.storms = []
+    for storm in plan.storms:
+        name = _recorded_name(storm, names)
+        if name is not None and storm.filename:
+            storm = copy.copy(storm)
+            storm.filename = name + os.path.splitext(storm.filename)[1]
+        out.storms.append(storm)
+    return out
+
+
 def _number(text, digits) -> str:
     try:
         return f"{float(text):,.{digits}f}"

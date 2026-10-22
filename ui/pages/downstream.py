@@ -65,11 +65,18 @@ class _DownstreamView:
         # it from the database name", and a stale remembered override is worse than
         # retyping one.
         remembered = STATE.settings.downstream_for(project.config.config_path)
-        self.state = {"selection": selections[0], "duration": None, "gwl": None,
+        # The selection the address names - the page reopens on the one last looked at -
+        # else the newest.
+        named = address.param("selection")
+        chosen = next((path for path in selections if downstream.group_of(path) == named),
+                      selections[0])
+        self.state = {"selection": chosen, "duration": None, "gwl": None,
                       "config": remembered["config"], "model": remembered["model"],
-                      # The suffix starts blank and is only ever what was typed. Where two
-                      # groups share a realisation the plan says so and suggests one.
-                      "suffix": "", "run_urbs": False, "process": None,
+                      # The suffix is the one the selection's last run used, read off the
+                      # names it wrote, or blank for one never run - never a guess. Where
+                      # two groups share a realisation the plan says so and suggests one.
+                      "suffix": self._recorded_suffix(chosen),
+                      "run_urbs": False, "process": None,
                       # whether the last run this page started ran URBS: None until one has
                       "ran_urbs": None}
         self.results_built = False
@@ -192,8 +199,17 @@ class _DownstreamView:
                               on_click=lambda: setattr(self.suffix_box, "value", suggested)) \
                         .props("outline dense no-caps").mark("use-suffix")
 
+    @staticmethod
+    def _recorded_suffix(selection) -> str:
+        return urbsresults.recorded_suffix(downstream.plan(selection), selection)
+
     def _choose(self, selection) -> None:
         self.state["selection"] = selection
+        address.keep(selection=downstream.group_of(selection))
+        # the suffix this selection was last run with, so its results are found and a rerun
+        # keeps its names; setting the box runs _typed_suffix, which redraws the plan
+        self.state["suffix"] = self._recorded_suffix(selection)
+        self.suffix_box.value = self.state["suffix"]
         self._method_changed()
         self.refresh_plan()
         if self.results_built:
@@ -299,8 +315,10 @@ class _DownstreamView:
             except urbsresults.ModelConfigError as exc:
                 severity_banner("warn", str(exc))
                 return
-            plan = downstream.plan(state["selection"], state["duration"], state["gwl"],
-                                   suffix=state["suffix"])
+            # the runs as the last run named them, whatever is in the suffix box now
+            plan = urbsresults.as_run(
+                downstream.plan(state["selection"], state["duration"], state["gwl"],
+                                suffix=state["suffix"]), state["selection"])
             process = state["process"]
             rows = urbsresults.runs_rows(
                 plan, found, urbsresults.storms_record(state["selection"]),
