@@ -28,7 +28,7 @@ The **Downstream** page takes these to write the storm files:
 | **GWL (°C)** | the same, read from `GWL<n>` in the database name. |
 | **Downstream storm config** | the JSON described below. This is the file to get right. |
 | **Regional model URBS config** | a normal Bryan [model config](config/ModelConfig.md) for the *regional* model — the one the storm files are being written for. |
-| **File name suffix** | added to each storm file's name, before the extension. See *Two groups that share a realisation* below; the page fills it in when it is needed. |
+| **File name suffix** | added to each storm file's name, before the extension. See *Two groups that share a realisation* below. Blank unless typed; the page suggests one when it is needed. |
 | **Run URBS on each storm** | off, the storm files and a batch file each are written and URBS is left to be run by hand. On, each storm is run as it is written. |
 
 It also passes the open project's sims config to the generator, so an event whose embedded
@@ -67,10 +67,10 @@ folder. `--project` names the project folder for a selection that has been copie
 A storm file is named for its realisation, duration and warming level. Two groups that share
 all three write the same name - the same Monte Carlo run re-routed at two full supply levels
 is the usual case - and the second replaces the first: the storm, and the URBS results named
-after it. The suffix keeps them apart. The page compares the selection with the others saved
-in the project and, where they would clash, fills in the leading word of the group name
+after it. The suffix keeps them apart. It starts blank and is only ever what is typed in the
+box. The page compares the selection with the others saved in the project and, where they
+would clash, says so under the plan and suggests one: the leading word of the group name
 (```_RFSL``` for ```RFSL_Design_GWL1p3```), or the whole group name where that word is shared.
-It says so under the plan if a clash remains. Whatever is typed in the box is kept.
 
 The same suffix has to be given when the dam's outflow is put into the inflow files, since
 it is part of the name of the run.

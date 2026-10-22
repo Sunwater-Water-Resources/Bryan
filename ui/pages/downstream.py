@@ -49,10 +49,9 @@ def downstream_page() -> None:
         boundaries = STATE.settings.boundaries_for(project.config.config_path)
         state = {"selection": selections[0], "duration": None, "gwl": None,
                  "config": remembered["config"], "model": remembered["model"],
-                 # The suffix follows the selection until it is typed in: two groups that
-                 # share a realisation need one each, and which one depends on the group.
-                 "suffix": downstream.suggested_suffix(selections[0], selections),
-                 "suffix_typed": False, "run_urbs": False,
+                 # The suffix starts blank and is only ever what was typed. Where two
+                 # groups share a realisation the plan says so and suggests one.
+                 "suffix": "", "run_urbs": False,
                  "dam_outflow": boundaries["dam_outflow"],
                  "boundaries_folder": boundaries["boundaries_folder"],
                  "name_contains": boundaries["name_contains"], "gate_scenario": "",
@@ -94,15 +93,14 @@ def downstream_page() -> None:
                 clashing = downstream.clashes(state["selection"], selections, state["suffix"])
                 if clashing:
                     names = ", ".join(downstream.group_of(c) or Path(c).name for c in clashing)
+                    suggested = downstream.suggested_suffix(state["selection"], selections)
                     ui.label(f"These file names are also what {names} would write, so one "
                              f"set replaces the other - storms and URBS results. Give this "
-                             f"selection a suffix.").classes("text-attention")
+                             f"selection a suffix ({suggested} would keep them apart)."
+                             ).classes("text-attention")
 
         def choose(selection) -> None:
             state["selection"] = selection
-            if not state["suffix_typed"]:
-                state["suffix"] = downstream.suggested_suffix(selection, selections)
-                suffix_box.value = state["suffix"]
             refresh()
 
         def typed_suffix(text) -> None:
@@ -118,10 +116,8 @@ def downstream_page() -> None:
             ui.number(label="GWL (°C)", value=None, format="%g",
                       on_change=lambda e: (state.update(gwl=e.value), refresh())
                       ).props("clearable").classes("w-32")
-            suffix_box = ui.input(label="File name suffix", value=state["suffix"],
-                                  on_change=lambda e: typed_suffix(e.value)).classes("w-40")
-            # typing is what stops the suffix following the selection, not the page setting it
-            suffix_box.on("keydown", lambda: state.update(suffix_typed=True))
+            ui.input(label="File name suffix", value=state["suffix"],
+                     on_change=lambda e: typed_suffix(e.value)).classes("w-40")
 
         with ui.row().classes("w-full items-end gap-4"):
             # Bryan runs with the project folder as its working folder, so a
