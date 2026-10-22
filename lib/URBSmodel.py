@@ -162,6 +162,7 @@ class UrbsModel:
         # the main dam, because the check that the two do not share an il= variable needs
         # the main dam's name to compare against.
         self.setup_additional_dams(config_data, config_file)
+        self.dam_levels = self.setup_dam_levels(config_data)
         if 'time_increment_override' in config_data.keys():
             self.time_increment_override = config_data['time_increment_override']
             print('Found time increment overrides:')
@@ -406,6 +407,52 @@ class UrbsModel:
                   f'"{dam["variable"]}"')
             self.extra_dams.append(dam)
         return self.extra_dams
+
+    def setup_dam_levels(self, config_data):
+        """Reference levels to compare each dam's peak against - read by the launcher's
+        Downstream Results tab, never by a run. Checked here so a mistake is refused when
+        the model is first opened rather than found as a blank in a table:
+
+            "dam_levels": {
+              "CALLIDE":  {"DCL": 219.13, "PMF": {"1.3": 221.50, "2.7": 221.86}},
+              "KROOMBIT": {"DCL": 270.70}
+            }
+
+        Each key is the location= on a DAM ROUTE line; each level a number, or a number per
+        warming level (the PMF moves with the GWL, and one regional config serves several).
+        Keys starting with an underscore are notes.
+        """
+        levels = config_data.get('dam_levels') or {}
+        if not isinstance(levels, dict):
+            raise Exception('dam_levels in the model config is a mapping of dam location to '
+                            'its levels.')
+        checked = {}
+        for location, named in levels.items():
+            if str(location).startswith('_'):
+                continue
+            if self.find_dam_routing_line(location)['line'] is None:
+                raise Exception(
+                    f'dam_levels names "{location}", which has no DAM ROUTE line in '
+                    f'{self.vec_file}. A dam is named by the location= on its routing line.')
+            if not isinstance(named, dict):
+                raise Exception(f'dam_levels for "{location}" is a mapping of level name to '
+                                'level, e.g. {"DCL": 219.13}.')
+            checked[location] = {}
+            for name, value in named.items():
+                if str(name).startswith('_'):
+                    continue
+                values = value if isinstance(value, dict) else {'': value}
+                for gwl, level in values.items():
+                    try:
+                        float(level)
+                        if gwl != '':
+                            float(gwl)
+                    except (TypeError, ValueError):
+                        where = f' at GWL "{gwl}"' if gwl != '' else ''
+                        raise Exception(f'dam_levels: {location} {name}{where} is "{level}", '
+                                        'which is not a level in m AHD.')
+                checked[location][name] = value
+        return checked
 
     @staticmethod
     def _ensemble_start(entry, dam):

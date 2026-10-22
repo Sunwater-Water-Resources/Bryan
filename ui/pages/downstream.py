@@ -21,14 +21,17 @@ environment has none; see ``core/downstream.py``.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from nicegui import ui
 
 import address
-from core import downstream, logtail, urbsresults
+from clipboard import copy_buttons, table_from_rows
+from core import damchart, downstream, logtail, urbsresults
 from layout import page_frame, require_project, severity_banner
 from state import STATE
+from theme import house_echart
 from widgets import Running, path_input
 
 TABS = ("Storms", "Results")
@@ -307,3 +310,66 @@ class _DownstreamView:
             ui.label("Hover a status for what it means. A run's starting storage and losses "
                      "are what the generator recorded when it wrote the storm."
                      ).classes("text-xs text-muted")
+            self._dams(model, found, plan)
+
+    def _dams(self, model, found, plan) -> None:
+        """Every dam against its reference levels: shown where the model has more than one
+        dam or the config gives dam_levels, and nowhere else."""
+        dams, levels, problems = urbsresults.dam_setup(model)
+        if len(dams) < 2 and not levels:
+            return
+        ui.separator()
+        ui.label("Dams").classes("text-lg").mark("dams-heading")
+        for problem in problems:
+            severity_banner("warn", problem)
+        if not levels:
+            ui.label("Give each dam's levels as dam_levels in the regional model config - "
+                     'e.g. {"CALLIDE": {"DCL": 219.13, "PMF": {"1.3": 221.50}}} - to compare '
+                     "its peaks against them.").classes("text-sm text-muted")
+        rows = urbsresults.dams_rows(plan, found.results, dams, levels)
+        if not rows:
+            ui.label("No run of this selection has finished yet.").classes("text-sm text-muted")
+            return
+        reached = urbsresults.reaching_crest(rows, dams)
+        with_crest = [dam for dam in dams if urbsresults.CREST in levels.get(dam, {})]
+        if len(with_crest) > 1:
+            ui.label(f"{reached} of {len(rows)} events take every dam to its crest level."
+                     ).classes("text-sm text-body").mark("dams-reached")
+        ui.table(columns=[{"name": key, "label": key, "field": key, "align": "left"}
+                          for key in rows[0]], rows=rows, row_key="run") \
+            .classes("w-full").props("dense flat bordered").mark("dams-table")
+        copy_buttons(lambda: table_from_rows(list(rows[0]), rows), mark="dams")
+
+        gwl_of = {os.path.splitext(s.filename)[0]: s.gwl for s in plan.storms if s.filename}
+        runs = [row["run"] for row in rows]
+        chart_box = ui.column().classes("w-full")
+
+        def draw(run) -> None:
+            chart_box.clear()
+            frame = urbsresults.read_levels(found.results, run)
+            series = {dam: urbsresults.crest_series(frame, dam, levels.get(dam, {}), gwl_of.get(run))
+                      for dam in with_crest}
+            options = damchart.crest_chart(series, levels, gwl_of.get(run), title=run)
+            with chart_box:
+                if options["series"]:
+                    house_echart(options).classes("w-full h-96").mark("crest-chart")
+                else:
+                    ui.label("No dam with a crest level in this run.").classes("text-sm text-muted")
+
+        if with_crest:
+            ui.select(runs, value=runs[0], label="Event",
+                      on_change=lambda e: draw(e.value)).classes("w-80")
+            draw(runs[0])
+        if len(with_crest) > 1:
+            points = urbsresults.margin_points(self.selections, found.results, with_crest,
+                                               levels, downstream.selection_label)
+            if points:
+                house_echart(damchart.margin_scatter(points, *with_crest[:2])) \
+                    .classes("w-full h-96").mark("margin-scatter")
+        ui.label(
+            "Read with care. Each loading is one event, so this shows what the chosen events "
+            "did, not a probability that the dams reach their crests together. The other dams' "
+            "starting storage is an assumption: the same lake_z through each dam's own curve "
+            "for a Monte Carlo event, full supply for an ensemble one. And the rain on the other "
+            "dams' catchments is conditional on the event over the main dam."
+        ).classes("text-xs text-muted").mark("dams-caveats")

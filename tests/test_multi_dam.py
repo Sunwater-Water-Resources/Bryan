@@ -185,3 +185,33 @@ def test_an_ensemble_event_without_an_adv_is_refused(two_dams):
     import pandas as pd
     with pytest.raises(Exception, match='no ADV column'):
         _writer(model_for(two_dams)).antecedent_levels(pd.Series({'rain_aep': 1.9e6}), 'ensemble')
+
+
+# -- dam_levels: reference levels for the Results tab, checked when the model opens ---
+
+def _with_levels(folder, levels):
+    config_path = folder / 'urbs_config.json'
+    config = json.loads(config_path.read_text())
+    config['dam_levels'] = levels
+    config_path.write_text(json.dumps(config))
+
+
+def test_dam_levels_are_read_with_a_level_per_warming_level(two_dams):
+    _with_levels(two_dams, {'_note': 'from E013', 'JUNIPER': {'DCL': 219.13,
+                                                              'PMF': {'1.3': 221.5, '2.7': 221.86}},
+                            'UPPER': {'DCL': 210.0}})
+    model = model_for(two_dams)
+    assert model.dam_levels['JUNIPER']['PMF'] == {'1.3': 221.5, '2.7': 221.86}
+    assert model.dam_levels['UPPER'] == {'DCL': 210.0}
+
+
+@pytest.mark.parametrize('levels, message', [
+    ({'NOWHERE': {'DCL': 1.0}}, 'no DAM ROUTE line'),
+    ({'UPPER': {'DCL': 'high'}}, 'not a level'),
+    ({'UPPER': {'PMF': {'1.3': None}}}, 'at GWL "1.3"'),
+    ({'UPPER': 210.0}, 'mapping of level name'),
+])
+def test_a_dam_level_that_cannot_be_used_is_refused_by_name(two_dams, levels, message):
+    _with_levels(two_dams, levels)
+    with pytest.raises(Exception, match=message):
+        model_for(two_dams)

@@ -59,6 +59,42 @@ the losses, the mean depth, the pattern, each dam's starting storage and any fla
 Nothing here waits on a clock: a run is *running* because the page's own generator is still
 going, and *failed* because it has stopped and left the batch file behind.
 
+#### The dams against their levels
+
+Where the regional model has more than one dam, or its config gives ```dam_levels```, the tab
+holds each dam's peak lake level in every finished run against reference levels:
+
+```json
+"dam_levels": {
+  "_note": "Where each level comes from.",
+  "CALLIDE":  {"DCL": 219.13, "PMF": {"1.3": 221.50, "1.7": 221.60, "2.7": 221.86}},
+  "KROOMBIT": {"DCL": 270.70}
+}
+```
+
+Each key is the ```location=``` on a dam's ```DAM ROUTE``` line. A level is a number, or a number
+per warming level - the PMF moves with the GWL and one regional config serves several - read at
+the run's own GWL. Any name can be given; **```DCL```**, the dam crest level, is the one the
+chart and the scatter are drawn against. Bryan refuses a location with no ```DAM ROUTE``` line,
+or a level that is not a number, when it opens the model.
+
+- **The table** gives, per event and dam, the starting level, the peak, its time and the margin
+  to each level - the peak less the level, positive above it. A level the config does not give,
+  or not for that GWL, says **not given**. Above it: how many events take every dam to its crest.
+  **Copy for Word** copies it.
+- **The chart** draws one event's lake levels as **height above each dam's crest**, so dams tens
+  of metres apart in AHD share one axis and the crest is zero; a dam's PMF level is a dotted line
+  on the same basis.
+- **The scatter** takes every finished run of every selection in the project, coloured by group:
+  the first dam's margin to its crest across, the second's up. The quadrant above and right of
+  zero holds the runs that took both dams over their crests.
+
+Read it with care, as the tab says: each loading is one event, so this is what the chosen events
+did and not a probability that the dams reach their crests together; the other dams' starting
+storage is an assumption (```lake_z``` through each dam's curve for a Monte Carlo event, full
+supply for an ensemble one); and the rain on the other catchments is conditional on the event
+over the main dam.
+
 It also passes the generator the sims config the events came from, so an event whose embedded
 bursts were filtered keeps its filtered pattern (see below). The selection file records which
 one that was, so it does not matter which sims config is open. A selection saved before

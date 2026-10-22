@@ -165,3 +165,36 @@ async def test_the_results_tab_says_which_runs_have_finished(user, tmp_path):
     from nicegui import ui as nicegui_ui
     table = next(iter(user.find(marker="runs-table").elements))
     assert [(row["run"], row["status"]) for row in table.rows] == [("000042_24h_GWL1p3", "finished")]
+
+
+
+@pytest.mark.asyncio
+async def test_the_results_tab_holds_each_dam_against_its_crest(user, tmp_path):
+    import shutil
+    from pathlib import Path
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_72h_E013_GWL1p3_RFSL__mcdf.parquet"
+    database.write_bytes(b"")
+    path = tmp_path / "RFSL_Design_GWL1p3_representative_events.json"
+    path.write_text(json.dumps({"targets": [dict(
+        kind="aep", value=100.0, result_type="level", rain_aep=None, source="",
+        output_file="x", database=str(database), count=10, picked=5044, name="1 in 100",
+        comment="")], "settings": {}}))
+    model = _model(tmp_path, extra_dams=["KROOMBIT"])
+    data = json.loads(model.read_text())
+    data["max_keys"] = {"level": "CALLIDE"}
+    data["dam_levels"] = {"CALLIDE": {"DCL": 219.13, "PMF": {"1.3": 221.5}},
+                          "KROOMBIT": {"DCL": 270.7}}
+    model.write_text(json.dumps(data))
+    real = Path(__file__).parent / "data" / "regional" / "005044_72h_GWL1p3_RFSL.h"
+    shutil.copy(real, model.parent / "results" / "005044_72h_GWL1p3.h")
+    (model.parent / "results" / "005044_72h_GWL1p3.q").write_text("")
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model=str(model))
+    await user.open("/downstream?tab=Results")
+    await user.should_see("0 of 1 events take every dam to its crest level")
+    table = next(iter(user.find(marker="dams-table").elements))
+    row, = table.rows
+    assert row["KROOMBIT to DCL"] == "-2.67 m" and row["KROOMBIT to PMF"] == "not given"
+    await user.should_see(marker="crest-chart")
+    await user.should_see("not a probability")

@@ -148,3 +148,230 @@ def counts(rows) -> str:
     order = (FINISHED, RUNNING, WAITING, FAILED, NOT_RUN, UNKNOWN, NOT_WRITTEN)
     tally = {status: sum(row["status"] == status for row in rows) for status in order}
     return ", ".join(f"{tally[s]} {s}" for s in order if tally[s]) or "no runs"
+
+
+# -- reading a run's results ---------------------------------------------------------
+
+_READ: dict = {}
+
+
+def _cached(path: Path, reader):
+    """``reader(path)``, kept per file version: a regional run's files are read on every
+    Reload and redraw, and they only change when URBS writes them again."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_mtime, stat.st_size, reader.__name__)
+    if key not in _READ:
+        _READ[key] = reader(path)
+    return _READ[key]
+
+
+def forget_cached() -> None:
+    _READ.clear()
+
+
+def _parse_levels(path: Path) -> pd.DataFrame:
+    """URBS's ``<run>.h``: fixed-width text, one column per level location.
+
+    The names are on the ninth line, cut to eight characters by URBS, and the data start
+    after the ``Time  metres`` line and the rule under it, ending at ``*END``. A name that
+    appears twice gets ``_1`` on its second, as ``UrbsModel.get_hydrographs`` does."""
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    seen: dict = {}
+    columns = []
+    for name in lines[8].split():
+        columns.append(name if name not in seen else f"{name}_{seen[name]}")
+        seen[name] = seen.get(name, 0) + 1
+    start = next((i for i, line in enumerate(lines)
+                  if line.split()[:2] == ["Time", "metres"]), None)
+    if start is None:
+        raise ValueError(f"{path.name} has no 'Time  metres' line")
+    rows = []
+    for line in lines[start + 2:]:
+        if line.startswith("*END"):
+            break
+        parts = line.split()
+        if len(parts) == len(columns) + 1:
+            rows.append([float(part) for part in parts])
+    return pd.DataFrame(rows, columns=["Time"] + columns).set_index("Time")
+
+
+def read_levels(results_folder, run_name) -> pd.DataFrame | None:
+    """A run's level hydrographs by location (eight characters), or None if not there."""
+    try:
+        return _cached(Path(results_folder) / f"{run_name}.h", _parse_levels)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+# -- the dams, against their reference levels ------------------------------------------
+
+#: The level the comparison is drawn against, where a dam has one.
+CREST = "DCL"
+
+
+def dam_setup(model_config) -> tuple:
+    """(dams, levels, problems) from the regional model config, read as JSON.
+
+    ``dams`` is every dam the model sets a starting level for - the main one (max_keys
+    level) and the additional ones - in that order. ``levels`` is ``dam_levels`` with its
+    notes dropped. Problems are reported, not raised: Bryan refuses a bad dam_levels when
+    it opens the model, and the page still shows what it can."""
+    try:
+        data = json.loads(Path(model_config).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return [], {}, []
+    dams = []
+    main = (data.get("max_keys") or {}).get("level")
+    if main:
+        dams.append(str(main))
+    dams += [str(entry.get("location")) for entry in data.get("additional_dams") or []
+             if isinstance(entry, dict) and entry.get("location")]
+    levels, problems = {}, []
+    for location, named in (data.get("dam_levels") or {}).items():
+        if str(location).startswith("_"):
+            continue
+        if not isinstance(named, dict):
+            problems.append(f"dam_levels for {location} is not a mapping of level names")
+            continue
+        levels[str(location)] = {str(key): value for key, value in named.items()
+                                 if not str(key).startswith("_")}
+        if str(location) not in dams:
+            dams.append(str(location))
+    return dams, levels, problems
+
+
+def level_at(value, gwl) -> float | None:
+    """A reference level at a run's warming level: the number, or that GWL's entry of a
+    per-GWL map. None where it is not given."""
+    if isinstance(value, dict):
+        if gwl is None:
+            return None
+        for key, level in value.items():
+            try:
+                if abs(float(key) - float(gwl)) < 1e-9:
+                    return float(level)
+            except (TypeError, ValueError):
+                continue
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@dataclass
+class DamPeak:
+    dam: str
+    peak: float | None = None
+    time: float | None = None
+    margins: dict | None = None     # level name -> peak less level; None where not given
+    start: float | None = None      # the level the run started at
+
+    @property
+    def found(self) -> bool:
+        return self.peak is not None
+
+
+def dam_peak(levels, dam, references, gwl) -> DamPeak:
+    """One dam's peak in one run, and its margin to each reference level."""
+    column = dam[:8]
+    margins = {name: None for name in references}
+    if levels is None or column not in levels:
+        return DamPeak(dam, margins=margins)
+    series = levels[column].dropna()
+    if series.empty:
+        return DamPeak(dam, margins=margins)
+    peak = float(series.max())
+    for name, value in references.items():
+        level = level_at(value, gwl)
+        margins[name] = None if level is None else peak - level
+    return DamPeak(dam, peak, float(series.idxmax()), margins, float(series.iloc[0]))
+
+
+def margin_text(margin) -> str:
+    return "not given" if margin is None else f"{margin:+.2f} m"
+
+
+def dams_rows(plan, results_folder, dams, levels) -> list:
+    """The Dams table: per finished event, each dam's start, peak, time of peak and margin
+    to each reference level - the peak less the level, positive above it. A level the config
+    does not give, or not for the run's GWL, says 'not given', never blank."""
+    # every dam gets every level name any dam has, so a missing one shows as 'not given'
+    names = list(dict.fromkeys(name for dam in dams for name in levels.get(dam, {})))
+    rows = []
+    for storm in plan.storms:
+        if not storm.filename:
+            continue
+        run = os.path.splitext(storm.filename)[0]
+        frame = read_levels(results_folder, run)
+        if frame is None:
+            continue
+        row = {"loading": storm.loading, "run": run}
+        for dam in dams:
+            references = {name: levels.get(dam, {}).get(name) for name in names}
+            peak = dam_peak(frame, dam, references, storm.gwl)
+            row[f"{dam} start"] = "" if peak.start is None else f"{peak.start:.2f}"
+            row[f"{dam} peak"] = "" if not peak.found else f"{peak.peak:.2f}"
+            row[f"{dam} at (h)"] = "" if not peak.found else f"{peak.time:g}"
+            for name, margin in peak.margins.items():
+                row[f"{dam} to {name}"] = margin_text(margin) if peak.found else ""
+        rows.append(row)
+    return rows
+
+
+def reaching_crest(rows, dams) -> int:
+    """How many events have every dam that has a crest level at or above it."""
+    with_crest = [dam for dam in dams if any(f"{dam} to {CREST}" in row for row in rows)]
+    if not with_crest:
+        return 0
+    count = 0
+    for row in rows:
+        texts = [row.get(f"{dam} to {CREST}", "") for dam in with_crest]
+        if all(text.endswith(" m") and float(text.split()[0]) >= 0 for text in texts):
+            count += 1
+    return count
+
+
+def crest_series(frame, dam, references, gwl):
+    """The dam's level less its crest level through the run, or None without a crest."""
+    crest = level_at(references.get(CREST), gwl)
+    column = dam[:8]
+    if frame is None or crest is None or column not in frame:
+        return None
+    return frame[column] - crest
+
+
+def record_runs(selection) -> list:
+    """(run name, gwl) for every storm a selection's last run wrote, from its record."""
+    out = []
+    for run, row in storms_record(selection).items():
+        try:
+            gwl = float(row.get("gwl", ""))
+        except ValueError:
+            gwl = None
+        out.append((run, gwl))
+    return out
+
+
+def margin_points(selections, results_folder, dams, levels, label_of) -> dict:
+    """Across every selection in the project: per group, a point per finished run - the first
+    two dams' margins to their crest levels, with the run's name. Empty without two crests."""
+    if len(dams) < 2:
+        return {}
+    first, second = dams[:2]
+    points: dict = {}
+    for selection in selections:
+        for run, gwl in record_runs(selection):
+            frame = read_levels(results_folder, run)
+            if frame is None:
+                continue
+            x = dam_peak(frame, first, {CREST: levels.get(first, {}).get(CREST)}, gwl)
+            y = dam_peak(frame, second, {CREST: levels.get(second, {}).get(CREST)}, gwl)
+            if x.margins.get(CREST) is None or y.margins.get(CREST) is None:
+                continue
+            points.setdefault(label_of(selection), []).append(
+                (x.margins[CREST], y.margins[CREST], run))
+    return points
