@@ -198,3 +198,12 @@ def test_a_config_with_no_results_folder_runs_beside_the_model(two_dam_model):
     before = (writer.model.output_folder, list(writer.model.header))
     writer.model.run_from(regional_results_folder(str(two_dam_model / 'urbs_config.json'), config))
     assert (writer.model.output_folder, writer.model.header) == before
+
+
+
+def test_areal_ifd_files_are_named_for_fractional_durations_too():
+    from lib.DownstreamStorms import areal_ifd_name
+    assert areal_ifd_name(9) == areal_ifd_name(9.0) == 'ArealIFD_009h.csv'
+    assert areal_ifd_name(120) == 'ArealIFD_120h.csv'
+    # 4.5 h: not rounded to 004h, which would be ambiguous
+    assert areal_ifd_name(4.5) == 'ArealIFD_004p5h.csv'

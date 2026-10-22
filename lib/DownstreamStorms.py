@@ -103,7 +103,8 @@ class DownstreamRainfall:
         # row['shape'] and never row.shape - a Series' .shape is its dimensions,
         # and the column here is genuinely called 'shape'.
         anchors = pd.read_csv(paths['pmp_anchors'])
-        self.gev = {(int(r['Duration_h']), r['Region']): r for _, r in anchors.iterrows()}
+        # float, not int: int() read a 4.5 h row as 4 h, and the 4.5 h storm then found none
+        self.gev = {(float(r['Duration_h']), r['Region']): r for _, r in anchors.iterrows()}
         self.areal_folder = paths['areal_ifd_folder']
         self._ifd = {}
         self._areal = {}
@@ -130,8 +131,7 @@ class DownstreamRainfall:
     def areal(self, duration):
         """JPA's region-average areal IFD, indexed by AEP as a number."""
         if duration not in self._areal:
-            table = pd.read_csv(os.path.join(self.areal_folder,
-                                             f'ArealIFD_{duration:03.0f}h.csv'))
+            table = pd.read_csv(os.path.join(self.areal_folder, areal_ifd_name(duration)))
             table = table.set_index(table.columns[0])
             table.index = [float(str(i).replace('1 in ', '')) for i in table.index]
             self._areal[duration] = table
@@ -288,6 +288,18 @@ def period_key(duration):
     36 h.
     """
     return f'{float(duration):g}'.replace('.', 'p')
+
+
+def areal_ifd_name(duration) -> str:
+    """JPA's region-average areal IFD file for a duration: ``ArealIFD_009h.csv``, and for a
+    duration that is not a whole number of hours ``ArealIFD_004p5h.csv`` - the 'p' the runs
+    use for a decimal point. ``{duration:03.0f}`` alone would ask for ``ArealIFD_004h.csv``
+    for 4.5 h, rounded and ambiguous."""
+    duration = float(duration)
+    if duration.is_integer():
+        return f'ArealIFD_{duration:03.0f}h.csv'
+    whole, fraction = f'{duration:g}'.split('.')
+    return f'ArealIFD_{int(whole):03d}p{fraction}h.csv'
 
 
 class DownstreamStormWriter:
