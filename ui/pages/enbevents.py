@@ -68,7 +68,7 @@ class EnsembleEventsView:
                     .mark("result-type")
                 ui.button("Reload", icon="refresh", on_click=self._reload).props("flat dense")
             ui.label("An ensemble ran every pattern of every duration, so there is nothing to "
-                     "rank. The PMF is the highest event; a design AEP - the PMPF included - is "
+                     "rank. The PMF is the highest event; a design AEP is "
                      "the median pattern at the critical duration."
                      ).classes("text-xs text-muted").mark("ensemble-rules")
         with ui.card().classes("w-full"):
@@ -155,7 +155,7 @@ class EnsembleEventsView:
                 ui.label("No loadings yet - add one.").classes("text-muted text-sm")
             for position, target in enumerate(self.targets):
                 with ui.row().classes("items-center gap-2 flex-wrap"):
-                    ui.input("Name (optional)", value=target.name, placeholder="e.g. PMPF",
+                    ui.input("Name (optional)", value=target.name, placeholder="e.g. PMF",
                              on_change=lambda e, i=position: self._edit(i, "name", e.value)
                              ).classes("w-56").props(f"dense debounce={TYPING_PAUSE_MS}") \
                         .mark(f"loading-name-{position}")

@@ -7,8 +7,10 @@ nothing to rank: the event is decided by a rule, and the rules are the PMF page'
 ``pmf``  The highest event of any duration and pattern (``ensemble.HIGHEST``).
 ``aep``  At that AEP, the median pattern of each duration by EnbAnalysis's position rule,
          then the duration whose median is largest (``ensemble.MEDIAN``) - the critical
-         duration. A duration given in ``source`` overrides the critical one. The PMPF is
-         this rule at the AEP of the PMP.
+         duration. A duration given in ``source`` overrides the critical one.
+
+The PMPF is not one of these: it is the Monte Carlo design flood at the AEP of the PMP,
+chosen from the Monte Carlo group like any other design AEP.
 
 The event is identified by its row in its own database file - the index Bryan wrote, and
 the ``sim_<id>`` column of the stored hydrographs - never by its position in a frame that
@@ -137,12 +139,11 @@ def durations(frame) -> list:
 
 
 def default_targets(frame, result_type="level") -> list:
-    """What a new ensemble group starts with. A run at one AEP is a PMF run - the PMF and
-    the PMPF; otherwise the three rarest AEPs it ran."""
+    """What a new ensemble group starts with. A run at one AEP is a PMF run: the PMF.
+    Otherwise the three rarest AEPs it ran, by the median pattern."""
     ran = aeps(frame)
     if len(ran) == 1:
-        return [EVENTS.Target(kind=PMF, result_type=result_type, name="PMF"),
-                EVENTS.Target(kind=AEP, value=ran[0], result_type=result_type, name="PMPF")]
+        return [EVENTS.Target(kind=PMF, result_type=result_type, name="PMF")]
     return [EVENTS.Target(kind=AEP, value=aep, result_type=result_type) for aep in ran[-3:]]
 
 

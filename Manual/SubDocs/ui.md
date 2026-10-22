@@ -348,9 +348,9 @@ An **ensemble** row - or a reservoir routing row that re-routed one - appears in
 | Kind | The event |
 | --- | --- |
 | **PMF** | The highest event of any duration and pattern. **Notional AEP** is a label for it - the PMF page's adopted AEP where a study is open - and is never used as an input: downstream, the concurrent rainfall is set by the event's own rainfall AEP, the AEP of the PMP. |
-| **Design AEP** | One of the AEPs the ensemble ran: the median pattern of each duration (the sixth of ten), then the duration whose median is largest. The PMPF is this at the AEP of the PMP. |
+| **Design AEP** | One of the AEPs the ensemble ran: the median pattern of each duration (the sixth of ten), then the duration whose median is largest. |
 
-**Duration** is the critical one unless a duration is chosen. A new group that ran one AEP starts with the PMF and the PMPF; one that ran several starts with the three rarest. Each loading's card says the rule, the event chosen - its duration, pattern, level, inflow, outflow, rainfall AEP and starting volume - and the per-duration spread it was chosen from, the chosen duration shaded. The selection is saved as you go, as a Monte Carlo one is, with ```"method": "ensemble"``` and each event's duration and rule.
+**Duration** is the critical one unless a duration is chosen. A new group that ran one AEP - a PMF run - starts with the PMF; one that ran several starts with the three rarest. The PMPF is not chosen here: it is the Monte Carlo design flood at the AEP of the PMP, a design AEP loading on the Monte Carlo group (1 in 1,900,000 at Callide). Each loading's card says the rule, the event chosen - its duration, pattern, level, inflow, outflow, rainfall AEP and starting volume - and the per-duration spread it was chosen from, the chosen duration shaded. The selection is saved as you go, as a Monte Carlo one is, with ```"method": "ensemble"``` and each event's duration and rule.
 
 ## Lake level frequency
 

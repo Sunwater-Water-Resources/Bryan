@@ -173,7 +173,7 @@ A lake config whose ceiling does not match the dam's full supply volume is refus
 fitted to another storage returns a volume on the wrong scale, and the level that comes back
 is just somewhere else on the ```.els``` - plausible, and wrong.
 
-### Ensemble events: the PMF and the PMPF
+### Ensemble events: the PMF
 
 A selection saved from an **ensemble** group on the Events page (```"method": "ensemble"```)
 goes through the same page and the same generator, with three differences.
@@ -211,7 +211,7 @@ filtered events.
 JPA's conditional AEPs and areal IFDs are tabulated for a set of durations - **6 to 120 h at
 Callide**. An event of any other length cannot be taken downstream: the run reports it as
 **SKIPPED** with its duration, carries on with the others, and says how many it skipped at the
-end. At Callide that is any 4.5 h event - the PMPF at GWL 1.3 and the PMF at GWL 2.7 among
+end. At Callide that is any 4.5 h event - the PMF at GWL 2.7 among
 them - until the tables are extended. **Check without writing** reports it too.
 
 ## The Results tab

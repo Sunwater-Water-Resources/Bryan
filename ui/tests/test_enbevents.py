@@ -96,10 +96,10 @@ def test_the_event_is_its_row_in_its_own_file_when_a_group_has_several(tmp_path)
     assert pmpf.event == 15 and pmpf.source == found[1]
 
 
-def test_a_new_pmf_group_starts_with_the_pmf_and_the_pmpf(tmp_path):
+def test_a_new_pmf_group_starts_with_the_pmf(tmp_path):
+    # the PMPF is the Monte Carlo design flood at the AEP of the PMP, not an ensemble pick
     defaults = enbevents.default_targets(ensemble_frame())
-    assert [(t.kind, t.name) for t in defaults] == [("pmf", "PMF"), ("aep", "PMPF")]
-    assert defaults[1].value == PMP
+    assert [(t.kind, t.name) for t in defaults] == [("pmf", "PMF")]
     several = enbevents.default_targets(ensemble_frame(aeps=(100.0, 1000.0, 1e4, 1e5)))
     assert [t.value for t in several] == [1000.0, 1e4, 1e5]
 
