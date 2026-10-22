@@ -311,6 +311,54 @@ class _DownstreamView:
                      "are what the generator recorded when it wrote the storm."
                      ).classes("text-xs text-muted")
             self._dams(model, found, plan)
+            self._print_locations(model, found, plan)
+
+    def _print_locations(self, model, found, plan) -> None:
+        """The flow at the * print locations - the hydraulic model's boundaries - every
+        finished event overlaid, and whether any run stopped before its flood had passed."""
+        flows = {}
+        for storm in plan.storms:
+            if storm.filename:
+                run = os.path.splitext(storm.filename)[0]
+                frame = urbsresults.read_flows(found.results, run)
+                if frame is not None:
+                    flows[run] = frame
+        if not flows:
+            return
+        ui.separator()
+        ui.label("Print locations").classes("text-lg").mark("locations-heading")
+        cut = {run: urbsresults.end_of_run(frame) for run, frame in flows.items()}
+        cut = {run: where for run, where in cut.items() if where}
+        if cut:
+            said = "; ".join(f"{run} at {', '.join(where[:4])}"
+                             + (f" and {len(where) - 4} more" if len(where) > 4 else "")
+                             for run, where in cut.items())
+            severity_banner(
+                "warn", f"{len(cut)} of {len(flows)} runs stop before the flood has passed - "
+                        f"{said}.",
+                "Still above a tenth of its peak at the end, or peaking at the very end. "
+                "Lengthen simulation_periods in the regional model config for those durations.")
+        else:
+            ui.label(f"All {len(flows)} runs have receded at every print location by the end "
+                     "of the run.").classes("text-sm text-body").mark("end-of-run-ok")
+        locations = list(next(iter(flows.values())).columns)
+        first = urbsresults.default_location(model, locations)
+
+        def draw(chosen) -> None:
+            charts.clear()
+            with charts:
+                for location in chosen or []:
+                    series = {run: frame[location] for run, frame in flows.items()
+                              if location in frame}
+                    house_echart(damchart.flows_chart(series, location)) \
+                        .classes("w-full h-80").mark(f"flows-{location}")
+
+        ui.select(locations, multiple=True, value=[first] if first else [],
+                  label="Print locations (* in the vec)",
+                  on_change=lambda e: draw(e.value)).classes("w-full").props("use-chips") \
+            .mark("locations")
+        charts = ui.column().classes("w-full")
+        draw([first] if first else [])
 
     def _dams(self, model, found, plan) -> None:
         """Every dam against its reference levels: shown where the model has more than one

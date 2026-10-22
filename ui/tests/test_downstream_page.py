@@ -198,3 +198,25 @@ async def test_the_results_tab_holds_each_dam_against_its_crest(user, tmp_path):
     assert row["KROOMBIT to DCL"] == "-2.67 m" and row["KROOMBIT to PMF"] == "not given"
     await user.should_see(marker="crest-chart")
     await user.should_see("not a probability")
+
+
+
+@pytest.mark.asyncio
+async def test_the_results_tab_draws_the_print_locations_and_checks_the_ends(user, tmp_path):
+    import shutil
+    from pathlib import Path
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_72h_E013_GWL1p3_RFSL__mcdf.parquet"
+    database.write_bytes(b"")
+    (tmp_path / "RFSL_Design_GWL1p3_representative_events.json").write_text(json.dumps(
+        {"targets": [dict(kind="aep", value=100.0, result_type="level", rain_aep=None,
+                          source="", output_file="x", database=str(database), count=10,
+                          picked=5044, comment="")], "settings": {}}))
+    model = _model(tmp_path)
+    from test_urbsresults import FLOWS_CSV
+    (model.parent / "results" / "005044_72h_GWL1p3_i.csv").write_text(FLOWS_CSV)
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model=str(model))
+    await user.open("/downstream?tab=Results")
+    await user.should_see("All 1 runs have receded")
+    await user.should_see(marker="flows-GOOVIGEN")

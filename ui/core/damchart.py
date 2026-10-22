@@ -65,6 +65,32 @@ def crest_chart(series_by_dam: dict, references: dict, gwl, title="") -> dict:
     }
 
 
+def flows_chart(series_by_run: dict, location: str) -> dict:
+    """Every finished event's flow at one print location, overlaid."""
+    drawn = []
+    for number, (run, series) in enumerate(series_by_run.items()):
+        if series is None or series.dropna().empty:
+            continue
+        values = series.dropna()
+        drawn.append({"name": run, "type": "line", "showSymbol": False, "smooth": False,
+                      "lineStyle": {"width": 1.6},
+                      "itemStyle": {"color": PALETTE[number % len(PALETTE)]},
+                      "data": _thin(list(values.index), list(values.values))})
+    if not drawn:
+        return {"series": []}
+    return {
+        "title": {"text": location, "left": "center", "textStyle": {"fontSize": 13}},
+        "tooltip": {"trigger": "axis", ":valueFormatter": "(v) => v.toFixed(1) + ' m³/s'"},
+        "legend": {"type": "scroll", "top": 30},
+        "grid": {"left": 70, "right": 40, "top": 64, "bottom": 50},
+        "xAxis": {"type": "value", "name": "Time (hours)", "nameLocation": "middle",
+                  "nameGap": 30, "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}}},
+        "yAxis": {"type": "value", "name": "Flow (m³/s)", "nameGap": 50,
+                  "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}}},
+        "series": drawn,
+    }
+
+
 def margin_scatter(points_by_group: dict, x_dam: str, y_dam: str) -> dict:
     """Each finished run's peak margins to the two dams' crests, coloured by group."""
     series = []

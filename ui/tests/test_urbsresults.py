@@ -95,6 +95,27 @@ def test_the_runs_table_carries_what_went_into_each_storm(found, tmp_path):
 
 DATA = Path(__file__).parent / "data" / "regional"
 REAL = "005044_72h_GWL1p3_RFSL"
+# its _i.csv, trimmed to seven of the 34 print locations and every 60th step; inline because
+# the repository keeps no csv files
+FLOWS_CSV = """Time_hrs,STAGCK_WEIR,MALAKOFF,RAINBOW_CK,96_KM,CLD_INFLOW,GERRARD,GOOVIGEN
+0.000,0.00,0.00,0.00,0.00,0.00,0.00,0.00
+14.750,25.85,33.74,65.83,318.24,378.83,290.20,712.31
+29.750,77.77,99.88,204.72,713.64,757.48,576.03,1540.23
+44.750,196.53,253.51,514.01,2280.92,2937.97,2574.65,11423.20
+59.750,69.60,89.43,180.57,750.37,924.44,837.38,4870.54
+74.750,18.76,24.26,46.56,268.88,383.62,342.77,2186.78
+89.750,0.76,0.96,1.90,13.02,21.90,34.05,383.40
+104.750,0.11,0.14,0.27,1.90,3.24,6.64,175.84
+119.750,0.03,0.03,0.07,0.48,0.82,1.96,18.44
+134.750,0.01,0.01,0.02,0.16,0.28,0.74,7.29
+144.000,0.01,0.01,0.01,0.09,0.16,0.44,4.47
+"""
+
+
+@pytest.fixture
+def flows_folder(tmp_path):
+    (tmp_path / f"{REAL}_i.csv").write_text(FLOWS_CSV)
+    return tmp_path
 LEVELS = {"CALLIDE": {"DCL": 219.13, "PMF": {"1.3": 221.50, "2.7": 221.86}},
           "KROOMBIT": {"DCL": 270.70}}
 
@@ -171,3 +192,31 @@ def test_the_crest_chart_draws_height_above_each_crest():
     # Callide has a PMF level at GWL 1.3, drawn on the same basis; Kroombit has none
     assert drawn["CALLIDE"]["markLine"]["data"] == [{"yAxis": pytest.approx(221.50 - 219.13)}]
     assert "markLine" not in drawn["KROOMBIT"]
+
+
+
+# -- the print locations, and whether a run stopped mid-flood ------------------------------
+
+def test_the_flows_are_the_star_print_locations_by_name(flows_folder):
+    flows = ur.read_flows(flows_folder, REAL)
+    assert list(flows.columns) == ["STAGCK_WEIR", "MALAKOFF", "RAINBOW_CK", "96_KM",
+                                   "CLD_INFLOW", "GERRARD", "GOOVIGEN"]
+    assert flows.index[0] == 0.0 and flows["GOOVIGEN"].max() > 0
+    # the real run receded everywhere before it stopped
+    assert ur.end_of_run(flows) == []
+
+
+def test_a_run_that_stops_before_its_flood_has_passed_is_cut_off():
+    import pandas as pd
+    times = [0.0, 10.0, 20.0, 30.0, 40.0]
+    assert not ur.cut_off(pd.Series([0, 100, 50, 10, 5], index=times))      # receded
+    assert ur.cut_off(pd.Series([0, 100, 80, 60, 40], index=times))        # still 40% of peak
+    assert ur.cut_off(pd.Series([0, 1, 2, 3, 4], index=times))             # still rising
+    assert not ur.cut_off(pd.Series([0, 0, 0, 0, 0], index=times))         # no flow at all
+
+
+def test_the_first_location_shown_is_the_dams_outflow_or_the_last(tmp_path):
+    config = tmp_path / "c.json"
+    config.write_text(json.dumps({"max_keys": {"outflow": "CLD_OUTFLOW_RFSL"}}))
+    assert ur.default_location(config, ["A", "CLD_OUTFLOW_RFSL", "B"]) == "CLD_OUTFLOW_RFSL"
+    assert ur.default_location(config, ["A", "B"]) == "B"

@@ -198,6 +198,61 @@ def _parse_levels(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Time"] + columns).set_index("Time")
 
 
+def _parse_flows(path: Path) -> pd.DataFrame:
+    """URBS's ``<run>_i.csv``: ``Time_hrs`` and one column per print location whose PRINT
+    statement in the vec carries an asterisk - the hydraulic model's boundaries."""
+    frame = pd.read_csv(path)
+    time = frame.columns[0]
+    frame = frame.apply(pd.to_numeric, errors="coerce").set_index(time)
+    frame.index.name = "Time"
+    return frame
+
+
+def read_flows(results_folder, run_name) -> pd.DataFrame | None:
+    """A run's flows at its ``*`` print locations, or None if not there."""
+    try:
+        return _cached(Path(results_folder) / f"{run_name}_i.csv", _parse_flows)
+    except (OSError, ValueError):
+        return None
+
+
+#: A run still carrying this share of its peak when it stops was cut off mid-flood.
+STILL_HIGH = 0.10
+#: ... as was one that peaks in this last share of its period.
+LATE_PEAK = 0.05
+
+
+def cut_off(series) -> bool:
+    """True where a hydrograph has not receded by the end of the run: its last flow is more
+    than ``STILL_HIGH`` of its peak, or it peaks in the last ``LATE_PEAK`` of the period."""
+    values = series.dropna()
+    if values.empty or values.max() <= 0:
+        return False
+    peak = float(values.max())
+    late = values.index[-1] - LATE_PEAK * (values.index[-1] - values.index[0])
+    return float(values.iloc[-1]) > STILL_HIGH * peak or float(values.idxmax()) >= late
+
+
+def default_location(model_config, locations) -> str | None:
+    """The print location to show first: the dam's outflow (max_keys outflow) where it is
+    one of them, else the last - the furthest downstream in a vec written top to bottom."""
+    try:
+        data = json.loads(Path(model_config).read_text(encoding="utf-8"))
+        outflow = (data.get("max_keys") or {}).get("outflow")
+    except (OSError, ValueError, TypeError):
+        outflow = None
+    if outflow in locations:
+        return outflow
+    return locations[-1] if locations else None
+
+
+def end_of_run(flows) -> list:
+    """The print locations still flooding when the run stops."""
+    if flows is None:
+        return []
+    return [location for location in flows.columns if cut_off(flows[location])]
+
+
 def read_levels(results_folder, run_name) -> pd.DataFrame | None:
     """A run's level hydrographs by location (eight characters), or None if not there."""
     try:

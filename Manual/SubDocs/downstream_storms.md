@@ -42,59 +42,6 @@ it stops the line says how it ended: the number of storm files and how many need
 the error and the log to read. The full output is in ```<selection>.downstream.log``` beside the
 selection, written as it goes. That line is the only thing on the page that updates by itself.
 
-The **Results** tab reads the runs back - when it is opened, on **Reload**, and once when a run
-ends; it never polls. One row per storm the plan names, with its status and what went into it:
-the losses, the mean depth, the pattern, each dam's starting storage and any flags.
-
-| Status | Means |
-| --- | --- |
-| **finished** | URBS's results are in the results folder. |
-| **running** | the generator this page started is running URBS on this event now. |
-| **waiting** | the generator has not reached this event yet. |
-| **failed** | URBS was asked to run it and stopped without results. Its batch file is left to run by hand; ```urbserr.log``` in the results folder says why. |
-| **not run** | the storm and its batch file are written, and URBS was not asked to run it. |
-| **not finished** | the launcher was restarted during the run, so it cannot tell running from failed. Reload once URBS has finished. |
-| **not written** | no storm file yet. |
-
-Nothing here waits on a clock: a run is *running* because the page's own generator is still
-going, and *failed* because it has stopped and left the batch file behind.
-
-#### The dams against their levels
-
-Where the regional model has more than one dam, or its config gives ```dam_levels```, the tab
-holds each dam's peak lake level in every finished run against reference levels:
-
-```json
-"dam_levels": {
-  "_note": "Where each level comes from.",
-  "CALLIDE":  {"DCL": 219.13, "PMF": {"1.3": 221.50, "1.7": 221.60, "2.7": 221.86}},
-  "KROOMBIT": {"DCL": 270.70}
-}
-```
-
-Each key is the ```location=``` on a dam's ```DAM ROUTE``` line. A level is a number, or a number
-per warming level - the PMF moves with the GWL and one regional config serves several - read at
-the run's own GWL. Any name can be given; **```DCL```**, the dam crest level, is the one the
-chart and the scatter are drawn against. Bryan refuses a location with no ```DAM ROUTE``` line,
-or a level that is not a number, when it opens the model.
-
-- **The table** gives, per event and dam, the starting level, the peak, its time and the margin
-  to each level - the peak less the level, positive above it. A level the config does not give,
-  or not for that GWL, says **not given**. Above it: how many events take every dam to its crest.
-  **Copy for Word** copies it.
-- **The chart** draws one event's lake levels as **height above each dam's crest**, so dams tens
-  of metres apart in AHD share one axis and the crest is zero; a dam's PMF level is a dotted line
-  on the same basis.
-- **The scatter** takes every finished run of every selection in the project, coloured by group:
-  the first dam's margin to its crest across, the second's up. The quadrant above and right of
-  zero holds the runs that took both dams over their crests.
-
-Read it with care, as the tab says: each loading is one event, so this is what the chosen events
-did and not a probability that the dams reach their crests together; the other dams' starting
-storage is an assumption (```lake_z``` through each dam's curve for a Monte Carlo event, full
-supply for an ensemble one); and the rain on the other catchments is conditional on the event
-over the main dam.
-
 It also passes the generator the sims config the events came from, so an event whose embedded
 bursts were filtered keeps its filtered pattern (see below). The selection file records which
 one that was, so it does not matter which sims config is open. A selection saved before
@@ -266,6 +213,74 @@ Callide**. An event of any other length cannot be taken downstream: the run repo
 **SKIPPED** with its duration, carries on with the others, and says how many it skipped at the
 end. At Callide that is any 4.5 h event - the PMPF at GWL 1.3 and the PMF at GWL 2.7 among
 them - until the tables are extended. **Check without writing** reports it too.
+
+## The Results tab
+
+The **Results** tab reads the runs back - when it is opened, on **Reload**, and once when a run
+ends; it never polls. One row per storm the plan names, with its status and what went into it:
+the losses, the mean depth, the pattern, each dam's starting storage and any flags.
+
+| Status | Means |
+| --- | --- |
+| **finished** | URBS's results are in the results folder. |
+| **running** | the generator this page started is running URBS on this event now. |
+| **waiting** | the generator has not reached this event yet. |
+| **failed** | URBS was asked to run it and stopped without results. Its batch file is left to run by hand; ```urbserr.log``` in the results folder says why. |
+| **not run** | the storm and its batch file are written, and URBS was not asked to run it. |
+| **not finished** | the launcher was restarted during the run, so it cannot tell running from failed. Reload once URBS has finished. |
+| **not written** | no storm file yet. |
+
+Nothing here waits on a clock: a run is *running* because the page's own generator is still
+going, and *failed* because it has stopped and left the batch file behind.
+
+### The dams against their levels
+
+Where the regional model has more than one dam, or its config gives ```dam_levels```, the tab
+holds each dam's peak lake level in every finished run against reference levels:
+
+```json
+"dam_levels": {
+  "_note": "Where each level comes from.",
+  "CALLIDE":  {"DCL": 219.13, "PMF": {"1.3": 221.50, "1.7": 221.60, "2.7": 221.86}},
+  "KROOMBIT": {"DCL": 270.70}
+}
+```
+
+Each key is the ```location=``` on a dam's ```DAM ROUTE``` line. A level is a number, or a number
+per warming level - the PMF moves with the GWL and one regional config serves several - read at
+the run's own GWL. Any name can be given; **```DCL```**, the dam crest level, is the one the
+chart and the scatter are drawn against. Bryan refuses a location with no ```DAM ROUTE``` line,
+or a level that is not a number, when it opens the model.
+
+- **The table** gives, per event and dam, the starting level, the peak, its time and the margin
+  to each level - the peak less the level, positive above it. A level the config does not give,
+  or not for that GWL, says **not given**. Above it: how many events take every dam to its crest.
+  **Copy for Word** copies it.
+- **The chart** draws one event's lake levels as **height above each dam's crest**, so dams tens
+  of metres apart in AHD share one axis and the crest is zero; a dam's PMF level is a dotted line
+  on the same basis.
+- **The scatter** takes every finished run of every selection in the project, coloured by group:
+  the first dam's margin to its crest across, the second's up. The quadrant above and right of
+  zero holds the runs that took both dams over their crests.
+
+Read the dams section with care, as the tab says: each loading is one event, so this is what the chosen events
+did and not a probability that the dams reach their crests together; the other dams' starting
+storage is an assumption (```lake_z``` through each dam's curve for a Monte Carlo event, full
+supply for an ensemble one); and the rain on the other catchments is conditional on the event
+over the main dam.
+
+### The print locations
+
+Below the dams, the flow at the print locations marked ```*``` in the vec - the columns of
+```<run>_i.csv```, the hydraulic model's boundaries - with every finished event overlaid. The
+dam's outflow (```max_keys``` ```outflow```) is shown first, or the last location where that is
+not one of them; any others can be added.
+
+Above them, **the end-of-run check**: a run that stops while a location still carries more than
+a tenth of its peak, or peaks in the last twentieth of its period, has stopped before its flood
+passed, and is named with the locations. The regional model's ```simulation_periods``` are its
+upstream periods plus 48 h, which is provisional; this is the check that confirms them. All 42
+Callide runs of 21 October 2026 pass it.
 
 ## The downstream storm config
 
