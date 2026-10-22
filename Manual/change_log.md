@@ -293,3 +293,8 @@ The first tagged release, and the version cited for the Callide Dam design flood
 - The regional model's event results now go to the folder named by ```results_folder``` in the regional model's URBS config. ```DownstreamStorms.py``` runs URBS from that folder and ```DownstreamBoundaries.py``` reads the results back from it. Before this they were always written beside the model files. A config with no ```results_folder``` behaves as before.
 - This only affects the downstream run. The design runs (```Main.py```) do not read ```results_folder``` from a URBS config and are unchanged, so no design result changes.
 - **A regional config that already has a ```results_folder``` will start using it.** Results from earlier runs stay where they were, beside the model, and are not found by ```DownstreamBoundaries.py``` until they are moved or the events are run again.
+
+# 22 October 2026 -- Richard
+- The Downstream page no longer writes the hydraulic model's inflow files with a dam failure model's outflow in the dam's column. ```DownstreamBoundaries.py``` and the page's lower section are removed. The dam failure project does it after Bryan - at Callide, ```tuflow_handoff.py``` in ```callide-judyth``` - so that one tool writes the boundaries, not two.
+- The Downstream page's file name suffix starts blank and is only ever what is typed. Where two groups would write the same storm names, the page warns and suggests a suffix instead of filling one in. The suffix is part of the run name the dam failure project looks for, so keep each group's suffix the same from run to run.
+- Neither change alters a storm file or a result for the same inputs.

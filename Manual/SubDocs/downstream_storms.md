@@ -72,8 +72,8 @@ box. The page compares the selection with the others saved in the project and, w
 would clash, says so under the plan and suggests one: the leading word of the group name
 (```_RFSL``` for ```RFSL_Design_GWL1p3```), or the whole group name where that word is shared.
 
-The same suffix has to be given when the dam's outflow is put into the inflow files, since
-it is part of the name of the run.
+The suffix is part of the name of the run, which is how a dam failure project finds the
+regional results for an event - so a group keeps the suffix it was first run with.
 
 ### Events whose embedded bursts were filtered
 
@@ -112,7 +112,7 @@ second to run.
 runoff and the flows at every print location to csv - the upstream boundaries this run exists
 to produce. The run warns if it is off rather than leaving you to find the missing files.
 
-### The dam's outflow, from a dam failure model
+### The boundaries for a hydraulic model
 
 With ```store_tuflow``` on, URBS writes ```<run>_i.csv```: the flow at every print location
 whose ```PRINT``` statement in the vec carries an asterisk after the name. These are a
@@ -120,43 +120,14 @@ hydraulic model's upstream boundaries, and ```<run>_r.csv``` beside it, the rout
 each subarea, is its inflows along the reaches. One of the print locations is the dam, and
 its column is the regional model's own routing of the dam.
 
-Where the dam is routed in a dam failure model instead - Judyth - that column has to come
-from there, so that the no-failure boundary and the failure cases are routed by one model.
-The page's lower section does that, and is the command
+Where the dam is routed in a dam failure model instead, that column is replaced by the dam
+failure project, not by Bryan: it runs after Bryan, finds each event's regional run by its
+name, and writes the boundaries itself. At Callide that is ```tuflow_handoff.py``` in
+```callide-judyth```. **Keep the suffix the same from one run of the page to the next**, since
+it is part of the run name that project looks for.
 
-```
-python DownstreamBoundaries.py --selection <selection json> --model <regional URBS config>
-                               --dam-outflow <dam failure simulation list .xlsx> --out <folder>
-                               [--suffix S] [--gate-scenario NAME] [--name-contains TEXT]
-                               [--duration H] [--gwl G]
-```
-
-| Field | What it is |
-| --- | --- |
-| **Dam failure simulation list** | the dam failure model's simulation list. It is how a run is matched to an event. |
-| **Write the inflow files to** | a folder of its own. URBS's files are left as they are. |
-| **Gate scenario** | the ```Gate_scenario``` of the dam runs to use. Blank is the gates working. |
-| **Only simulations whose name contains** | narrows the list where it holds the same event more than once. |
-
-For each chosen event a copy of ```<run>_i.csv``` is written with the dam's column - the
-location named as ```max_keys``` ```outflow``` in the model config - replaced by the dam
-model's outflow at the same times, and a ```<group>_boundaries.csv``` records which run went
-into which file. With a gate scenario the files are named ```<run>_<scenario>_i.csv```.
-
-The run for an event is the row of the simulation list whose ```Inflow_id``` ends in the
-realisation (```sim08029```), whose ```Bryan_group``` is the selection's group, and whose
-```Gate_scenario``` is the one asked for. Exactly one row has to match; none or several is
-reported with what was looked for. ```Bryan_group``` is a column the dam failure project adds
-to its list for this purpose - without it, two groups sharing a realisation cannot be told
-apart, and the name filter has to do it.
-
-**The dam run has to reach the end of the regional run.** The regional model runs on after
-the upstream one stops, for the flood to pass down the valley, and the dam is still
-releasing over that time. A dam run that stops early is refused rather than padded.
-
-Only the dam's column changes. A print location on the main stem below the dam still holds
-URBS's total, which includes URBS's routing of the dam; it is not a boundary for a hydraulic
-model that starts at the dam.
+Bryan used to do this itself, from the page's lower section and ```DownstreamBoundaries.py```.
+It was taken out on 22 October 2026 so that one tool writes the boundaries, not two.
 
 ### More than one dam
 

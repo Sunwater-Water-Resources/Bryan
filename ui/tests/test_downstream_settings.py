@@ -85,25 +85,3 @@ def test_settings_written_before_the_field_existed_still_load(settings, tmp_path
     loaded = UiSettings.load()
     assert loaded.downstream_configs == {}
     assert loaded.downstream_for(tmp_path / 'sims.json') == {"config": "", "model": ""}
-
-
-def test_the_dam_failure_fields_are_kept_beside_the_two_paths(settings, tmp_path):
-    cfg = tmp_path / 'sims.json'
-    settings.remember_downstream(cfg, config='a.json', model='b.json')
-    settings.remember_boundaries(cfg, dam_outflow='list.xlsx', boundaries_folder='out')
-    assert settings.downstream_for(cfg) == {"config": 'a.json', "model": 'b.json'}
-    assert settings.boundaries_for(cfg) == {"dam_outflow": 'list.xlsx',
-                                            "boundaries_folder": 'out', "name_contains": ''}
-    # changing the two paths does not lose them, and neither does clearing the paths
-    settings.remember_downstream(cfg, config='c.json', model='b.json')
-    assert settings.boundaries_for(cfg)["dam_outflow"] == 'list.xlsx'
-    settings.remember_downstream(cfg, config='', model='')
-    assert settings.boundaries_for(cfg)["boundaries_folder"] == 'out'
-    assert settings.downstream_for(cfg) == {"config": "", "model": ""}
-
-
-def test_clearing_a_dam_failure_field_clears_it(settings, tmp_path):
-    cfg = tmp_path / 'sims.json'
-    settings.remember_boundaries(cfg, dam_outflow='list.xlsx', boundaries_folder='out')
-    settings.remember_boundaries(cfg, dam_outflow='', boundaries_folder='out')
-    assert settings.boundaries_for(cfg)["dam_outflow"] == ''

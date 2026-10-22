@@ -185,26 +185,6 @@ def command(selection, config, model, bryan_python=None, duration=None, gwl=None
     return argv
 
 
-def boundaries_command(selection, model, dam_outflow, out, bryan_python=None, duration=None,
-                       gwl=None, suffix='', gate_scenario='', name_contains='') -> list:
-    """The command that puts a dam failure model's outflow into the regional inflow files."""
-    script = Path(__file__).resolve().parents[2] / 'DownstreamBoundaries.py'
-    argv = [str(bryan_python or sys.executable), str(script),
-            '--selection', str(selection), '--model', str(model),
-            '--dam-outflow', str(dam_outflow), '--out', str(out)]
-    if duration is not None:
-        argv += ['--duration', str(duration)]
-    if gwl is not None:
-        argv += ['--gwl', str(gwl)]
-    if suffix:
-        argv += ['--suffix', suffix]
-    if gate_scenario:
-        argv += ['--gate-scenario', gate_scenario]
-    if name_contains:
-        argv += ['--name-contains', name_contains]
-    return argv
-
-
 def launch(argv, cwd, log_path=None):
     """Start the generator. stdin is DEVNULL for the same reason Main.py's is."""
     handle = open(log_path, 'w') if log_path else subprocess.PIPE

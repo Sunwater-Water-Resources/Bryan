@@ -182,19 +182,3 @@ def test_the_suffix_and_the_sims_config_reach_the_generator():
                               sims_config='sims_config.json')
     assert argv[argv.index('--suffix') + 1] == '_RFSL'
     assert argv[argv.index('--sims-config') + 1] == 'sims_config.json'
-
-
-def test_the_boundaries_command_names_its_script_and_what_it_was_given():
-    argv = downstream.boundaries_command(
-        'sel.json', 'model.json', 'Simulation_List.xlsx', 'out', bryan_python='/py',
-        suffix='_RFSL', gate_scenario='gate_fail_1', name_contains='TFL_')
-    assert argv[0] == '/py' and argv[1].endswith('DownstreamBoundaries.py')
-    for flag, value in (('--dam-outflow', 'Simulation_List.xlsx'), ('--out', 'out'),
-                        ('--suffix', '_RFSL'), ('--gate-scenario', 'gate_fail_1'),
-                        ('--name-contains', 'TFL_')):
-        assert argv[argv.index(flag) + 1] == value
-
-
-def test_the_gates_working_case_passes_no_gate_scenario():
-    argv = downstream.boundaries_command('sel.json', 'model.json', 'list.xlsx', 'out')
-    assert '--gate-scenario' not in argv and '--name-contains' not in argv

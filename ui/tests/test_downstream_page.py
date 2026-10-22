@@ -97,7 +97,8 @@ async def test_the_suffix_starts_blank_and_a_clash_suggests_one(user, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_the_page_offers_urbs_and_the_dam_failure_outflow(user, tmp_path):
+async def test_the_page_offers_urbs_and_leaves_the_dam_outflow_to_the_dam_failure_project(
+        user, tmp_path):
     config = _project(tmp_path)
     database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
     database.write_bytes(b"")
@@ -105,5 +106,5 @@ async def test_the_page_offers_urbs_and_the_dam_failure_outflow(user, tmp_path):
     _open(config)
     await user.open("/downstream")
     await user.should_see("Run URBS on each storm")
-    await user.should_see("Dam outflow from a dam failure model")
-    await user.should_see("Write hydraulic model inflow files")
+    await user.should_see("that project replaces the dam's column")
+    await user.should_not_see("Write hydraulic model inflow files")

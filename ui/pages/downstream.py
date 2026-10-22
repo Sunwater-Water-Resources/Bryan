@@ -6,9 +6,9 @@ realisation, at which duration and warming level, into which filename - because
 a duration read wrongly from a database name produces a perfectly valid storm of
 the wrong length, and that is far cheaper to catch here than in a hydrograph.
 
-It then carries the event set the rest of the way to a hydraulic model: URBS can be
-run on each storm as it is written, and the dam's column in the inflow files URBS
-writes can be replaced by the outflow of a dam failure model.
+URBS can then be run on each storm as it is written. Where the dam is routed in a
+dam failure model, that project puts the dam's outflow into the inflow files URBS
+writes, after Bryan; it is not done here, so that one tool writes the boundaries.
 
 **The generator runs as a subprocess.** Assembling the depths needs scipy and
 this environment has none; see ``core/downstream.py``.
@@ -22,7 +22,7 @@ from nicegui import ui
 from core import downstream
 from layout import page_frame, require_project
 from state import STATE
-from widgets import OUTPUT_FOLDER, path_input
+from widgets import path_input
 
 
 def downstream_page() -> None:
@@ -46,26 +46,15 @@ def downstream_page() -> None:
         # it from the database name", and a stale remembered override is worse than
         # retyping one.
         remembered = STATE.settings.downstream_for(project.config.config_path)
-        boundaries = STATE.settings.boundaries_for(project.config.config_path)
         state = {"selection": selections[0], "duration": None, "gwl": None,
                  "config": remembered["config"], "model": remembered["model"],
                  # The suffix starts blank and is only ever what was typed. Where two
                  # groups share a realisation the plan says so and suggests one.
-                 "suffix": "", "run_urbs": False,
-                 "dam_outflow": boundaries["dam_outflow"],
-                 "boundaries_folder": boundaries["boundaries_folder"],
-                 "name_contains": boundaries["name_contains"], "gate_scenario": "",
-                 "process": None}
+                 "suffix": "", "run_urbs": False, "process": None}
 
         def remember() -> None:
             STATE.settings.remember_downstream(project.config.config_path,
                                                state["config"], state["model"])
-
-        def remember_boundaries() -> None:
-            STATE.settings.remember_boundaries(
-                project.config.config_path, dam_outflow=state["dam_outflow"],
-                boundaries_folder=state["boundaries_folder"],
-                name_contains=state["name_contains"])
 
         plan_area = ui.column().classes("w-full gap-2")
 
@@ -154,52 +143,8 @@ def downstream_page() -> None:
         ui.label("Without it a batch file is written beside each storm, to run by hand. "
                  "With it the results land in the results folder named in the regional model's "
                  "config, or beside the model where it names none, and the inflow "
-                 "file for a hydraulic model is <storm name>_i.csv.").classes("text-sm")
-
-        # -- the dam's outflow, from a dam failure model -------------------------------
-        ui.separator()
-        ui.label("Dam outflow from a dam failure model").classes("text-lg")
-        ui.markdown(
-            "URBS's inflow file carries the regional model's own routing of the dam. Where "
-            "the dam is routed in a dam failure model instead, name that model's simulation "
-            "list here. A copy of each event's inflow file is written with the dam's column "
-            "replaced. The dam runs have to reach the end of the regional model's run.")
-
-        with ui.row().classes("w-full items-end gap-4"):
-            path_input("Dam failure simulation list", state["dam_outflow"], base=folder,
-                       base_name="the project folder", suffixes=(".xlsx",), classes="grow",
-                       on_change=lambda text: (state.update(dam_outflow=text),
-                                               remember_boundaries()))
-            path_input("Write the inflow files to", state["boundaries_folder"], base=folder,
-                       base_name="the project folder", expect=OUTPUT_FOLDER, classes="grow",
-                       on_change=lambda text: (state.update(boundaries_folder=text),
-                                               remember_boundaries()))
-        with ui.row().classes("w-full items-end gap-4"):
-            ui.input(label="Gate scenario (blank: gates working)", value="",
-                     on_change=lambda e: state.update(gate_scenario=(e.value or "").strip())
-                     ).classes("w-72")
-            ui.input(label="Only simulations whose name contains", value=state["name_contains"],
-                     on_change=lambda e: (state.update(name_contains=(e.value or "").strip()),
-                                          remember_boundaries())).classes("w-72")
-
-        def write_boundaries() -> None:
-            if not state["model"]:
-                ui.notify("Name the regional model URBS config first.", type="warning")
-                return
-            if not state["dam_outflow"] or not state["boundaries_folder"]:
-                ui.notify("Name the dam failure simulation list and the folder to write to.",
-                          type="warning")
-                return
-            argv = downstream.boundaries_command(
-                state["selection"], state["model"], state["dam_outflow"],
-                state["boundaries_folder"],
-                bryan_python=STATE.settings.bryan_python or None,
-                duration=state["duration"], gwl=state["gwl"], suffix=state["suffix"],
-                gate_scenario=state["gate_scenario"], name_contains=state["name_contains"])
-            log = Path(state["selection"]).with_suffix(".boundaries.log")
-            state["process"] = downstream.launch(argv, cwd=folder, log_path=log)
-            ui.notify(f"Writing the inflow files - output in {log.name}")
-
-        ui.button("Write hydraulic model inflow files", on_click=write_boundaries)
+                 "file for a hydraulic model is <storm name>_i.csv. Where the dam is routed "
+                 "in a dam failure model, that project replaces the dam's column - keep the "
+                 "suffix the same so it finds the run.").classes("text-sm")
 
         refresh()
