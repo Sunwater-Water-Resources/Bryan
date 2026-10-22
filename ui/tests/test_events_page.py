@@ -503,3 +503,22 @@ async def test_the_group_list_carries_both_kinds(user, with_ensemble):
     labels = list(select.options.values()) if isinstance(select.options, dict) else select.options
     assert any(label.endswith("(ensemble)") for label in labels)
     assert any(not label.endswith("(ensemble)") for label in labels)
+
+
+
+@pytest.mark.asyncio
+async def test_a_group_left_at_its_defaults_can_be_saved_with_one_click(user, with_ensemble):
+    """Changes save themselves, but opening a group saves nothing - so a group left at its
+    defaults had no way to save, and the Downstream page lists only saved selections."""
+    from core import events
+    state = _open(with_ensemble)
+    group = _ensemble_group(state)
+    await user.open(f"/events?group={group}")
+    await user.should_see("not saved yet")
+    button = next(iter(user.find(marker="save-selection").elements))
+    assert button.visible
+    user.find(marker="save-selection").click()
+    await user.should_see("saved ")
+    folder = state.project.config.project_folder / "sims_enb" / "results"
+    assert events.selection_path(folder, group).is_file()
+    assert not button.visible

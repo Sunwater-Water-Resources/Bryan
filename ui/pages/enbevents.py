@@ -77,6 +77,8 @@ class EnsembleEventsView:
                 ui.space()
                 ui.button("Add loading", icon="add", on_click=self._add).props("flat dense")
                 self.saved_label = ui.label("").classes("text-xs text-muted").mark("saved-state")
+                self.save_button = ui.button("Save", icon="save", on_click=self._autosave) \
+                    .props("dense no-caps").mark("save-selection")
                 ui.button("Export csv", icon="download", on_click=self._export
                           ).props("flat dense")
             self.target_box = ui.column().classes("w-full gap-1")
@@ -117,6 +119,7 @@ class EnsembleEventsView:
         else:
             self.targets = []
         self.refresh(redraw_targets=True)
+        self._show_saved_state()
 
     @staticmethod
     def _adopted_aep():
@@ -342,9 +345,21 @@ class EnsembleEventsView:
             return
         self._saved(f"saved {time.strftime('%H:%M:%S')} to {Path(path).name}")
 
+    def _show_saved_state(self) -> None:
+        """Say whether this group's selection is on disk; until it is, there is a Save button.
+        A group left at its defaults has no change to save it, and the Downstream page lists
+        only saved selections."""
+        path = events.selection_path(self.folder, self.group) if self.folder is not None else None
+        if path is not None and Path(path).is_file():
+            self._saved(f"saved to {Path(path).name}")
+        else:
+            self._saved("not saved yet - change anything, or Save")
+
     def _saved(self, text) -> None:
         if self.saved_label is not None:
             self.saved_label.set_text(text)
+        if getattr(self, "save_button", None) is not None:
+            self.save_button.set_visibility(not text.startswith("saved"))
 
     def _export(self) -> None:
         rows = enbevents.summary_rows(self.choices)
