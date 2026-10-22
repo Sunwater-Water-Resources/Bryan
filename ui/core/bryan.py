@@ -1,6 +1,6 @@
 """The narrow seam onto Bryan itself.
 
-The UI imports exactly four Bryan modules, and only through here:
+The UI imports exactly five Bryan modules, and only through here:
 
 - ``lib.RunLog``   - the run log format, so the UI reads what Bryan writes
 - ``lib.LogFiles`` - ``resolve_duplicates``, so predicted log paths are the
@@ -11,8 +11,10 @@ The UI imports exactly four Bryan modules, and only through here:
 - ``lib.LakeLevelRecord`` - the headwater level record and its annual maxima,
   shared with util/LakeLevelFrequency.py so the maxima on the Lake levels page,
   in its CSV export and in the report figure are one series
+- ``lib.ConfigPaths`` - where a model config's folders resolve to, so the Downstream
+  page looks for the regional results exactly where DownstreamStorms.py ran URBS
 
-All four import only pandas and the standard library, so the UI environment
+All five import only pandas and the standard library, so the UI environment
 needs no scipy and no matplotlib. That is the whole test for membership here,
 and it is a property of the module rather than of this list: nothing else in
 ``lib/`` is importable that cheaply, and a simulator never will be. The
@@ -30,7 +32,7 @@ from pathlib import Path
 BRYAN_ROOT = Path(__file__).resolve().parents[2]
 
 ALLOWED_MODULES = ("lib.RunLog", "lib.LogFiles", "lib.RepresentativeEvents",
-                   "lib.LakeLevelRecord")
+                   "lib.LakeLevelRecord", "lib.ConfigPaths")
 
 
 def ensure_importable() -> Path:
@@ -63,6 +65,12 @@ def lake_level_record():
     ensure_importable()
     from lib import LakeLevelRecord
     return LakeLevelRecord
+
+
+def config_paths():
+    ensure_importable()
+    from lib import ConfigPaths
+    return ConfigPaths
 
 
 def run_log_columns() -> list:

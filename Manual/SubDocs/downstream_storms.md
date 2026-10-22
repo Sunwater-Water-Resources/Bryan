@@ -19,12 +19,17 @@ The temporal pattern is the one the upstream event drew, rebuilt from the mcdf.
 
 ## What the launcher asks for
 
-The **Downstream** page takes these to write the storm files:
+The **Downstream** page has two tabs, **Storms** and **Results**, under the two things both are
+about: the **Event selection** and the **Regional model URBS config**. A line beneath them says
+how each dam will start for that kind of event - from the event's ```lake_z``` for a Monte Carlo
+selection, at full supply (or the model config's ```ensemble_start```) for an ensemble one.
+
+The **Storms** tab writes the storm files from these:
 
 | Field | What it is |
 | --- | --- |
-| **Event selection** | the `<group>_representative_events.json` the Events page saved. It is found by searching the project folder, so it appears in the list on its own. |
-| **Duration (h)** | left blank, it is read from the source database's name. Fill it in only when the name does not carry it. |
+| **Event selection** | the `<group>_representative_events.json` the Events page saved. It is found by searching the project folder, so it appears in the list on its own, an ensemble one marked ```(ensemble)```. |
+| **Duration (h)** | left blank, it is read from the source database's name. Fill it in only when the name does not carry it. Not shown for an ensemble selection, which records each event's duration. |
 | **GWL (°C)** | the same, read from `GWL<n>` in the database name. |
 | **Downstream storm config** | the JSON described below. This is the file to get right. |
 | **Regional model URBS config** | a normal Bryan [model config](config/ModelConfig.md) for the *regional* model — the one the storm files are being written for. |
@@ -36,6 +41,23 @@ last thing it wrote - ```wrote 005044_72h_GWL1p3_RFSL.72``` - with **Cancel** be
 it stops the line says how it ended: the number of storm files and how many need a look, or
 the error and the log to read. The full output is in ```<selection>.downstream.log``` beside the
 selection, written as it goes. That line is the only thing on the page that updates by itself.
+
+The **Results** tab reads the runs back - when it is opened, on **Reload**, and once when a run
+ends; it never polls. One row per storm the plan names, with its status and what went into it:
+the losses, the mean depth, the pattern, each dam's starting storage and any flags.
+
+| Status | Means |
+| --- | --- |
+| **finished** | URBS's results are in the results folder. |
+| **running** | the generator this page started is running URBS on this event now. |
+| **waiting** | the generator has not reached this event yet. |
+| **failed** | URBS was asked to run it and stopped without results. Its batch file is left to run by hand; ```urbserr.log``` in the results folder says why. |
+| **not run** | the storm and its batch file are written, and URBS was not asked to run it. |
+| **not finished** | the launcher was restarted during the run, so it cannot tell running from failed. Reload once URBS has finished. |
+| **not written** | no storm file yet. |
+
+Nothing here waits on a clock: a run is *running* because the page's own generator is still
+going, and *failed* because it has stopped and left the batch file behind.
 
 It also passes the generator the sims config the events came from, so an event whose embedded
 bursts were filtered keeps its filtered pattern (see below). The selection file records which

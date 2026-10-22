@@ -106,7 +106,7 @@ async def test_the_page_offers_urbs_and_leaves_the_dam_outflow_to_the_dam_failur
     _open(config)
     await user.open("/downstream")
     await user.should_see("Run URBS on each storm")
-    await user.should_see("that project replaces the dam's column")
+    await user.should_see("a dam failure project finds the runs by name", retries=3)
     await user.should_not_see("Write hydraulic model inflow files")
 
 
@@ -134,3 +134,34 @@ async def test_a_run_shows_its_progress_and_how_it_ended(user, tmp_path, monkeyp
     user.find("Check without writing").click()
     await user.should_see("wrote 000042_24h_GWL1p3.24", retries=40)
     await user.should_see("Finished. 1 storm files.", retries=60)
+
+
+def _model(tmp_path, *, extra_dams=()):
+    """A regional model config whose storms and results folders sit beside it."""
+    (tmp_path / "regional" / "storms").mkdir(parents=True)
+    (tmp_path / "regional" / "results").mkdir()
+    config = tmp_path / "regional" / "urbs_config.json"
+    config.write_text(json.dumps({
+        "model_folder": "model", "storms_folder": "storms", "results_folder": "results",
+        "vec_file": "x.vec", "additional_dams": [dict(location=d) for d in extra_dams]}))
+    return config
+
+
+@pytest.mark.asyncio
+async def test_the_results_tab_says_which_runs_have_finished(user, tmp_path):
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    _selection(tmp_path, database)
+    model = _model(tmp_path, extra_dams=["KROOMBIT"])
+    regional = model.parent
+    (regional / "storms" / "000042_24h_GWL1p3.24").write_text("")
+    (regional / "results" / "000042_24h_GWL1p3.q").write_text("")
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model=str(model))
+    await user.open("/downstream?tab=Results")
+    await user.should_see("1 finished")
+    await user.should_see("KROOMBIT from the event's lake_z")
+    from nicegui import ui as nicegui_ui
+    table = next(iter(user.find(marker="runs-table").elements))
+    assert [(row["run"], row["status"]) for row in table.rows] == [("000042_24h_GWL1p3", "finished")]

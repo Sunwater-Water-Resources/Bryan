@@ -1,17 +1,23 @@
-"""Generating the regional model's storm files from a chosen event set.
+"""Taking a chosen event set downstream: the regional model's storms, and what came of them.
 
-The Events page picks the events; this page turns a saved selection into storm
-files for the downstream regional model. It shows the plan first - which
-realisation, at which duration and warming level, into which filename - because
-a duration read wrongly from a database name produces a perfectly valid storm of
-the wrong length, and that is far cheaper to catch here than in a hydrograph.
+The Events page picks the events; this page turns a saved selection into storm files for
+the downstream regional model, runs URBS on them if asked, and reads the runs back.
 
-URBS can then be run on each storm as it is written. Where the dam is routed in a
-dam failure model, that project puts the dam's outflow into the inflow files URBS
-writes, after Bryan; it is not done here, so that one tool writes the boundaries.
+**Storms** shows the plan first - which event, at which duration and warming level, into
+which filename - because a duration read wrongly from a database name produces a perfectly
+valid storm of the wrong length, and that is far cheaper to catch here than in a hydrograph.
+**Results** reads the regional runs back: which have finished, and what went into each.
 
-**The generator runs as a subprocess.** Assembling the depths needs scipy and
-this environment has none; see ``core/downstream.py``.
+The selection and the regional model config sit above both tabs because both tabs are
+about them. What the page shows follows the selection's method: an ensemble selection
+records each event's duration, so it has no duration box to fill in.
+
+Where the dam is routed in a dam failure model, that project puts the dam's outflow into
+the inflow files URBS writes, after Bryan; it is not done here, so that one tool writes
+the boundaries.
+
+**The generator runs as a subprocess.** Assembling the depths needs scipy and this
+environment has none; see ``core/downstream.py``.
 """
 from __future__ import annotations
 
@@ -19,10 +25,13 @@ from pathlib import Path
 
 from nicegui import ui
 
-from core import downstream, logtail
-from layout import page_frame, require_project
+import address
+from core import downstream, logtail, urbsresults
+from layout import page_frame, require_project, severity_banner
 from state import STATE
 from widgets import Running, path_input
+
+TABS = ("Storms", "Results")
 
 
 def downstream_page() -> None:
@@ -36,145 +45,265 @@ def downstream_page() -> None:
         if not selections:
             ui.label("No saved event selections under this project.").classes("text-lg")
             ui.markdown(
-                "Pick events on the **Events** page and save them; this page reads "
-                "the `<group>_representative_events.json` it writes.")
+                "Pick events on the **Events** page; this page reads the "
+                "`<group>_representative_events.json` it saves.")
             return
+        _DownstreamView(project, selections).build()
 
+
+class _DownstreamView:
+    def __init__(self, project, selections) -> None:
+        self.project = project
+        self.folder = project.config.project_folder
+        self.selections = selections
         # The two config paths are remembered against this project (see
         # UiSettings.downstream_for), so they survive leaving the page and reloading the
         # project. The duration and warming level are deliberately not: blank means "read
         # it from the database name", and a stale remembered override is worse than
         # retyping one.
         remembered = STATE.settings.downstream_for(project.config.config_path)
-        state = {"selection": selections[0], "duration": None, "gwl": None,
-                 "config": remembered["config"], "model": remembered["model"],
-                 # The suffix starts blank and is only ever what was typed. Where two
-                 # groups share a realisation the plan says so and suggests one.
-                 "suffix": "", "run_urbs": False, "process": None}
+        self.state = {"selection": selections[0], "duration": None, "gwl": None,
+                      "config": remembered["config"], "model": remembered["model"],
+                      # The suffix starts blank and is only ever what was typed. Where two
+                      # groups share a realisation the plan says so and suggests one.
+                      "suffix": "", "run_urbs": False, "process": None,
+                      # whether the last run this page started ran URBS: None until one has
+                      "ran_urbs": None}
+        self.results_built = False
 
-        def remember() -> None:
-            STATE.settings.remember_downstream(project.config.config_path,
-                                               state["config"], state["model"])
+    # -- build ------------------------------------------------------------
 
-        plan_area = ui.column().classes("w-full gap-2")
-
-        def refresh() -> None:
-            plan_area.clear()
-            plan = downstream.plan(state["selection"], state["duration"], state["gwl"],
-                                   suffix=state["suffix"])
-            with plan_area:
-                if not plan.storms:
-                    ui.label("No loading in this selection has an event picked.")
-                    return
-                rows = [{"loading": s.loading, "type": s.result_type,
-                         "event": s.event_label,
-                         "duration": "" if s.duration is None else f"{s.duration:g} h",
-                         "gwl": "" if s.gwl is None else f"{s.gwl:g}",
-                         "file": s.filename or "-", "problem": s.problem}
-                        for s in plan.storms]
-                ui.table(columns=[{"name": k, "label": k.title(), "field": k}
-                                  for k in rows[0]], rows=rows).classes("w-full")
-                ready, problems = len(plan.ready), len(plan.problems)
-                if problems:
-                    ui.label(f"{problems} of {len(plan.storms)} cannot be written yet - "
-                             f"give the duration or warming level below.").classes("text-attention")
-                ui.label(f"{ready} storm file{'s' if ready != 1 else ''} would be written.")
-                clashing = downstream.clashes(state["selection"], selections, state["suffix"])
-                if clashing:
-                    names = ", ".join(downstream.group_of(c) or Path(c).name for c in clashing)
-                    suggested = downstream.suggested_suffix(state["selection"], selections)
-                    ui.label(f"These file names are also what {names} would write, so one "
-                             f"set replaces the other - storms and URBS results. Give this "
-                             f"selection a suffix ({suggested} would keep them apart)."
-                             ).classes("text-attention")
-
-        def choose(selection) -> None:
-            state["selection"] = selection
-            refresh()
-
-        def typed_suffix(text) -> None:
-            state["suffix"] = (text or "").strip()
-            refresh()
-
+    def build(self) -> None:
+        state = self.state
+        options = {path: downstream.selection_label(path) for path in self.selections}
         with ui.row().classes("w-full items-end gap-4"):
-            ui.select(selections, value=selections[0], label="Event selection",
-                      on_change=lambda e: choose(e.value)).classes("grow")
-            ui.number(label="Duration (h)", value=None, format="%g",
-                      on_change=lambda e: (state.update(duration=e.value), refresh())
-                      ).props("clearable").classes("w-32")
+            ui.select(options, value=state["selection"], label="Event selection",
+                      on_change=lambda e: self._choose(e.value)).classes("grow") \
+                .mark("selection")
+            # Bryan runs with the project folder as its working folder, so a relative
+            # path is read from there.
+            path_input("Regional model URBS config", state["model"], base=self.folder,
+                       base_name="the project folder", suffixes=(".json",), classes="grow",
+                       on_change=lambda text: self._set_path("model", text))
+        self.method_label = ui.label("").classes("text-xs text-muted").mark("method-line")
+
+        tab = address.param("tab", TABS[0])
+        tab = tab if tab in TABS else TABS[0]
+        with ui.tabs().classes("w-full").mark("downstream-tabs") as tabs:
+            for name in TABS:
+                ui.tab(name)
+        with ui.tab_panels(tabs, value=tab).classes("w-full"):
+            with ui.tab_panel("Storms").classes("p-0 gap-3"):
+                self._storms_tab()
+            with ui.tab_panel("Results").classes("p-0 gap-3"):
+                self.results_box = ui.column().classes("w-full gap-3")
+
+        def on_tab(event) -> None:
+            address.keep(tab=event.value if event.value != TABS[0] else "")
+            if event.value == "Results":
+                self.refresh_results()
+
+        tabs.on_value_change(on_tab)
+        self._method_changed()
+        self.refresh_plan()
+        if tab == "Results":
+            self.refresh_results()
+
+    def _storms_tab(self) -> None:
+        state = self.state
+        with ui.row().classes("w-full items-end gap-4"):
+            self.duration_box = ui.number(
+                label="Duration (h)", value=None, format="%g",
+                on_change=lambda e: (state.update(duration=e.value), self.refresh_plan())
+            ).props("clearable").classes("w-32").tooltip(
+                "Blank reads it from the database name.")
             ui.number(label="GWL (°C)", value=None, format="%g",
-                      on_change=lambda e: (state.update(gwl=e.value), refresh())
-                      ).props("clearable").classes("w-32")
+                      on_change=lambda e: (state.update(gwl=e.value), self.refresh_plan())
+                      ).props("clearable").classes("w-32") \
+                .tooltip("Blank reads it from the database name.")
             ui.input(label="File name suffix", value=state["suffix"],
-                     on_change=lambda e: typed_suffix(e.value)).classes("w-40")
-
-        with ui.row().classes("w-full items-end gap-4"):
-            # Bryan runs with the project folder as its working folder, so a
-            # relative path is read from there.
-            for label, key in (("Downstream storm config", "config"),
-                               ("Regional model URBS config", "model")):
-                path_input(label, state[key], base=folder, base_name="the project folder",
-                           suffixes=(".json",), classes="grow",
-                           on_change=lambda text, k=key: (state.update({k: text}),
-                                                          remember()))
-
-        def generate(dry_run: bool) -> None:
-            if not state["config"] or not state["model"]:
-                ui.notify("Name the downstream storm config and the model config first.",
-                          type="warning")
-                return
-            argv = downstream.command(
-                state["selection"], state["config"], state["model"],
-                bryan_python=STATE.settings.bryan_python or None,
-                duration=state["duration"], gwl=state["gwl"], dry_run=dry_run,
-                suffix=state["suffix"], run_urbs=state["run_urbs"],
-                sims_config=downstream.sims_config_for(state["selection"], folder,
-                                                       project.config.config_path))
-            if state["process"] is not None and state["process"].poll() is None:
-                ui.notify("The last run is still going.", type="warning")
-                return
-            log = Path(state["selection"]).with_suffix(".downstream.log")
-            state["process"] = downstream.launch(argv, cwd=folder, log_path=log)
-            doing = "Checking" if dry_run else (
-                "Generating and running URBS" if state["run_urbs"] else "Generating")
-            follow(doing, log)
-
-        def follow(doing: str, log: Path) -> None:
-            """The one thing on this page that updates by itself: while the generator runs,
-            how long it has been going and the last thing it wrote to its log."""
-            running = Running(spinner, doing, mark="downstream-running")
-            status.text = f"Output in {log.name}"
-            status.classes(replace="text-sm text-muted")
-
-            def tick() -> None:
-                process = state["process"]
-                text = logtail.tail(log).text
-                if running.cancel.is_set() and process.poll() is None:
-                    process.terminate()
-                code = process.poll()
-                if code is None:
-                    status.text = downstream.last_line(text) or f"Output in {log.name}"
-                    return
-                timer.cancel()
-                running.done()
-                ok, said = downstream.outcome(code, text, log.name)
-                status.text = said
-                status.classes(replace="text-sm " + ("text-body" if ok else "text-negative"))
-
-            timer = ui.timer(1.0, tick)
-
+                     on_change=lambda e: self._typed_suffix(e.value)).classes("w-40")
+            path_input("Downstream storm config", state["config"], base=self.folder,
+                       base_name="the project folder", suffixes=(".json",), classes="grow",
+                       on_change=lambda text: self._set_path("config", text))
+        self.plan_area = ui.column().classes("w-full gap-2")
         with ui.row().classes("items-center gap-3"):
-            ui.button("Check without writing", on_click=lambda: generate(True)).props("outline")
-            ui.button("Generate storm files", on_click=lambda: generate(False))
+            ui.button("Check without writing",
+                      on_click=lambda: self._generate(True)).props("outline")
+            ui.button("Generate storm files", on_click=lambda: self._generate(False))
             ui.switch("Run URBS on each storm",
                       on_change=lambda e: state.update(run_urbs=bool(e.value)))
-        spinner = ui.row().classes("items-center")
-        status = ui.label("").classes("text-sm text-muted").mark("downstream-status")
-        ui.label("Without it a batch file is written beside each storm, to run by hand. "
-                 "With it the results land in the results folder named in the regional model's "
-                 "config, or beside the model where it names none, and the inflow "
-                 "file for a hydraulic model is <storm name>_i.csv. Where the dam is routed "
-                 "in a dam failure model, that project replaces the dam's column - keep the "
-                 "suffix the same so it finds the run.").classes("text-sm")
+        self.spinner = ui.row().classes("items-center")
+        self.status = ui.label("").classes("text-sm text-muted").mark("downstream-status")
+        ui.label("Without Run URBS a batch file is written beside each storm, to run by hand. "
+                 "Results land in the results folder named in the regional model's config. "
+                 "Keep a group's suffix the same from run to run: a dam failure project "
+                 "finds the runs by name.").classes("text-xs text-muted")
 
-        refresh()
+    # -- the Storms tab ----------------------------------------------------
+
+    def refresh_plan(self) -> None:
+        state = self.state
+        self.plan_area.clear()
+        plan = downstream.plan(state["selection"], state["duration"], state["gwl"],
+                               suffix=state["suffix"])
+        with self.plan_area:
+            if not plan.storms:
+                ui.label("No loading in this selection has an event picked.")
+                return
+            rows = [{"loading": s.loading, "type": s.result_type,
+                     "event": s.event_label,
+                     "duration": "" if s.duration is None else f"{s.duration:g} h",
+                     "gwl": "" if s.gwl is None else f"{s.gwl:g}",
+                     "file": s.filename or "-", "problem": s.problem}
+                    for s in plan.storms]
+            ui.table(columns=[{"name": k, "label": k.title(), "field": k}
+                              for k in rows[0]], rows=rows).classes("w-full")
+            ready, problems = len(plan.ready), len(plan.problems)
+            if problems:
+                ui.label(f"{problems} of {len(plan.storms)} cannot be written yet - "
+                         f"give the duration or warming level above.").classes("text-attention")
+            ui.label(f"{ready} storm file{'s' if ready != 1 else ''} would be written.")
+            clashing = downstream.clashes(state["selection"], self.selections, state["suffix"])
+            if clashing:
+                names = ", ".join(downstream.group_of(c) or Path(c).name for c in clashing)
+                suggested = downstream.suggested_suffix(state["selection"], self.selections)
+                ui.label(f"These file names are also what {names} would write, so one "
+                         f"set replaces the other - storms and URBS results. Give this "
+                         f"selection a suffix ({suggested} would keep them apart)."
+                         ).classes("text-attention")
+
+    def _choose(self, selection) -> None:
+        self.state["selection"] = selection
+        self._method_changed()
+        self.refresh_plan()
+        if self.results_built:
+            self.refresh_results()
+
+    def _method_changed(self) -> None:
+        state = self.state
+        ensemble = downstream.method_of(state["selection"]) == downstream.EVENTS.ENSEMBLE
+        # an ensemble selection records each event's own duration
+        self.duration_box.set_visibility(not ensemble)
+        if ensemble and state["duration"] is not None:
+            state["duration"] = None
+            self.duration_box.value = None
+        self.method_label.text = downstream.method_line(state["selection"],
+                                                        self._absolute(state["model"]))
+
+    def _typed_suffix(self, text) -> None:
+        self.state["suffix"] = (text or "").strip()
+        self.refresh_plan()
+
+    def _set_path(self, key, text) -> None:
+        self.state[key] = text
+        STATE.settings.remember_downstream(self.project.config.config_path,
+                                           self.state["config"], self.state["model"])
+        if key == "model":
+            self._method_changed()
+            if self.results_built:
+                self.refresh_results()
+
+    def _absolute(self, text) -> str | None:
+        if not text:
+            return None
+        path = Path(text)
+        return str(path if path.is_absolute() else Path(self.folder) / path)
+
+    def _generate(self, dry_run: bool) -> None:
+        state = self.state
+        if not state["config"] or not state["model"]:
+            ui.notify("Name the downstream storm config and the regional model config first.",
+                      type="warning")
+            return
+        if state["process"] is not None and state["process"].poll() is None:
+            ui.notify("The last run is still going.", type="warning")
+            return
+        argv = downstream.command(
+            state["selection"], state["config"], state["model"],
+            bryan_python=STATE.settings.bryan_python or None,
+            duration=state["duration"], gwl=state["gwl"], dry_run=dry_run,
+            suffix=state["suffix"], run_urbs=state["run_urbs"],
+            sims_config=downstream.sims_config_for(state["selection"], self.folder,
+                                                   self.project.config.config_path))
+        log = Path(state["selection"]).with_suffix(".downstream.log")
+        state["process"] = downstream.launch(argv, cwd=self.folder, log_path=log)
+        if not dry_run:
+            state["ran_urbs"] = bool(state["run_urbs"])
+        doing = "Checking" if dry_run else (
+            "Generating and running URBS" if state["run_urbs"] else "Generating")
+        self._follow(doing, log)
+
+    def _follow(self, doing: str, log: Path) -> None:
+        """The one thing on this page that updates by itself: while the generator runs,
+        how long it has been going and the last thing it wrote to its log."""
+        state = self.state
+        running = Running(self.spinner, doing, mark="downstream-running")
+        self.status.text = f"Output in {log.name}"
+        self.status.classes(replace="text-sm text-muted")
+
+        def tick() -> None:
+            process = state["process"]
+            text = logtail.tail(log).text
+            if running.cancel.is_set() and process.poll() is None:
+                process.terminate()
+            code = process.poll()
+            if code is None:
+                self.status.text = downstream.last_line(text) or f"Output in {log.name}"
+                return
+            timer.cancel()
+            running.done()
+            ok, said = downstream.outcome(code, text, log.name)
+            self.status.text = said
+            self.status.classes(replace="text-sm " + ("text-body" if ok else "text-negative"))
+            if self.results_built:          # once, at the end - the tab never polls
+                self.refresh_results()
+
+        timer = ui.timer(1.0, tick)
+
+    # -- the Results tab ---------------------------------------------------
+
+    def refresh_results(self) -> None:
+        """Read the runs back. Only on opening the tab, Reload, or a run ending: results
+        change when URBS finishes an event, and the status line says when that is."""
+        state = self.state
+        self.results_built = True
+        self.results_box.clear()
+        with self.results_box:
+            model = self._absolute(state["model"])
+            if not model:
+                ui.label("Name the regional model URBS config above to read its results."
+                         ).classes("text-muted text-sm")
+                return
+            try:
+                found = urbsresults.folders(model)
+            except urbsresults.ModelConfigError as exc:
+                severity_banner("warn", str(exc))
+                return
+            plan = downstream.plan(state["selection"], state["duration"], state["gwl"],
+                                   suffix=state["suffix"])
+            process = state["process"]
+            rows = urbsresults.runs_rows(
+                plan, found, urbsresults.storms_record(state["selection"]),
+                generator_running=process is not None and process.poll() is None,
+                ran_urbs=state["ran_urbs"])
+            with ui.row().classes("items-center gap-3"):
+                ui.button("Reload", icon="refresh", on_click=self.refresh_results) \
+                    .props("flat dense").mark("results-reload")
+                ui.label(urbsresults.counts(rows)).classes("text-sm text-body") \
+                    .mark("results-counts")
+                ui.label(f"results: {found.results}").classes("text-xs text-muted")
+            if not rows:
+                ui.label("No storm in this selection can be named yet - see Storms."
+                         ).classes("text-muted text-sm")
+                return
+            columns = [{"name": key, "label": key, "field": key, "align": "left"}
+                       for key in rows[0] if key != "why"]
+            table = ui.table(columns=columns, rows=rows, row_key="run") \
+                .classes("w-full").props("dense flat bordered wrap-cells").mark("runs-table")
+            table.add_slot("body-cell-status", r'''
+                <q-td :props="props"><span :title="props.row.why">{{ props.value }}</span></q-td>
+            ''')
+            ui.label("Hover a status for what it means. A run's starting storage and losses "
+                     "are what the generator recorded when it wrote the storm."
+                     ).classes("text-xs text-muted")

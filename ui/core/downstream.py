@@ -97,6 +97,49 @@ def group_of(selection_path) -> str:
     return name[:-len(tail)] if name.endswith(tail) else ''
 
 
+def method_of(selection_path) -> str:
+    return EVENTS.read_selection_file(selection_path).method
+
+
+def selection_label(selection_path) -> str:
+    """How the page lists a selection: its group, marked where it is an ensemble one."""
+    group = group_of(selection_path) or os.path.basename(str(selection_path))
+    return f'{group}  (ensemble)' if method_of(selection_path) == EVENTS.ENSEMBLE else group
+
+
+def extra_dams(model_config) -> list:
+    """The model config's additional dams, as (location, ensemble_start) - read from the
+    JSON, so a config with a problem still gives the page something to say."""
+    try:
+        with open(model_config, encoding='utf-8') as handle:
+            data = json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return []
+    return [(str(entry.get('location', '')), entry.get('ensemble_start', 'fsl'))
+            for entry in data.get('additional_dams') or [] if isinstance(entry, dict)]
+
+
+def method_line(selection_path, model_config) -> str:
+    """One sentence on how each dam starts, for the selection's kind of event."""
+    dams = extra_dams(model_config) if model_config else []
+    if method_of(selection_path) == EVENTS.ENSEMBLE:
+        said = "Ensemble events: the main dam starts from the event's ADV"
+        for location, start in dams:
+            try:
+                where = ('full supply' if str(start).strip().lower() == 'fsl'
+                         else f'{float(start):,.0f} ML')
+            except ValueError:
+                where = f'"{start}" (not a volume - the run will refuse it)'
+            said += f'; {location} at {where}'
+        return said + (". Change that with ensemble_start in the model config's "
+                       'additional_dams.' if dams else '.')
+    said = "Monte Carlo events: the main dam starts from the event's ADV"
+    if dams:
+        said += ('; ' + ', '.join(location for location, _ in dams)
+                 + " from the event's lake_z through its own lake config")
+    return said + '.'
+
+
 def storm_names(selection_path, suffix='') -> set:
     """The storm files a selection would write, for comparing one selection with another."""
     return {storm.filename for storm in plan(selection_path, suffix=suffix).ready}
