@@ -27,8 +27,9 @@ from nicegui import ui
 
 from nicegui import app, run
 
-from core import events, eventchart, hydrographs, results
+from core import enbevents, events, eventchart, hydrographs, results
 from layout import page_frame, require_project, severity_banner
+from pages.enbevents import EnsembleEventsView, group_options, switch_group
 from theme import house_echart
 import address
 from state import STATE
@@ -92,30 +93,38 @@ def events_page() -> None:
         if project is None:
             return
         available = events.sources_by_group(project)
-        if not available:
+        ensembles = enbevents.sources_by_group(project)
+        if not available and not ensembles:
             _empty_state()
             return
-        _EventsView(project, available).build()
+        # One page, two views: the group's method decides which. A Monte Carlo group's
+        # realisations are ranked; an ensemble group's event is chosen by rule.
+        options = group_options(available, ensembles)
+        named = address.param("group")
+        if named not in available and (named in ensembles or not available):
+            EnsembleEventsView(project, ensembles, options).build()
+            return
+        _EventsView(project, available, options).build()
 
 
 def _empty_state() -> None:
     with ui.card().classes("w-full items-center p-8 gap-2"):
         ui.icon("scatter_plot", size="3rem").classes("text-muted")
-        ui.label("No Monte Carlo database found for this sims list."
+        ui.label("No Monte Carlo or ensemble database found for this sims list."
                  ).classes("text-muted")
         ui.label(
-            "A representative event is one realisation, so this page needs the "
-            "mcdf a monte carlo or reservoir routing row writes - not just the "
-            "quantile tables. An ensemble run has no realisations to choose "
-            "between: it ran every combination by design."
+            "A representative event is one event out of a results database - the "
+            "mcdf a monte carlo or reservoir routing row writes, or an ensemble "
+            "row's database - not the quantile tables."
         ).classes("text-xs text-muted max-w-lg text-center")
         ui.button("Choose simulations", on_click=lambda: ui.navigate.to("/select"))
 
 
 class _EventsView:
-    def __init__(self, project, available) -> None:
+    def __init__(self, project, available, options=None) -> None:
         self.project = project
         self.available = available            # group -> [EventSource]
+        self.options = options or {key: key for key in available}
         named = address.param("group")
         self.group = named if named in available else next(iter(available), None)
         self.result_type = "level"
@@ -168,8 +177,10 @@ class _EventsView:
     def _controls(self) -> None:
         with ui.card().classes("w-full"):
             with ui.row().classes("items-center gap-4 flex-wrap"):
-                ui.select(list(self.available), value=self.group, label="Group",
-                          on_change=lambda event: self._load_group(event.value)
+                ui.select(self.options, value=self.group, label="Group",
+                          on_change=lambda event: (
+                              self._load_group(event.value) if event.value in self.available
+                              else switch_group(event.value))
                           ).classes("min-w-96")
                 ui.toggle(TYPE_LABELS, value=self.result_type,
                           on_change=self._on_type).props("no-caps dense") \

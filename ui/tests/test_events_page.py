@@ -87,7 +87,7 @@ async def test_the_candidate_metrics_are_shown(user, project):
 async def test_a_project_without_a_database_says_what_is_missing(user, bare):
     _open(bare)
     await user.open("/events")
-    await user.should_see("No Monte Carlo database found")
+    await user.should_see("No Monte Carlo or ensemble database found")
 
 
 @pytest.mark.asyncio
@@ -439,3 +439,67 @@ async def test_picking_another_event_after_previewing_marks_the_preview(
     other = next(row for row in table.rows if not row["picked"])
     user.find(marker="candidates-0").trigger("pick", other)
     await user.should_see(marker="preview-mismatch-0")
+
+
+# -- an ensemble group ----------------------------------------------------------
+
+@pytest.fixture
+def with_ensemble(tmp_path):
+    """The Monte Carlo fixture, plus a PMF ensemble row and its database."""
+    import json as _json
+    from conftest import MONTE_CARLO_COLUMNS, write_workbook
+    from core import enbevents, events
+    from test_enbevents import ensemble_frame
+    events.forget_cached()
+    enbevents.forget_cached()
+    config = build(tmp_path)
+    path = tmp_path / "sims_enb" / "results" / "CLD_enb_PMF_GWL1p3.csv"
+    path.parent.mkdir(parents=True)
+    ensemble_frame().to_csv(path)
+    from openpyxl import load_workbook
+    rows = [dict(zip(MONTE_CARLO_COLUMNS, row)) for row in
+            load_workbook(tmp_path / "sims.xlsx").active.iter_rows(min_row=2, values_only=True)]
+    rows.append({"Include": "yes", "Method": "ensemble", "Run models": "yes",
+                 "Analyse results": "yes", "GWL": 1.3, "Config file": "enb.json",
+                 "Output file": r"sims_enb\results\CLD_enb_PMF_GWL1p3"})
+    write_workbook(tmp_path / "sims.xlsx", MONTE_CARLO_COLUMNS, rows)
+    return config
+
+
+def _ensemble_group(state):
+    from core import enbevents
+    return next(iter(enbevents.sources_by_group(state.project)))
+
+
+@pytest.mark.asyncio
+async def test_an_ensemble_group_is_offered_and_chosen_by_rule(user, with_ensemble):
+    import json
+    state = _open(with_ensemble)
+    group = _ensemble_group(state)
+    await user.open(f"/events?group={group}")
+    await user.should_see("nothing to rank")
+    await user.should_not_see("Same result within")         # no ranking controls
+    table = next(iter(user.find(marker="summary-table").elements))
+    chosen = {row["loading"]: (row["rule"], row["event"]) for row in table.rows}
+    assert chosen == {"PMF (PMF)": ("highest", 7), "PMPF (1 in 1,900,000)": ("median", 15)}
+    # nothing is saved by opening the group; naming a loading saves it, as an ensemble one
+    next(iter(user.find(marker="loading-name-0").elements)).set_value("Probable maximum flood")
+    await user.should_see("Probable maximum flood (PMF)")
+    from core import events
+    folder = state.project.config.project_folder / "sims_enb" / "results"
+    saved = json.loads(events.selection_path(folder, group).read_text(encoding="utf-8"))
+    assert saved["method"] == "ensemble"
+    pmf = saved["targets"][0]
+    assert (pmf["kind"], pmf["picked"], pmf["duration"], pmf["rule"]) == ("pmf", 7, 4.5, "highest")
+
+
+@pytest.mark.asyncio
+async def test_the_group_list_carries_both_kinds(user, with_ensemble):
+    state = _open(with_ensemble)
+    await user.open("/events")
+    from nicegui import ui as nicegui_ui
+    select = next(element for element in user.find(kind=nicegui_ui.select).elements
+                  if element.props.get("label") == "Group")
+    labels = list(select.options.values()) if isinstance(select.options, dict) else select.options
+    assert any(label.endswith("(ensemble)") for label in labels)
+    assert any(not label.endswith("(ensemble)") for label in labels)

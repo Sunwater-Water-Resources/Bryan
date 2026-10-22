@@ -341,7 +341,16 @@ It runs with **Bryan's** interpreter rather than the launcher's — it rebuilds 
 
 ### What it needs
 
-A **monte carlo** or **reservoir routing** row that has been analysed, because the page reads the mcdf and the ```<type>_aep``` columns the analysis adds to it. This is the only page that reads a database rather than the quantile tables; there is no way around it, since a representative event *is* a realisation. Ensemble rows do not appear: an ensemble run has no realisations to choose between, having run every combination by design.
+A **monte carlo** or **reservoir routing** row that has been analysed, because the page reads the mcdf and the ```<type>_aep``` columns the analysis adds to it. This is the only page that reads a database rather than the quantile tables; there is no way around it, since a representative event *is* a realisation.
+
+An **ensemble** row - or a reservoir routing row that re-routed one - appears in the **Group** list too, marked ```(ensemble)```. An ensemble ran every pattern of every duration, so there is nothing to rank, and the page shows no ranking controls for it. Each loading is one of two kinds, and the rule is the PMF page's own:
+
+| Kind | The event |
+| --- | --- |
+| **PMF** | The highest event of any duration and pattern. **Notional AEP** is a label for it - the PMF page's adopted AEP where a study is open - and is never used as an input: downstream, the concurrent rainfall is set by the event's own rainfall AEP, the AEP of the PMP. |
+| **Design AEP** | One of the AEPs the ensemble ran: the median pattern of each duration (the sixth of ten), then the duration whose median is largest. The PMPF is this at the AEP of the PMP. |
+
+**Duration** is the critical one unless a duration is chosen. A new group that ran one AEP starts with the PMF and the PMPF; one that ran several starts with the three rarest. Each loading's card says the rule, the event chosen - its duration, pattern, level, inflow, outflow, rainfall AEP and starting volume - and the per-duration spread it was chosen from, the chosen duration shaded. The selection is saved as you go, as a Monte Carlo one is, with ```"method": "ensemble"``` and each event's duration and rule.
 
 ## Lake level frequency
 
