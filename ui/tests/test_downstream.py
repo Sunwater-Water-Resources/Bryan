@@ -104,7 +104,7 @@ def test_the_command_names_the_generator_and_the_interpreter(tmp_path):
     argv = downstream.command('sel.json', 'cfg.json', 'model.json',
                               bryan_python='/bryan/.venv/bin/python', duration=24)
     assert argv[0] == '/bryan/.venv/bin/python'
-    assert argv[1].endswith('DownstreamStorms.py')
+    assert argv[2].endswith('DownstreamStorms.py')
     assert '--duration' in argv and '24' in argv
 
 
@@ -182,3 +182,28 @@ def test_the_suffix_and_the_sims_config_reach_the_generator():
                               sims_config='sims_config.json')
     assert argv[argv.index('--suffix') + 1] == '_RFSL'
     assert argv[argv.index('--sims-config') + 1] == 'sims_config.json'
+
+
+def test_the_generator_runs_unbuffered_so_its_log_can_be_followed():
+    argv = downstream.command('sel.json', 'cfg.json', 'model.json', bryan_python='/py')
+    assert argv[:2] == ['/py', '-u'] and argv[2].endswith('DownstreamStorms.py')
+
+
+def test_the_status_line_is_the_last_line_worth_showing():
+    log = ("7 loadings in X.json, 7 with an event picked\n"
+           "\naep 100 (level) -> realisation 5044, 72 h, GWL 1.3\n"
+           "  wrote 005044_72h_GWL1p3_RFSL.72\n"
+           "  antecedent storage for 005044_72h_GWL1p3_RFSL:\n"
+           "  initial_lake_level: 93,501 ML from the event ADV\n\n")
+    assert downstream.last_line(log) == "wrote 005044_72h_GWL1p3_RFSL.72"
+    assert downstream.last_line("") == ""
+    assert len(downstream.last_line("x" * 500)) == downstream.STATUS_WIDTH
+
+
+def test_the_outcome_reads_the_generators_closing_lines():
+    log = ("...\n\n7 storm files; what went into them: C:\a\b_downstream_storms.csv\n"
+           "3 need a look - see duration_dip and embedded_bursts\n")
+    assert downstream.outcome(0, log, "x.log") == (
+        True, "Finished. 7 storm files. 3 need a look - see duration_dip and embedded_bursts.")
+    ok, said = downstream.outcome(1, "Traceback...\nSystemExit: no such file\n", "x.log")
+    assert not ok and "exit code 1" in said and "x.log" in said and "no such file" in said

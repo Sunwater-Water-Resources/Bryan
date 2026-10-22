@@ -31,6 +31,12 @@ The **Downstream** page takes these to write the storm files:
 | **File name suffix** | added to each storm file's name, before the extension. See *Two groups that share a realisation* below. Blank unless typed; the page suggests one when it is needed. |
 | **Run URBS on each storm** | off, the storm files and a batch file each are written and URBS is left to be run by hand. On, each storm is run as it is written. |
 
+While the generator runs, a line under the buttons says how long it has been going and the
+last thing it wrote - ```wrote 005044_72h_GWL1p3_RFSL.72``` - with **Cancel** beside it. When
+it stops the line says how it ended: the number of storm files and how many need a look, or
+the error and the log to read. The full output is in ```<selection>.downstream.log``` beside the
+selection, written as it goes. That line is the only thing on the page that updates by itself.
+
 It also passes the open project's sims config to the generator, so an event whose embedded
 bursts were filtered keeps its filtered pattern (see below). **Open the sims config the
 selection was saved under**: a selection from another sims list has no row here to rebuild

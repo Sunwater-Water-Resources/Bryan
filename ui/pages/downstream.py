@@ -19,10 +19,10 @@ from pathlib import Path
 
 from nicegui import ui
 
-from core import downstream
+from core import downstream, logtail
 from layout import page_frame, require_project
 from state import STATE
-from widgets import path_input
+from widgets import Running, path_input
 
 
 def downstream_page() -> None:
@@ -129,17 +129,46 @@ def downstream_page() -> None:
                 duration=state["duration"], gwl=state["gwl"], dry_run=dry_run,
                 suffix=state["suffix"], run_urbs=state["run_urbs"],
                 sims_config=project.config.config_path)
+            if state["process"] is not None and state["process"].poll() is None:
+                ui.notify("The last run is still going.", type="warning")
+                return
             log = Path(state["selection"]).with_suffix(".downstream.log")
             state["process"] = downstream.launch(argv, cwd=folder, log_path=log)
             doing = "Checking" if dry_run else (
                 "Generating and running URBS" if state["run_urbs"] else "Generating")
-            ui.notify(f"{doing} - output in {log.name}")
+            follow(doing, log)
+
+        def follow(doing: str, log: Path) -> None:
+            """The one thing on this page that updates by itself: while the generator runs,
+            how long it has been going and the last thing it wrote to its log."""
+            running = Running(spinner, doing, mark="downstream-running")
+            status.text = f"Output in {log.name}"
+            status.classes(replace="text-sm text-muted")
+
+            def tick() -> None:
+                process = state["process"]
+                text = logtail.tail(log).text
+                if running.cancel.is_set() and process.poll() is None:
+                    process.terminate()
+                code = process.poll()
+                if code is None:
+                    status.text = downstream.last_line(text) or f"Output in {log.name}"
+                    return
+                timer.cancel()
+                running.done()
+                ok, said = downstream.outcome(code, text, log.name)
+                status.text = said
+                status.classes(replace="text-sm " + ("text-body" if ok else "text-negative"))
+
+            timer = ui.timer(1.0, tick)
 
         with ui.row().classes("items-center gap-3"):
             ui.button("Check without writing", on_click=lambda: generate(True)).props("outline")
             ui.button("Generate storm files", on_click=lambda: generate(False))
             ui.switch("Run URBS on each storm",
                       on_change=lambda e: state.update(run_urbs=bool(e.value)))
+        spinner = ui.row().classes("items-center")
+        status = ui.label("").classes("text-sm text-muted").mark("downstream-status")
         ui.label("Without it a batch file is written beside each storm, to run by hand. "
                  "With it the results land in the results folder named in the regional model's "
                  "config, or beside the model where it names none, and the inflow "

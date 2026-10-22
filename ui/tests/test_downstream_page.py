@@ -108,3 +108,29 @@ async def test_the_page_offers_urbs_and_leaves_the_dam_outflow_to_the_dam_failur
     await user.should_see("Run URBS on each storm")
     await user.should_see("that project replaces the dam's column")
     await user.should_not_see("Write hydraulic model inflow files")
+
+
+@pytest.mark.asyncio
+async def test_a_run_shows_its_progress_and_how_it_ended(user, tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    from core import downstream
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    _selection(tmp_path, database)
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model="urbs.json")
+    script = ("import time; print('  wrote 000042_24h_GWL1p3.24', flush=True); time.sleep(1.5); "
+              "print('1 storm files; what went into them: x.csv', flush=True)")
+
+    def fake_launch(argv, cwd, log_path=None):
+        with open(log_path, "w") as handle:
+            return subprocess.Popen([sys.executable, "-c", script], stdout=handle,
+                                    stderr=subprocess.STDOUT)
+
+    monkeypatch.setattr(downstream, "launch", fake_launch)
+    await user.open("/downstream")
+    user.find("Check without writing").click()
+    await user.should_see("wrote 000042_24h_GWL1p3.24", retries=40)
+    await user.should_see("Finished. 1 storm files.", retries=60)

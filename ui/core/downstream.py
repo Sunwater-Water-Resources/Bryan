@@ -164,7 +164,9 @@ def command(selection, config, model, bryan_python=None, duration=None, gwl=None
             rain_lag=0.0, suffix='', dry_run=False, sims_config=None, run_urbs=False) -> list:
     """The command line the run uses. Built here so a test can read it."""
     script = Path(__file__).resolve().parents[2] / 'DownstreamStorms.py'
-    argv = [str(bryan_python or sys.executable), str(script),
+    # -u: the output goes to a file, and block-buffered it reached the log in 8 kB lumps,
+    # so the page's status line and anyone watching the log saw nothing for minutes
+    argv = [str(bryan_python or sys.executable), '-u', str(script),
             '--config', str(config), '--selection', str(selection), '--model', str(model)]
     if sims_config:
         # so an event whose embedded bursts were filtered keeps its filtered pattern
@@ -186,10 +188,48 @@ def command(selection, config, model, bryan_python=None, duration=None, gwl=None
 
 
 def launch(argv, cwd, log_path=None):
-    """Start the generator. stdin is DEVNULL for the same reason Main.py's is."""
-    handle = open(log_path, 'w') if log_path else subprocess.PIPE
-    return subprocess.Popen(argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
-                            stdout=handle, stderr=subprocess.STDOUT, text=True)
+    """Start the generator. stdin is DEVNULL for the same reason Main.py's is.
+
+    The child inherits its own handle on the log, so the page's copy is closed as soon
+    as the child has it; holding it open kept the file locked after the run ended."""
+    if not log_path:
+        return subprocess.Popen(argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    with open(log_path, 'w') as handle:
+        return subprocess.Popen(argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                                stdout=handle, stderr=subprocess.STDOUT, text=True)
+
+
+#: The longest log line the status line shows.
+STATUS_WIDTH = 140
+
+
+def last_line(log_text: str) -> str:
+    """The last line of the generator's log worth showing while it runs: not blank, and not
+    one of the indented antecedent or pre-burst table lines that follow each storm."""
+    lines = [line.rstrip() for line in log_text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.lstrip().startswith(('wrote ', 'would write ', 'batch file')) or not line[:1].isspace():
+            text = line.strip()
+            return text if len(text) <= STATUS_WIDTH else text[:STATUS_WIDTH - 3] + '...'
+    return ''
+
+
+def outcome(returncode: int, log_text: str, log_name: str) -> tuple:
+    """(succeeded, what to say) once the generator has stopped."""
+    if returncode == 0:
+        # DownstreamStorms.main's closing lines: "7 storm files; what went into them: <csv>"
+        # and, where any were flagged, "3 need a look - see duration_dip and embedded_bursts"
+        said = []
+        for line in log_text.splitlines():
+            line = line.strip()
+            if re.match(r'\d+ storm files', line):
+                said.append(line.split(';')[0] + '.')
+            elif 'need a look' in line:
+                said.append(line + '.')
+        return True, " ".join(["Finished."] + said)
+    return False, (f"Stopped with an error (exit code {returncode}) - see {log_name}. "
+                   f"{last_line(log_text)}").strip()
 
 
 def results_path(selection) -> str:
