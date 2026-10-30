@@ -96,6 +96,17 @@ class _DownstreamView:
                        base_name="the project folder", suffixes=(".json",), classes="grow",
                        on_change=lambda text: self._set_path("model", text))
         self.method_label = ui.label("").classes("text-xs text-muted").mark("method-line")
+        # The suffix above the tabs, not among the Storms inputs: it names every storm and
+        # run, so the Results tab reads by it too, and hidden on the other tab it was
+        # taken for the other selection's.
+        with ui.row().classes("w-full items-center gap-4"):
+            self.suffix_box = ui.input(
+                label="File name suffix", value=state["suffix"],
+                placeholder="e.g. _RFSL",
+                on_change=lambda e: self._typed_suffix(e.value)).classes("w-48") \
+                .props("outlined dense").mark("suffix")
+            self.suffix_line = ui.label(self._suffix_line()).classes("text-sm font-bold") \
+                .mark("suffix-line")
 
         tab = address.param("tab", TABS[0])
         tab = tab if tab in TABS else TABS[0]
@@ -131,11 +142,6 @@ class _DownstreamView:
                            classes="grow",
                            on_change=lambda text: self._set_path("config", text))
             with ui.row().classes("w-full items-end gap-4"):
-                self.suffix_box = ui.input(
-                    label="File name suffix", value=state["suffix"],
-                    placeholder="e.g. _RFSL",
-                    on_change=lambda e: self._typed_suffix(e.value)).classes("w-48") \
-                    .props("outlined dense").mark("suffix")
                 self.duration_box = ui.number(
                     label="Duration (h)", value=None, format="%g",
                     on_change=lambda e: (state.update(duration=e.value), self.refresh_plan())
@@ -145,8 +151,8 @@ class _DownstreamView:
                           on_change=lambda e: (state.update(gwl=e.value), self.refresh_plan())
                           ).props("clearable outlined dense").classes("w-36") \
                     .tooltip("Blank reads it from the database name.")
-            ui.label("The suffix is added to every storm and run name. Duration and GWL are "
-                     "read from the database name when left blank."
+            ui.label("The file name suffix above the tabs is added to every storm and run "
+                     "name. Duration and GWL are read from the database name when left blank."
                      ).classes("text-xs text-muted")
         self.plan_area = ui.column().classes("w-full gap-2")
         with ui.row().classes("items-center gap-3"):
@@ -228,7 +234,14 @@ class _DownstreamView:
 
     def _typed_suffix(self, text) -> None:
         self.state["suffix"] = (text or "").strip()
+        self.suffix_line.text = self._suffix_line()
         self.refresh_plan()
+
+    def _suffix_line(self) -> str:
+        suffix = self.state["suffix"]
+        if suffix:
+            return f"Every storm and run of this selection is named with {suffix}."
+        return "No suffix: storm and run names are the realisation, duration and GWL alone."
 
     def _set_path(self, key, text) -> None:
         self.state[key] = text
@@ -320,8 +333,9 @@ class _DownstreamView:
                 downstream.plan(state["selection"], state["duration"], state["gwl"],
                                 suffix=state["suffix"]), state["selection"])
             process = state["process"]
+            record = urbsresults.storms_record(state["selection"])
             rows = urbsresults.runs_rows(
-                plan, found, urbsresults.storms_record(state["selection"]),
+                plan, found, record,
                 generator_running=process is not None and process.poll() is None,
                 ran_urbs=state["ran_urbs"])
             with ui.row().classes("items-center gap-3"):
@@ -330,6 +344,19 @@ class _DownstreamView:
                 ui.label(urbsresults.counts(rows)).classes("text-sm text-body") \
                     .mark("results-counts")
                 ui.label(f"results: {found.results}").classes("text-xs text-muted")
+            ui.label(self._results_named(plan, record)).classes("text-sm font-bold") \
+                .mark("results-suffix")
+            strays = [row["run"] for row in rows
+                      if row["status"] == urbsresults.FINISHED and row["run"] not in record]
+            if strays:
+                severity_banner(
+                    "warn",
+                    f"{len(strays)} finished run{'s' if len(strays) != 1 else ''} this "
+                    f"selection never wrote: {', '.join(strays)}.",
+                    "Another selection, or a run by hand, wrote them - the same realisation "
+                    "under a different full supply level, say - so these are its results, "
+                    "not this selection's. Check the file name suffix above the tabs, and "
+                    "run this selection if it has not been.")
             if not rows:
                 ui.label("No storm in this selection can be named yet - see Storms."
                          ).classes("text-muted text-sm")
@@ -346,6 +373,17 @@ class _DownstreamView:
                      ).classes("text-xs text-muted")
             self._dams(model, found, plan)
             self._print_locations(model, found, plan)
+
+    def _results_named(self, plan, record) -> str:
+        """Which names the Results tab reads by: the last run's, or the box's for a
+        selection with no run on record."""
+        if record:
+            recorded = urbsresults.recorded_suffix(plan, self.state["selection"])
+            return ("Runs named as the last run of this selection wrote them"
+                    + (f", with the suffix {recorded}." if recorded else ", with no suffix."))
+        suffix = self.state["suffix"]
+        return ("This selection has no run on record, so its runs are looked for under the "
+                "suffix in the box" + (f": {suffix}." if suffix else " - none."))
 
     def _print_locations(self, model, found, plan) -> None:
         """The flow at the * print locations - the hydraulic model's boundaries - every

@@ -255,3 +255,31 @@ async def test_coming_back_finds_the_runs_under_the_suffix_they_were_written_wit
     await user.open("/downstream?tab=Results&selection=GWL1p3")
     await user.should_see("1 finished")
     assert next(iter(user.find(marker="suffix").elements)).value == "_RFSL"
+    # the suffix box is above the tabs, so the Results tab shows it too, and the tab says
+    # whose names it reads by
+    await user.should_see("is named with _RFSL")
+    await user.should_see("as the last run of this selection wrote them, with the suffix _RFSL")
+
+
+@pytest.mark.asyncio
+async def test_finished_runs_this_selection_never_wrote_are_called_out(user, tmp_path):
+    # A selection never run, with the other selection's suffix in the box: its shared
+    # realisations are found finished under that name, but they are the other's results.
+    config = _project(tmp_path)
+    database = tmp_path / "CLD_mc_24h_E009_GWL1p3_RGN__mcdf.parquet"
+    database.write_bytes(b"")
+    _selection(tmp_path, database)
+    model = _model(tmp_path)
+    (model.parent / "results" / "000042_24h_GWL1p3_RFSL.q").write_text("")
+    state = _open(config)
+    state.settings.remember_downstream(config, config="storm.json", model=str(model))
+    await user.open("/downstream?selection=GWL1p3")
+    await user.should_see("No suffix: storm and run names")
+    next(iter(user.find(marker="suffix").elements)).value = "_RFSL"
+    await user.should_see("is named with _RFSL")
+    from nicegui import ui as nicegui_ui
+    next(iter(user.find(kind=nicegui_ui.tabs).elements)).value = "Results"
+    await user.should_see("1 finished")
+    await user.should_see("no run on record, so its runs are looked for under the suffix "
+                          "in the box: _RFSL")
+    await user.should_see("1 finished run this selection never wrote: 000042_24h_GWL1p3_RFSL")

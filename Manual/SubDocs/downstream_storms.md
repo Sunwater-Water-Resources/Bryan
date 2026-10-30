@@ -34,7 +34,7 @@ above the plan:
 | **GWL (°C)** | the same, read from `GWL<n>` in the database name. |
 | **Downstream storm config** | the JSON described below. This is the file to get right. |
 | **Regional model URBS config** | a normal Bryan [model config](config/ModelConfig.md) for the *regional* model — the one the storm files are being written for. |
-| **File name suffix** | added to each storm file's name, before the extension. See *Two groups that share a realisation* below. Blank unless typed; the page suggests one when it is needed. |
+| **File name suffix** | above the tabs, beside a line saying what it does, since it names every storm and every run: the Results tab reads by it too. Added to each storm file's name, before the extension. See *Two groups that share a realisation* below. Blank unless typed; the page suggests one when it is needed. |
 | **Run URBS on each storm** | off, the storm files and a batch file each are written and URBS is left to be run by hand. On, each storm is run as it is written. |
 
 While the generator runs, a line under the buttons says how long it has been going and the
@@ -223,8 +223,13 @@ them - until the tables are extended. **Check without writing** reports it too.
 The **Results** tab reads the runs back - when it is opened, on **Reload**, and once when a run
 ends; it never polls. It finds each run by the name the last run wrote, from the selection's
 ```_downstream_storms.csv```, whatever is in the suffix box now, so the results are there when
-the page is opened again later. The page's address names the selection and the tab, so a
-bookmark or a refresh comes back to the same view. One row per storm the plan names, with its status and what went into it:
+the page is opened again later. A line above the table says so - *named as the last run of this
+selection wrote them, with the suffix ```_FSL```* - or, for a selection with no run on record,
+that the runs are looked for under the suffix in the box. A run found **finished** under a
+name this selection never wrote is called out: it is another selection's, the same realisation
+re-routed at the other full supply level, say, found because its suffix is in the box. The
+page's address names the selection and the tab, so a bookmark or a refresh comes back to
+the same view. One row per storm the plan names, with its status and what went into it:
 the losses, the mean depth, the pattern, each dam's starting storage and any flags.
 
 | Status | Means |
