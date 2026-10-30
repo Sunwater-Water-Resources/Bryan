@@ -232,6 +232,9 @@ class _LakeLevelsView:
                 self.fit_area = ui.column().classes("w-full gap-1")
                 with ui.expansion("Annual maxima", icon="list").classes("w-full"):
                     self.table_area = ui.column().classes("w-full")
+                with ui.expansion("Where the lake sits", icon="waves").classes("w-full") \
+                        .mark("lake-statistics"):
+                    self._statistics_panel()
                 with ui.expansion("Water year options", icon="date_range"
                                   ).classes("w-full") as self.water_year_panel:
                     self._water_year_panel()
@@ -451,6 +454,7 @@ class _LakeLevelsView:
             self.chart.update()
             self.fit_area.clear()
             self.table_area.clear()
+            self._statistics()
             return
 
         self.results, self.banded = (lakefreq.shown_results(self.config_path, plan.job)
@@ -481,6 +485,7 @@ class _LakeLevelsView:
         self.chart.update()
         self._fit_table()
         self._table()
+        self._statistics()
 
     def _fit_table(self) -> None:
         """The fitted curves' parameters, from the results the chart was drawn from."""
@@ -658,6 +663,65 @@ class _LakeLevelsView:
             ui.notify(f"Could not write the CSV: {exc}", type="negative")
             return
         ui.notify(f"Wrote {path}")
+
+    # -- where the lake sits ---------------------------------------------------
+
+    def _statistics_panel(self) -> None:
+        """The time-based statistics of the daily level, beside the median annual
+        maximum, over the whole record and any periods named; and the level
+        duration curve. Drawn with the record, from the same view as the chart."""
+        stats = self.settings["statistics"]
+        ui.label(lakefreq.STATISTICS_HELP).classes("text-xs text-muted")
+        with ui.row().classes("w-full items-start gap-4 no-wrap"):
+            ui.textarea("Periods to compare, 'from-to' water years per line",
+                        value="\n".join(stats["periods"]),
+                        on_change=lambda e: self.set("statistics", "periods",
+                                                     lakefreq.parse_periods_text(e.value))
+                        ).classes("w-64").props("autogrow dense").mark("lake-stat-periods")
+            ui.number(f"Within (m) of {self.settings['fsl_label'] or 'FSL'}",
+                      value=stats["near_fsl_m"], min=0, step=0.1, format="%g",
+                      on_change=lambda e: self.set("statistics", "near_fsl_m",
+                                                   _number(e.value) or 0.0)
+                      ).classes("w-40").props("dense").mark("lake-stat-near")
+            season = stats.get("season") or [0, 0]
+            self.season_from = ui.select(
+                {0: "All months", **MONTHS}, value=int(season[0] or 0), label="Season from",
+                on_change=lambda e: self._set_season()
+            ).classes("w-40").props("dense").mark("lake-stat-season-from")
+            self.season_to = ui.select(
+                MONTHS, value=int(season[1] or season[0] or 1), label="to",
+                on_change=lambda e: self._set_season()
+            ).classes("w-36").props("dense").mark("lake-stat-season-to")
+            self.season_to.set_visibility(bool(season[0]))
+        self.statistics_area = ui.column().classes("w-full gap-1")
+
+    def _set_season(self) -> None:
+        first = int(self.season_from.value or 0)
+        self.season_to.set_visibility(bool(first))
+        season = None if not first else [first, int(self.season_to.value or first)]
+        self.set("statistics", "season", season)
+
+    def _statistics(self) -> None:
+        self.statistics_area.clear()
+        job = self.plan().job
+        table = lakefreq.statistics_table(self.view, job, self.settings)
+        with self.statistics_area:
+            if table is None:
+                ui.label("Needs the level record itself, not an annual maximum CSV."
+                         ).classes("text-sm text-body").mark("lake-stat-none")
+                return
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label(table["title"]).classes("font-bold")
+                with ui.row().classes("gap-1"):
+                    copy_buttons(lambda: lakefreq.statistics_clipboard_table(
+                        lakefreq.statistics_table(self.view, self.plan().job, self.settings)),
+                        mark="lake-stat")
+            ui.table(columns=[{"name": key, "label": label, "field": key, "align": "left"}
+                              for key, label in table["columns"]],
+                     rows=table["rows"], row_key="quantity").classes("w-full") \
+                .props("dense flat").mark("lake-stat-table")
+            house_echart(lakefreq.duration_chart(self.view, job, self.settings)) \
+                .classes("w-full h-72").mark("lake-duration-chart")
 
     # -- water year options --------------------------------------------------
 

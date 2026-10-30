@@ -78,6 +78,10 @@ CURVE_HELP = (
 PAGE_DEFAULTS = {
     "design": {"include": False, "group": "", "durations": None},
     "export": {"folder": "", "name": ""},
+    # Where the lake sits: the periods compared beside the whole record, as
+    # "from-to" water years; the margin that counts as "at full supply"; and the
+    # months of each year that count, [first, last], or None for every month.
+    "statistics": {"periods": [], "near_fsl_m": 0.5, "season": None},
 }
 
 # The record's resolution is worth a warning past this: a maximum read off
@@ -395,6 +399,7 @@ class RecordView:
     ams: object                  # every water year, LakeLevelRecord.annual_maxima
     positions: object            # the maxima in the curve, with plotting positions
     level: object = None         # the level series, when read from exports
+    daily: object = None         # its daily means, for where the lake sits
     sites: list = field(default_factory=list)
     notes: list = field(default_factory=list)
 
@@ -437,6 +442,8 @@ def read_view(job) -> RecordView:
                      f"{'are' if many else 'is'} {verb}")
     return RecordView(ams=ams, positions=positions,
                       level=None if level_record is None else level_record.level,
+                      daily=None if level_record is None
+                      else RECORD.daily_levels(level_record.level),
                       sites=[] if level_record is None else level_record.sites,
                       notes=notes)
 
@@ -894,6 +901,167 @@ def fit_clipboard_table(table) -> wordtable.ReportTable | None:
     for row in table["rows"]:
         copied.add([row[key] for key, _ in table["columns"]])
     return copied
+
+
+# -- where the lake sits ----------------------------------------------------------------
+#
+# The time-based statistics of the daily level, beside the median annual maximum
+# they are so often confused with. One column for the whole record and one for
+# each period the user names, every column over the same season when one is set.
+
+STATISTIC_ROWS = (
+    ("days", "Days with a reading"),
+    ("water_years", "Water years"),
+    ("mean", "Mean level (m AHD)"),
+    ("p10", "10th percentile (m AHD)"),
+    ("p25", "25th percentile (m AHD)"),
+    ("p50", "Median (m AHD)"),
+    ("p75", "75th percentile (m AHD)"),
+    ("p90", "90th percentile (m AHD)"),
+    ("near_fsl_share", "Share of days within {near:g} m of {fsl}"),
+    ("ams_median", "Median annual maximum (m AHD)"),
+)
+
+STATISTICS_HELP = (
+    "Percentiles of the daily mean level over the days with a reading: the median "
+    "is the level exceeded half the time. The median annual maximum is the empirical "
+    "50% AEP of the water years' maxima, read between plotting positions - how high "
+    "the lake gets in a typical year, a different quantity. Periods are water years, "
+    "'from-to' per line; a season keeps only its months of each year for the daily "
+    "statistics, and leaves the annual maxima as the water years' own.")
+
+
+def statistics_periods(settings: dict) -> list:
+    """The whole record first, then every period the settings name that parses."""
+    periods = [RECORD.Period()]
+    for text in (settings.get("statistics") or {}).get("periods") or []:
+        period = RECORD.parse_period(text)
+        if period is not None and period not in periods:
+            periods.append(period)
+    return periods
+
+
+def period_text(period) -> str:
+    """A period as the settings keep it: ``1988-2026``, ``1988-`` or ``-2000``."""
+    return f"{period.first or ''}-{period.last or ''}"
+
+
+def parse_periods_text(text) -> list:
+    """The textarea's lines as the settings keep them, the ones that parse."""
+    out = []
+    for line in str(text or "").splitlines():
+        period = RECORD.parse_period(line)
+        if period is not None and period_text(period) not in out:
+            out.append(period_text(period))
+    return out
+
+
+def statistics_season(settings: dict):
+    """The :class:`Season` the settings keep, or None for every month."""
+    season = (settings.get("statistics") or {}).get("season")
+    if not season or season[0] in (None, 0):
+        return None
+    built = RECORD.season_of(season[0], season[1] if len(season) > 1 else None)
+    return None if built.whole else built
+
+
+def statistics_table(view, job, settings: dict) -> dict | None:
+    """Where the lake sits, one column per period. None without the level record
+    itself. Returns ``{"columns": [(key, label)], "rows": [{...}], "note": str,
+    "title": str}``, cells already formatted."""
+    if view is None or view.daily is None:
+        return None
+    stats = settings.get("statistics") or PAGE_DEFAULTS["statistics"]
+    near = _num(stats.get("near_fsl_m"))
+    near = PAGE_DEFAULTS["statistics"]["near_fsl_m"] if near is None else near
+    season = statistics_season(settings)
+    fsl = _num(job.get("fsl"))
+    fsl_label = job.get("fsl_label") or "FSL"
+    periods = statistics_periods(settings)
+    results = [RECORD.level_statistics(view.daily, period,
+                                       start_month=int(job["water_year_start"]),
+                                       fsl=fsl, near_m=near, ams=view.ams, season=season)
+               for period in periods]
+    columns = [("quantity", "Quantity")] + [(f"period_{i}", r["label"])
+                                            for i, r in enumerate(results)]
+    rows = []
+    for key, label in STATISTIC_ROWS:
+        if key == "near_fsl_share" and fsl is None:
+            continue
+        row = {"quantity": label.format(near=near, fsl=fsl_label)}
+        for i, result in enumerate(results):
+            row[f"period_{i}"] = _statistic_text(key, result[key])
+        rows.append(row)
+    title = "Where the lake sits"
+    if season is not None:
+        title += f", {season.label()}"
+    note = STATISTICS_HELP
+    if season is not None:
+        note = (f"Season: {season.label()} of each year, so the days, the percentiles "
+                f"and the share near full supply count those months only. ") + note
+    return {"columns": columns, "rows": rows, "note": note, "title": title}
+
+
+def _statistic_text(key, value) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "-"
+    if key in ("days", "water_years"):
+        return f"{int(value):,}"
+    if key == "near_fsl_share":
+        return f"{value:.0%}"
+    return f"{value:.2f}"
+
+
+def statistics_clipboard_table(table) -> wordtable.ReportTable | None:
+    """A :func:`statistics_table` as the clipboard takes it."""
+    if table is None:
+        return None
+    copied = wordtable.ReportTable(header=[label for _, label in table["columns"]],
+                                   title=table["title"],
+                                   footnotes=[table["note"]] if table["note"] else [])
+    for row in table["rows"]:
+        copied.add([row[key] for key, _ in table["columns"]])
+    return copied
+
+
+def duration_chart(view, job, settings: dict) -> dict:
+    """The level duration curve - the level against the share of time it is
+    exceeded - one line per period, full supply marked."""
+    season = statistics_season(settings)
+    start_month = int(job["water_year_start"])
+    series = []
+    for i, period in enumerate(statistics_periods(settings)):
+        curve = RECORD.duration_curve(view.daily, period, start_month=start_month,
+                                      season=season)
+        colour = RECORD_COLOUR if i == 0 else PALETTE[(i + 2) % len(PALETTE)]
+        series.append({"name": period.label(), "type": "line", "symbol": "none",
+                       "lineStyle": {"width": 2, "color": colour},
+                       "itemStyle": {"color": colour},
+                       "data": [[_num(x), _num(y)] for x, y in
+                                zip(curve["exceeded_pct"], curve["level"])
+                                if _num(y) is not None]})
+    fsl = _num(job.get("fsl"))
+    if fsl is not None and series:
+        series[0]["markLine"] = {
+            "symbol": "none", "silent": True,
+            "lineStyle": {"type": "dashed", "color": MUTED},
+            "label": {"formatter": job.get("fsl_label") or "FSL",
+                      "position": "insideEndTop"},
+            "data": [{"yAxis": fsl}]}
+    axis_name = "Share of time exceeded (%)"
+    if season is not None:
+        axis_name = f"Share of {season.label()} days exceeded (%)"
+    return {
+        "tooltip": {"trigger": "axis"},
+        "legend": {"top": 0},
+        "grid": {"left": 64, "right": 24, "top": 36, "bottom": 44},
+        "xAxis": {"type": "value", "min": 0, "max": 100, "name": axis_name,
+                  "nameLocation": "middle", "nameGap": 28},
+        "yAxis": {"type": "value", "scale": True, "name": "Daily level (m AHD)",
+                  "nameLocation": "middle", "nameGap": 48,
+                  "splitLine": {"lineStyle": {"opacity": 0.25}}},
+        "series": series,
+    }
 
 
 # -- water year options ---------------------------------------------------------------

@@ -388,6 +388,12 @@ Below the chart, **Fitted curves** tables what was fitted, one column for each c
 
 With **Compare with the Monte Carlo results** on, the level curves of the chosen durations of one group are drawn with their envelope. Use the present-day warming level and the lake configuration the record was measured under.
 
+### Where the lake sits
+
+The annual maxima say how high the lake gets in a year. **Where the lake sits**, below them, says where it spends its time, which is a different question with a different answer: a dam that is drawn down most years has a median daily level metres below the median of its annual maxima, and both are metres below full supply. The table gives, for the whole record and for any **periods** named as ```from-to``` water years one per line (either end may be left open: ```1988-``` or ```-2000```), the days with a reading and the water years they span, the mean, 10th, 25th, 50th, 75th and 90th percentiles of the daily mean level, the share of days within a chosen margin of full supply, and - for the comparison - the **median annual maximum**, the empirical 50% AEP of those water years' maxima read between plotting positions. The daily statistics are time-based: a day counts once whether the lake rose or sat still, and days without a reading are left out rather than filled. Below the table the **level duration curve** draws each period's level against the share of time it is exceeded, with full supply marked.
+
+A **season** - a start month and an end month, which may run past December - keeps only those months of each year for the daily statistics and the duration curve: the level going into the wet season, say, from a season of October to December. The annual maxima are the water years' own whatever the season, so that row does not change. The title and the note say which season is in force, and **Copy for Word** and **Copy as text** carry the table and its note. The settings are this sims list's, kept with the design flood comparison; the record itself is needed, so there is no table for an annual maximum CSV.
+
 ### The frequency axis
 
 The chart and the exported figure run from 1EY to **Axis reaches (1 in X)**. Two optional boxes move the frequent end, both as "1 in X" and both blank by default:

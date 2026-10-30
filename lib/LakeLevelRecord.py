@@ -31,6 +31,9 @@ What it covers:
 - **Plotting positions** (Cunnane), including the censored positions a subset of
   the maxima takes on the full record's probability scale.
 - **Scoring the candidate water year starts** against the level record alone.
+- **Where the lake sits**: the time-based statistics of the daily level over a
+  period and a season, and the level duration curve - beside the median annual
+  maximum, which is a different quantity.
 
 Levels are metres; AEP is carried both as a probability (``aep``) and as
 ``1 in X`` (``aep_1_in_x``), and the column name always says which.
@@ -41,6 +44,7 @@ from __future__ import annotations
 import csv
 import io
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import NormalDist
@@ -638,6 +642,172 @@ def maxima_by_month(ams: pd.DataFrame) -> pd.Series:
     counts = months.value_counts().reindex(range(1, 13), fill_value=0)
     counts.index = [name[:3] for name in MONTH_NAMES]
     return counts
+
+
+# -- the level through time ------------------------------------------------------------
+#
+# The annual maxima say how high the lake gets in a year; these say where it
+# sits. A time-based median is a different quantity from the median annual
+# maximum (or a fitted 50% AEP), and a dam that spends most of its time drawn
+# down puts them metres apart, so the page shows both side by side.
+
+# The duration curve is read at these shares of time exceeded, in per cent.
+DURATION_STEP_PCT = 0.5
+
+DEFAULT_NEAR_FSL_M = 0.5
+
+
+def daily_levels(level: pd.Series) -> pd.Series:
+    """The mean level of each day with a reading. Days without one are left
+    out, not filled: a gap is not evidence of where the lake was."""
+    return level.dropna().resample("1D").mean().dropna()
+
+
+@dataclass
+class Season:
+    """The months of each year to keep, ``first`` to ``last`` inclusive, wrapping
+    past December: (11, 2) is November to February. ``(1, 12)`` is every month."""
+
+    first: int = 1
+    last: int = 12
+
+    @property
+    def whole(self) -> bool:
+        return (self.first, self.last) == (1, 12) or self.last == self.first - 1
+
+    def label(self) -> str:
+        if self.whole:
+            return ""
+        if self.first == self.last:
+            return MONTH_NAMES[self.first - 1][:3]
+        return f"{MONTH_NAMES[self.first - 1][:3]}-{MONTH_NAMES[self.last - 1][:3]}"
+
+    def mask(self, index) -> np.ndarray:
+        months = pd.DatetimeIndex(index).month.to_numpy()
+        if self.whole:
+            return np.ones(len(months), dtype=bool)
+        if self.first <= self.last:
+            return (months >= self.first) & (months <= self.last)
+        return (months >= self.first) | (months <= self.last)
+
+
+def season_of(first, last) -> Season:
+    """A :class:`Season` from month numbers that may be missing: a blank end is
+    the start month alone, a blank start is every month."""
+    if first is None:
+        return Season()
+    first = int(first)
+    return Season(first, first if last is None else int(last))
+
+
+@dataclass
+class Period:
+    """A run of water years, both ends inclusive and either open."""
+
+    first: int | None = None
+    last: int | None = None
+
+    @property
+    def whole(self) -> bool:
+        return self.first is None and self.last is None
+
+    def label(self) -> str:
+        if self.whole:
+            return "Whole record"
+        if self.first is None:
+            return f"to {self.last}"
+        if self.last is None:
+            return f"{self.first} on"
+        return f"{self.first}-{self.last}"
+
+    def mask(self, index, start_month=DEFAULT_WATER_YEAR_START) -> np.ndarray:
+        years = water_year(index, start_month)
+        keep = np.ones(len(years), dtype=bool)
+        if self.first is not None:
+            keep &= years >= self.first
+        if self.last is not None:
+            keep &= years <= self.last
+        return keep
+
+
+def parse_period(text) -> Period | None:
+    """``1988-2026``, ``1988-`` or ``-2000`` as a :class:`Period`; None when the
+    text is not one. Years are water years, labelled as the maxima are."""
+    match = re.fullmatch(r"\s*(\d{4})?\s*[-–]\s*(\d{4})?\s*", str(text or ""))
+    if match is None or not (match.group(1) or match.group(2)):
+        return None
+    first = int(match.group(1)) if match.group(1) else None
+    last = int(match.group(2)) if match.group(2) else None
+    if first is not None and last is not None and first > last:
+        first, last = last, first
+    return Period(first, last)
+
+
+def _kept(daily: pd.Series, period: Period, season: Season | None, start_month) -> pd.Series:
+    if not len(daily):
+        return daily
+    keep = period.mask(daily.index, start_month)
+    if season is not None:
+        keep &= season.mask(daily.index)
+    return daily[keep]
+
+
+def level_statistics(daily: pd.Series, period: Period | None = None, *,
+                     start_month=DEFAULT_WATER_YEAR_START, fsl=None,
+                     near_m=DEFAULT_NEAR_FSL_M, ams=None,
+                     season: Season | None = None) -> dict:
+    """Where the lake sat over a period: the mean and percentiles of the daily
+    level, the share of days within ``near_m`` of full supply, and - for the
+    comparison - the median annual maximum read off the plotting positions of
+    the water years in the period (``ams`` as :func:`annual_maxima` gives it).
+
+    With a ``season``, only its months of each year count towards the daily
+    statistics - the level going into the wet season, say. The annual maxima
+    are the water years' whatever the season, so that row is unchanged by it.
+
+    Shares are fractions of the days with a reading. Empty where the period has
+    no days; the AMS median is NaN below three water years.
+    """
+    period = period or Period()
+    kept = _kept(daily, period, season, start_month)
+    out = {"label": period.label(), "days": int(len(kept)),
+           "first_day": kept.index.min() if len(kept) else None,
+           "last_day": kept.index.max() if len(kept) else None,
+           "water_years": int(len(np.unique(water_year(kept.index, start_month))))
+           if len(kept) else 0,
+           "mean": math.nan, "p10": math.nan, "p25": math.nan, "p50": math.nan,
+           "p75": math.nan, "p90": math.nan, "near_fsl_share": math.nan,
+           "ams_median": math.nan}
+    if len(kept):
+        out["mean"] = float(kept.mean())
+        for q in (10, 25, 50, 75, 90):
+            out[f"p{q}"] = float(kept.quantile(q / 100))
+        if fsl is not None:
+            out["near_fsl_share"] = float((kept >= float(fsl) - float(near_m)).mean())
+    if ams is not None and len(ams):
+        years = ams["water_year"].to_numpy()
+        in_period = np.ones(len(years), dtype=bool)
+        if period.first is not None:
+            in_period &= years >= period.first
+        if period.last is not None:
+            in_period &= years <= period.last
+        out["ams_median"] = _empirical_level(ams.loc[in_period, "level"], 0.5)
+    return out
+
+
+def duration_curve(daily: pd.Series, period: Period | None = None, *,
+                   start_month=DEFAULT_WATER_YEAR_START, season: Season | None = None,
+                   step_pct=DURATION_STEP_PCT) -> pd.DataFrame:
+    """The level exceeded for each share of the time, from ``step_pct`` to
+    ``100 - step_pct`` per cent: columns ``exceeded_pct`` and ``level``. With a
+    ``season``, the share of that season's days."""
+    period = period or Period()
+    kept = _kept(daily, period, season, start_month)
+    shares = np.arange(step_pct, 100.0, step_pct)
+    if not len(kept):
+        return pd.DataFrame({"exceeded_pct": shares, "level": np.full(len(shares), np.nan)})
+    levels = kept.quantile(1.0 - shares / 100.0).to_numpy()
+    return pd.DataFrame({"exceeded_pct": shares, "level": levels})
 
 
 # -- the analysis job ------------------------------------------------------------

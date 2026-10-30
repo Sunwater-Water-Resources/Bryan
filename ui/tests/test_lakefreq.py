@@ -662,3 +662,74 @@ def test_the_study_s_settings_make_a_job_the_record_can_be_read_with(with_study,
     plan = lakefreq.build_job(config, lakefreq.load_settings(config, study))
     assert plan.can_read and plan.job["water_year_start"] == 7
     assert lakefreq.read_view(plan.job).ams is not None
+
+
+# -- where the lake sits ------------------------------------------------------------------
+
+def test_the_statistics_table_compares_periods_over_one_season_and_needs_the_record(project):
+    config = project.config.config_path
+    settings = settings_for(project)
+    del settings["statistics"]
+    lakefreq.save_settings(config, settings)
+    settings = lakefreq.load_settings(config)
+    assert settings["statistics"] == {"periods": [], "near_fsl_m": 0.5, "season": None}
+
+    job = lakefreq.build_job(config, settings).job
+    view = lakefreq.read_view(job)
+    assert view.daily is not None and len(view.daily) == view.level.index.normalize().nunique()
+
+    table = lakefreq.statistics_table(view, job, settings)
+    assert [label for _, label in table["columns"]] == ["Quantity", "Whole record"]
+    rows = {row["quantity"]: row for row in table["rows"]}
+    assert rows["Median (m AHD)"]["period_0"] == f"{view.daily.median():.2f}"
+    assert rows["Days with a reading"]["period_0"] == f"{len(view.daily):,}"
+    assert rows["Share of days within 0.5 m of FSL"]["period_0"].endswith("%")
+    assert rows["Median annual maximum (m AHD)"]["period_0"] != "-"
+    assert table["title"] == "Where the lake sits"
+
+    # Periods that parse are columns, in the order given; junk is dropped.
+    settings["statistics"]["periods"] = lakefreq.parse_periods_text(
+        "1990-1995\njunk\n-1985\n1990 - 1995")
+    assert settings["statistics"]["periods"] == ["1990-1995", "-1985"]
+    table = lakefreq.statistics_table(view, job, settings)
+    assert [label for _, label in table["columns"]] == \
+        ["Quantity", "Whole record", "1990-1995", "to 1985"]
+    rows = {row["quantity"]: row for row in table["rows"]}
+    assert rows["Water years"]["period_1"] == "6"
+
+    # A season: every column over those months only, said in the title and note,
+    # with the annual maxima left alone.
+    settings["statistics"]["season"] = [11, 2]
+    seasonal = lakefreq.statistics_table(view, job, settings)
+    assert seasonal["title"] == "Where the lake sits, Nov-Feb"
+    assert seasonal["note"].startswith("Season: Nov-Feb of each year")
+    season_rows = {row["quantity"]: row for row in seasonal["rows"]}
+    assert int(season_rows["Days with a reading"]["period_0"].replace(",", "")) \
+        < int(rows["Days with a reading"]["period_0"].replace(",", ""))
+    assert season_rows["Median annual maximum (m AHD)"] == rows["Median annual maximum (m AHD)"]
+    assert lakefreq.statistics_season({"statistics": {"season": [0, 0]}}) is None
+    assert lakefreq.statistics_season({"statistics": {"season": [1, 12]}}) is None
+    assert lakefreq.statistics_season({"statistics": {"season": [10]}}).label() == "Oct"
+
+    copied = lakefreq.statistics_clipboard_table(seasonal)
+    assert copied.header == ["Quantity", "Whole record", "1990-1995", "to 1985"]
+    assert copied.title == seasonal["title"] and len(copied.rows) == len(seasonal["rows"])
+
+    chart = lakefreq.duration_chart(view, job, settings)
+    assert [series["name"] for series in chart["series"]] == \
+        ["Whole record", "1990-1995", "to 1985"]
+    assert chart["series"][0]["markLine"]["data"] == [{"yAxis": FSL}]
+    assert chart["xAxis"]["name"] == "Share of Nov-Feb days exceeded (%)"
+    levels = [point[1] for point in chart["series"][0]["data"]]
+    assert levels == sorted(levels, reverse=True)
+
+    # No full supply level: no share-near-FSL row and no mark.
+    job["fsl"] = None
+    assert "Share of days within 0.5 m of FSL" not in {
+        row["quantity"] for row in lakefreq.statistics_table(view, job, settings)["rows"]}
+    assert "markLine" not in lakefreq.duration_chart(view, job, settings)["series"][0]
+
+    # An annual maximum CSV has no days to count.
+    ams_only = lakefreq.RecordView(ams=view.ams, positions=view.positions)
+    assert lakefreq.statistics_table(ams_only, job, settings) is None
+    assert lakefreq.statistics_table(None, job, settings) is None

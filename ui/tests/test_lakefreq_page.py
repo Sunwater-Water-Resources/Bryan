@@ -372,3 +372,37 @@ async def test_without_a_study_the_page_says_where_its_settings_are(user, opened
     await user.open("/lake-levels")
     await user.should_see(marker="lake-own-settings")
     await user.should_see("Open a study to share the record")
+
+
+def stat_tables(user):
+    try:
+        return list(user.find(marker="lake-stat-table").elements)
+    except AssertionError:
+        return []
+
+
+@pytest.mark.asyncio
+async def test_where_the_lake_sits_is_tabled_with_the_record_and_follows_its_settings(
+        user, opened):
+    from core import lakefreq
+
+    await user.open("/lake-levels")
+    await series_names(user, "Storm-driven maxima")
+    await user.should_see("Where the lake sits")
+    table = stat_tables(user)[0]
+    assert [column["label"] for column in table.columns] == ["Quantity", "Whole record"]
+    rows = {row["quantity"]: row for row in table.rows}
+    assert rows["Median (m AHD)"]["period_0"] < rows["Median annual maximum (m AHD)"]["period_0"]
+    assert rows["Share of days within 0.5 m of FSL"]["period_0"].endswith("%")
+
+    # A period typed in is a column, and is saved with the page's settings.
+    user.find(marker="lake-stat-periods").type("1990-1995")
+    for _ in range(50):
+        if len(stat_tables(user)[0].columns) == 3:
+            break
+        await asyncio.sleep(0.1)
+    table = stat_tables(user)[0]
+    assert [column["label"] for column in table.columns] ==         ["Quantity", "Whole record", "1990-1995"]
+    assert lakefreq.load_settings(opened)["statistics"]["periods"] == ["1990-1995"]
+    chart = next(iter(user.find(marker="lake-duration-chart").elements))
+    assert [series["name"] for series in chart.options["series"]] ==         ["Whole record", "1990-1995"]

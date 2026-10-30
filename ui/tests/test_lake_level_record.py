@@ -245,3 +245,79 @@ def test_the_monthly_levels_do_not_depend_on_the_water_year():
     assert list(monthly["month"]) == [name[:3] for name in R.MONTH_NAMES]
     assert (monthly["p10"] <= monthly["median"]).all()
     assert (monthly["median"] <= monthly["p90"]).all()
+
+
+# -- where the lake sits ------------------------------------------------------------------
+
+def test_the_daily_statistics_are_time_based_and_a_season_keeps_only_its_months():
+    level = synthetic_level(years=6)
+    daily = R.daily_levels(level)
+    assert len(daily) == level.index.normalize().nunique()
+    ams = R.annual_maxima(level, 10)
+
+    whole = R.level_statistics(daily, fsl=FSL, near_m=0.5, ams=ams)
+    assert whole["label"] == "Whole record" and whole["days"] == len(daily)
+    assert whole["p10"] <= whole["p25"] <= whole["p50"] <= whole["p75"] <= whole["p90"]
+    assert whole["p50"] == pytest.approx(float(daily.median()))
+    assert 0.0 <= whole["near_fsl_share"] <= 1.0
+    assert whole["near_fsl_share"] == pytest.approx(float((daily >= FSL - 0.5).mean()))
+    # The median annual maximum is a different quantity, read off the maxima alone.
+    assert math.isfinite(whole["ams_median"])
+    assert whole["ams_median"] > whole["p50"]
+    assert whole["water_years"] == len(np.unique(R.water_year(daily.index, 10)))
+
+    # A season across New Year keeps those months and nothing else; the maxima
+    # stay the water years' own.
+    season = R.Season(11, 2)
+    assert season.label() == "Nov-Feb" and not season.whole
+    kept = daily[season.mask(daily.index)]
+    assert set(kept.index.month) == {11, 12, 1, 2}
+    seasonal = R.level_statistics(daily, fsl=FSL, ams=ams, season=season)
+    assert seasonal["days"] == len(kept)
+    assert seasonal["p50"] == pytest.approx(float(kept.median()))
+    assert seasonal["ams_median"] == whole["ams_median"]
+
+    assert R.Season(1, 12).whole and R.Season(3, 2).whole and R.Season().label() == ""
+    assert R.season_of(None, 5).whole
+    assert R.season_of(10, None) == R.Season(10, 10) and R.Season(10, 10).label() == "Oct"
+    assert set(daily[R.Season(6, 8).mask(daily.index)].index.month) == {6, 7, 8}
+
+
+def test_a_period_is_water_years_either_end_open():
+    assert R.parse_period("1988-2026") == R.Period(1988, 2026)
+    assert R.parse_period(" 2026 - 1988 ") == R.Period(1988, 2026)
+    assert R.parse_period("1988-") == R.Period(1988, None)
+    assert R.parse_period("-2000") == R.Period(None, 2000)
+    assert R.parse_period("1988\u20132026") == R.Period(1988, 2026)
+    for text in ("", "-", "abc", "1988", "88-99", None):
+        assert R.parse_period(text) is None
+    assert [R.Period().label(), R.Period(1988, 2026).label(), R.Period(1988).label(),
+            R.Period(None, 2000).label()] == ["Whole record", "1988-2026", "1988 on",
+                                               "to 2000"]
+
+    level = synthetic_level(years=6)
+    daily = R.daily_levels(level)
+    years = R.water_year(daily.index, 10)
+    kept = R.Period(1983, 1984).mask(daily.index, 10)
+    assert set(years[kept]) == {1983, 1984}
+    # Under a January start the same dates fall in other years.
+    assert set(R.water_year(daily.index, 1)[R.Period(1983, 1984).mask(daily.index, 1)]) \
+        == {1983, 1984}
+    empty = R.level_statistics(daily, R.Period(2050, 2060), fsl=FSL)
+    assert empty["days"] == 0 and math.isnan(empty["p50"]) and math.isnan(empty["mean"])
+
+
+def test_the_duration_curve_falls_with_the_share_of_time_exceeded():
+    daily = R.daily_levels(synthetic_level(years=6))
+    curve = R.duration_curve(daily)
+    assert list(curve.columns) == ["exceeded_pct", "level"]
+    assert curve["exceeded_pct"].iloc[0] == 0.5 and curve["exceeded_pct"].iloc[-1] == 99.5
+    assert len(curve) == 199
+    assert (np.diff(curve["level"]) <= 1e-9).all()
+    # The median of the curve is the median of the days.
+    at_50 = float(curve.loc[curve["exceeded_pct"] == 50.0, "level"].iloc[0])
+    assert at_50 == pytest.approx(float(daily.median()))
+    seasonal = R.duration_curve(daily, season=R.Season(10, 12))
+    assert at_50 != float(seasonal.loc[seasonal["exceeded_pct"] == 50.0, "level"].iloc[0])
+    none = R.duration_curve(daily, R.Period(2050, 2060))
+    assert none["level"].isna().all() and len(none) == 199
