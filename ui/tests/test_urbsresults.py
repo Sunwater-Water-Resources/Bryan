@@ -250,6 +250,33 @@ def test_the_peak_table_has_events_down_and_locations_across(flows_folder):
     assert timed["GOOVIGEN"] == f"{flows[REAL]['GOOVIGEN'].idxmax():g}"
 
 
+def test_the_peak_level_is_read_where_a_print_location_has_a_rating(flows_folder, tmp_path):
+    flows = {REAL: ur.read_flows(flows_folder, REAL)}
+    levels = {REAL: ur.read_levels(DATA, REAL)}
+    # The ratings folder says which locations have a level; the level file's names are cut
+    # to eight characters, so without it a long name is not trusted to a column.
+    ratings = tmp_path / "ratings"
+    ratings.mkdir()
+    for name in ("96_KM.rat", "GOOVIGEN.rat", "CLD_OUTFLOW_FSL.rat", "kroombit.els"):
+        (ratings / name).write_text("")
+    rated = ur.rated_locations(ur.Folders(tmp_path, tmp_path, ratings))
+    assert rated == {"96_KM", "GOOVIGEN", "CLD_OUTFLOW_FSL"}
+    assert ur.rated_locations(ur.Folders(tmp_path, tmp_path)) == set()
+
+    row, = ur.peaks_rows(flows, {REAL: "1 in 100"}, ur.LEVEL, levels, rated)
+    assert list(row) == ["loading", "run", "96_KM", "GOOVIGEN"]
+    assert row["GOOVIGEN"] == f"{levels[REAL]['GOOVIGEN'].max():.2f}"
+    assert row["96_KM"] == f"{levels[REAL]['96_KM'].max():.2f}"
+    assert ur.level_column("CLD_OUTFLOW_FSL", levels[REAL], rated) == "CLD_OUTF"
+    assert ur.level_column("KROOMBIT_DS", levels[REAL], rated) is None
+    assert ur.level_column("KROOMBIT_DS", levels[REAL], set()) is None   # cut: not trusted
+    assert ur.level_column("96_KM", levels[REAL], set()) == "96_KM"
+    assert ur.level_column("96_KM", None, rated) is None
+    # a run with no level file gives blanks, not an error
+    row, = ur.peaks_rows(flows, {}, ur.LEVEL, {}, rated)
+    assert list(row) == ["loading", "run"]
+
+
 
 # -- coming back later: the runs as the last run named them ---------------------------------
 

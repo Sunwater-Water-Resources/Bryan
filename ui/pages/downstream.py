@@ -432,26 +432,39 @@ class _DownstreamView:
         charts = ui.column().classes("w-full")
         draw([first] if first else [])
 
-        # the peaks at every * location, for the report
+        # the peaks at every * location, for the report; the levels where there is a
+        # rating, read from each run's level file
         loading_of = {os.path.splitext(s.filename)[0]: s.loading
                       for s in plan.storms if s.filename}
         shown = {"what": urbsresults.PEAK}
+        levels = {run: urbsresults.read_levels(found.results, run) for run in flows}
+        rated = urbsresults.rated_locations(found)
 
         def peaks() -> list:
-            return urbsresults.peaks_rows(flows, loading_of, shown["what"])
+            return urbsresults.peaks_rows(flows, loading_of, shown["what"], levels, rated)
 
         def draw_peaks() -> None:
             peaks_box.clear()
             rows = peaks()
             with peaks_box:
+                if shown["what"] == urbsresults.LEVEL and len(rows[0]) == 2:
+                    ui.label("No print location has a level: none has a rating, or the "
+                             "runs' level files are not in the results folder."
+                             ).classes("text-sm text-body").mark("peaks-no-levels")
+                    return
                 ui.table(columns=[{"name": key, "label": key, "field": key,
                                    "align": "left" if key in ("loading", "run") else "right"}
                                   for key in rows[0]], rows=rows, row_key="run") \
                     .classes("w-full").props("dense flat bordered").mark("peaks-table")
+                if shown["what"] == urbsresults.LEVEL:
+                    ui.label("The print locations with a rating, from the model's ratings "
+                             "folder, read off each run's level file. A dam's outflow "
+                             "location carries the lake level.").classes("text-xs text-muted")
 
         with ui.row().classes("items-center gap-3"):
             ui.label("Peaks at every print location").classes("font-bold")
-            ui.toggle({urbsresults.PEAK: "Peak flow (m³/s)", urbsresults.TIME: "Time of peak (h)"},
+            ui.toggle({urbsresults.PEAK: "Peak flow (m³/s)", urbsresults.TIME: "Time of peak (h)",
+                       urbsresults.LEVEL: "Peak level (m AHD)"},
                       value=urbsresults.PEAK,
                       on_change=lambda e: (shown.update(what=e.value), draw_peaks())
                       ).props("no-caps dense").mark("peaks-show")

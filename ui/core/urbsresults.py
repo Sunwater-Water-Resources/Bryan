@@ -54,6 +54,7 @@ class ModelConfigError(Exception):
 class Folders:
     storms: Path
     results: Path
+    ratings: Path | None = None     # where the model's rating files are, if it says
 
 
 def folders(model_config) -> Folders:
@@ -69,7 +70,23 @@ def folders(model_config) -> Folders:
         results = paths.regional_results_folder(str(path), data)
     except KeyError as exc:
         raise ModelConfigError(f"{path.name} has no {exc.args[0]}") from exc
-    return Folders(Path(storms), Path(results))
+    ratings = data.get("ratings_folder")
+    return Folders(Path(storms), Path(results),
+                   Path(paths.resolve(str(path.parent), ratings)) if ratings else None)
+
+
+def rated_locations(found: Folders) -> set:
+    """The print locations with a rating: the names of the ``.rat`` files in the model's
+    ratings folder, upper-cased. URBS writes a level only where there is a rating, and
+    cuts the name to eight characters in ``<run>.h``, so this is what says which full
+    name a level column belongs to - ``KROOMBIT`` is the dam, not ``KROOMBIT_DS``."""
+    if found.ratings is None:
+        return set()
+    try:
+        return {file.stem.upper() for file in found.ratings.iterdir()
+                if file.suffix.lower() == ".rat"}
+    except OSError:
+        return set()
 
 
 def finished(results_folder, run_name) -> bool:
@@ -304,14 +321,53 @@ def end_of_run(flows) -> list:
 
 PEAK = "peak"
 TIME = "time"
+LEVEL = "level"
 
 
-def peaks_rows(flows_by_run: dict, loading_of: dict, show: str = PEAK) -> list:
+def level_column(location: str, levels, rated: set | None) -> str | None:
+    """The column of a run's level file that is this print location, or None.
+
+    URBS cuts a name to eight characters there, so the match is by the first eight
+    and only for a location that has a rating (``rated_locations``): ``KROOMBIT_DS``
+    would otherwise take the dam's own column. With no ratings folder to ask, only a
+    name URBS did not have to cut is trusted."""
+    if levels is None:
+        return None
+    if rated is not None and rated:
+        if location.upper() not in rated:
+            return None
+    elif len(location) > 8:
+        return None
+    column = location[:8]
+    return column if column in levels.columns else None
+
+
+def peaks_rows(flows_by_run: dict, loading_of: dict, show: str = PEAK,
+               levels_by_run: dict | None = None, rated: set | None = None) -> list:
     """Events down the side, ``*`` print locations across: the peak flow (m3/s, whole
-    numbers) or the time it came (hours), for the report's table of downstream flows."""
+    numbers), the time it came (hours) or - ``LEVEL`` - the peak level (m AHD, from
+    ``<run>.h``) at the locations that have a rating, for the report's table of
+    downstream flows. The level table keeps only the locations with a level."""
     rows = []
+    levels_by_run = levels_by_run or {}
+    if show == LEVEL:
+        with_level = []
+        for run, flows in flows_by_run.items():
+            for location in flows.columns:
+                if location not in with_level and \
+                        level_column(location, levels_by_run.get(run), rated):
+                    with_level.append(location)
     for run, flows in flows_by_run.items():
         row = {"loading": loading_of.get(run, ""), "run": run}
+        if show == LEVEL:
+            levels = levels_by_run.get(run)
+            for location in with_level:
+                column = level_column(location, levels, rated)
+                values = levels[column].dropna() if column else None
+                row[location] = "" if values is None or values.empty \
+                    else f"{float(values.max()):.2f}"
+            rows.append(row)
+            continue
         for location in flows.columns:
             values = flows[location].dropna()
             if values.empty:

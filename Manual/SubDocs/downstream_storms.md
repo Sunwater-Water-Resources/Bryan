@@ -297,7 +297,12 @@ Callide runs of 21 October 2026 pass it.
 
 Last, **the peaks**: events down the side and every ```*``` location across, as the peak flow in
 m³/s or, switched, the time it came in hours - with **Copy for Word** and **Copy as text** for the
-report.
+report. A third switch, **Peak level (m AHD)**, gives the peak level at the locations that have a
+rating, read off each run's ```<run>.h```: the table keeps only those locations, and a dam's
+outflow location carries the lake level - ```KRM_OUT``` is Kroombit's. Which locations have a
+rating comes from the ```.rat``` files in the model's ```ratings_folder```, because URBS cuts a
+name to eight characters in the level file and ```KROOMBIT_DS``` would otherwise be given the
+dam's own column.
 
 ## The downstream storm config
 

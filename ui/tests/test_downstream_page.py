@@ -238,6 +238,22 @@ async def test_the_results_tab_draws_the_print_locations_and_checks_the_ends(use
     assert row["run"] == "005044_72h_GWL1p3" and row["GOOVIGEN"]
     await user.should_see(marker="copy-word-peaks")
 
+    # the peak level, where the location has a rating and the run a level file
+    from test_urbsresults import DATA, REAL
+    from core import urbsresults
+    (model.parent / "ratings").mkdir()
+    (model.parent / "ratings" / "GOOVIGEN.rat").write_text("")
+    model.write_text(json.dumps({**json.loads(model.read_text()), "ratings_folder": "ratings"}))
+    shutil.copy(DATA / f"{REAL}.h", model.parent / "results" / "005044_72h_GWL1p3.h")
+    user.find(marker="results-reload").click()
+    await user.should_see(marker="peaks-table")
+    next(iter(user.find(marker="peaks-show").elements)).value = urbsresults.LEVEL
+    await user.should_see("A dam's outflow location carries the lake level")
+    table = next(iter(user.find(marker="peaks-table").elements))
+    row, = table.rows
+    expected = urbsresults.read_levels(DATA, REAL)["GOOVIGEN"].max()
+    assert list(row) == ["loading", "run", "GOOVIGEN"] and row["GOOVIGEN"] == f"{expected:.2f}"
+
 
 
 @pytest.mark.asyncio
