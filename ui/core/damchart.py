@@ -3,7 +3,8 @@
 Two dams' levels are metres apart in AHD - Callide's crest is 219.13 m, Kroombit's 270.70 m -
 so they are drawn as **height above each dam's own crest level**: one axis, zero the crest,
 and whether and when each reached it is read straight off. Where a dam has a PMF level it is
-drawn on the same basis.
+drawn on the same basis. A switch on the page draws the same chart in **m AHD** instead, each
+dam against its own crest line, for reading a level off rather than a margin.
 
 The scatter takes every finished run of every selection in the project: one point per run,
 the first dam's margin to its crest across, the second's up. The quadrant above and right of
@@ -25,33 +26,48 @@ def _thin(times, values) -> list:
     return [[float(t), round(float(v), 3)] for t, v in zip(times[::step], values[::step])]
 
 
-def crest_chart(series_by_dam: dict, references: dict, gwl, title="") -> dict:
+def crest_chart(series_by_dam: dict, references: dict, gwl, title="", absolute=False) -> dict:
     """Each dam's level less its crest level through one run. ``series_by_dam`` maps a dam
-    to that series (from ``urbsresults.crest_series``); ``references`` its dam_levels."""
+    to that series (from ``urbsresults.crest_series``); ``references`` its dam_levels.
+
+    With ``absolute`` the same series are drawn in m AHD - each dam's crest added back -
+    so each dam carries its own dashed crest line instead of sharing the zero line, and
+    its PMF level, where it has one, is drawn as given."""
     drawn = []
     for number, (dam, series) in enumerate(series_by_dam.items()):
         if series is None or series.empty:
             continue
         colour = PALETTE[number % len(PALETTE)]
-        line = {"name": dam, "type": "line", "showSymbol": False, "smooth": False,
-                "lineStyle": {"width": 1.8}, "itemStyle": {"color": colour},
-                "data": _thin(list(series.index), list(series.values))}
         crest = level_at(references.get(dam, {}).get(CREST), gwl)
         pmf = level_at(references.get(dam, {}).get("PMF"), gwl)
+        offset = crest if absolute and crest is not None else 0.0
+        line = {"name": dam, "type": "line", "showSymbol": False, "smooth": False,
+                "lineStyle": {"width": 1.8}, "itemStyle": {"color": colour},
+                "data": _thin(list(series.index), list(series.values + offset))}
+        marks = []
+        if absolute and crest is not None:
+            marks.append({"yAxis": round(crest, 3),
+                          "lineStyle": {"type": "dashed", "width": 1.5},
+                          "label": {"formatter": f"{dam} crest"}})
         if crest is not None and pmf is not None:
+            marks.append({"yAxis": round(pmf - crest + offset, 3),
+                          "lineStyle": {"type": "dotted"},
+                          "label": {"formatter": f"{dam} PMF"}})
+        if marks:
             line["markLine"] = {"symbol": "none", "silent": True,
-                                "lineStyle": {"color": colour, "type": "dotted"},
-                                "label": {"formatter": f"{dam} PMF", "color": colour},
-                                "data": [{"yAxis": round(pmf - crest, 3)}]}
+                                "lineStyle": {"color": colour},
+                                "label": {"color": colour},
+                                "data": marks}
         drawn.append(line)
     if not drawn:
         return {"series": []}
-    # the crest itself, common to every dam on this axis
+    # the crest itself, common to every dam on the height-above axis
     crest_line = {"name": "crest", "type": "line", "data": [], "silent": True,
                   "markLine": {"symbol": "none", "silent": True,
                                "lineStyle": {"color": OCHRE, "type": "dashed", "width": 1.5},
                                "label": {"formatter": "dam crest", "color": OCHRE},
                                "data": [{"yAxis": 0}]}}
+    axis_name = "Level (m AHD)" if absolute else "Above the dam crest (m)"
     return {
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 13}},
         "tooltip": {"trigger": "axis", ":valueFormatter": "(v) => v.toFixed(2) + ' m'"},
@@ -59,9 +75,9 @@ def crest_chart(series_by_dam: dict, references: dict, gwl, title="") -> dict:
         "grid": {"left": 70, "right": 40, "top": 64, "bottom": 50},
         "xAxis": {"type": "value", "name": "Time (hours)", "nameLocation": "middle",
                   "nameGap": 30, "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}}},
-        "yAxis": {"type": "value", "name": "Above the dam crest (m)", "nameGap": 45,
+        "yAxis": {"type": "value", "name": axis_name, "nameGap": 45,
                   "scale": True, "splitLine": {"show": True, "lineStyle": {"opacity": 0.25}}},
-        "series": drawn + [crest_line],
+        "series": drawn + ([] if absolute else [crest_line]),
     }
 
 

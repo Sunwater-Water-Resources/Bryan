@@ -265,7 +265,8 @@ or a level that is not a number, when it opens the model.
   **Copy for Word** copies it.
 - **The chart** draws one event's lake levels as **height above each dam's crest**, so dams tens
   of metres apart in AHD share one axis and the crest is zero; a dam's PMF level is a dotted line
-  on the same basis.
+  on the same basis. **Levels in m AHD** redraws it in levels, each dam against its own dashed
+  crest line and its PMF as given, for reading a level off rather than a margin.
 - **The scatter** takes every finished run of every selection in the project, coloured by group:
   the first dam's margin to its crest across, the second's up. The quadrant above and right of
   zero holds the runs that took both dams over their crests.

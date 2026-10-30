@@ -452,23 +452,36 @@ class _DownstreamView:
         gwl_of = {os.path.splitext(s.filename)[0]: s.gwl for s in plan.storms if s.filename}
         runs = [row["run"] for row in rows]
         chart_box = ui.column().classes("w-full")
+        shown = {"run": runs[0], "absolute": False}
 
-        def draw(run) -> None:
+        def draw() -> None:
+            run = shown["run"]
             chart_box.clear()
             frame = urbsresults.read_levels(found.results, run)
             series = {dam: urbsresults.crest_series(frame, dam, levels.get(dam, {}), gwl_of.get(run))
                       for dam in with_crest}
-            options = damchart.crest_chart(series, levels, gwl_of.get(run), title=run)
+            options = damchart.crest_chart(series, levels, gwl_of.get(run), title=run,
+                                           absolute=shown["absolute"])
             with chart_box:
                 if options["series"]:
                     house_echart(options).classes("w-full h-96").mark("crest-chart")
                 else:
                     ui.label("No dam with a crest level in this run.").classes("text-sm text-muted")
 
+        def choose(key, value) -> None:
+            shown[key] = value
+            draw()
+
         if with_crest:
-            ui.select(runs, value=runs[0], label="Event",
-                      on_change=lambda e: draw(e.value)).classes("w-80")
-            draw(runs[0])
+            with ui.row().classes("items-center gap-4"):
+                ui.select(runs, value=runs[0], label="Event",
+                          on_change=lambda e: choose("run", e.value)).classes("w-80")
+                ui.switch("Levels in m AHD", value=False,
+                          on_change=lambda e: choose("absolute", e.value)) \
+                    .mark("crest-absolute") \
+                    .tooltip("Off: height above each dam's own crest, one zero line. "
+                             "On: m AHD, each dam against its own crest line.")
+            draw()
         if len(with_crest) > 1:
             points = urbsresults.margin_points(self.selections, found.results, with_crest,
                                                levels, downstream.selection_label)

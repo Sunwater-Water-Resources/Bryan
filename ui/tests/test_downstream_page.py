@@ -201,6 +201,15 @@ async def test_the_results_tab_holds_each_dam_against_its_crest(user, tmp_path):
     row, = table.rows
     assert row["KROOMBIT to DCL"] == "-2.67 m" and row["KROOMBIT to PMF"] == "not given"
     await user.should_see(marker="crest-chart")
+    chart = next(iter(user.find(marker="crest-chart").elements))
+    assert chart.options["yAxis"]["name"] == "Above the dam crest (m)"
+    # The switch redraws the same event in m AHD, each dam against its own crest.
+    user.find(marker="crest-absolute").click()
+    await user.should_see(marker="crest-chart")
+    chart = next(iter(user.find(marker="crest-chart").elements))
+    assert chart.options["yAxis"]["name"] == "Level (m AHD)"
+    names = [s["name"] for s in chart.options["series"]]
+    assert "crest" not in names and "KROOMBIT" in names
     await user.should_see("not a probability")
 
 

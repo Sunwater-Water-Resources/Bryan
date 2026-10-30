@@ -190,8 +190,23 @@ def test_the_crest_chart_draws_height_above_each_crest():
     drawn = {s["name"]: s for s in options["series"]}
     assert drawn["KROOMBIT"]["data"][3] == [45.0, pytest.approx(268.03 - 270.70)]
     # Callide has a PMF level at GWL 1.3, drawn on the same basis; Kroombit has none
-    assert drawn["CALLIDE"]["markLine"]["data"] == [{"yAxis": pytest.approx(221.50 - 219.13)}]
+    assert [m["yAxis"] for m in drawn["CALLIDE"]["markLine"]["data"]] == \
+        [pytest.approx(221.50 - 219.13)]
     assert "markLine" not in drawn["KROOMBIT"]
+    assert "crest" in drawn and drawn["crest"]["markLine"]["data"] == [{"yAxis": 0}]
+    assert options["yAxis"]["name"] == "Above the dam crest (m)"
+
+    # In m AHD the same series carry their crests back, each dam gets its own crest
+    # line and its PMF as given, and the shared zero line goes.
+    absolute = damchart.crest_chart(series, LEVELS, 1.3, absolute=True)
+    drawn = {s["name"]: s for s in absolute["series"]}
+    assert drawn["KROOMBIT"]["data"][3] == [45.0, pytest.approx(268.03)]
+    assert "crest" not in drawn
+    marks = {m["label"]["formatter"]: m["yAxis"] for m in drawn["CALLIDE"]["markLine"]["data"]}
+    assert marks == {"CALLIDE crest": 219.13, "CALLIDE PMF": 221.50}
+    assert [m["label"]["formatter"] for m in drawn["KROOMBIT"]["markLine"]["data"]] == \
+        ["KROOMBIT crest"]
+    assert absolute["yAxis"]["name"] == "Level (m AHD)"
 
 
 
