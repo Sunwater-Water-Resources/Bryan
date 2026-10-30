@@ -18,9 +18,10 @@ The kinds:
                    the highest ensemble event at the notional AEP adopted on
                    the PMF page).
 ``flood_levels``   The AEP at which the level envelope reaches each of a list of
-                   levels (the dam crest, each embankment crest), rounded to 10.
-                   By default from the critical duration's own realisations; see
-                   ``aep_of_level``.
+                   levels (the dam crest, each embankment crest), to two
+                   significant figures unless the spec says otherwise (see
+                   ``fmt_rounded_aep``). By default from the critical duration's
+                   own realisations; see ``aep_of_level``.
 ``peak_at_aep``    Level, inflow and outflow at one AEP (the AEP of the PMP) for
                    several groups.
 ``ensemble_peak``  The PMF: the largest level in an ensemble database, with the
@@ -98,6 +99,11 @@ class Kind:
     template: dict
 
 
+#: How many significant figures a "1 in N" read off a curve is quoted to, unless the
+#: table's spec says otherwise. Two: 1 in 48, 1 in 700, 1 in 7,000, 1 in 55,000.
+DEFAULT_SIG_FIGS = 2
+
+
 KINDS = {
     DESIGN_FLOODS: Kind(
         DESIGN_FLOODS, "Design flood estimates",
@@ -114,7 +120,7 @@ KINDS = {
         True,
         {"kind": FLOOD_LEVELS, "title": "", "first_column": "Climate Horizon",
          "levels": [], "method": MCDF,
-         "round_to": 10, "duration": True, "sections": []}),
+         "sig_figs": DEFAULT_SIG_FIGS, "duration": True, "sections": []}),
     PEAK_AT_AEP: Kind(
         PEAK_AT_AEP, "Peaks at one AEP",
         "Lake level, inflow and outflow at one AEP - the AEP of the PMP for the "
@@ -136,7 +142,7 @@ KINDS = {
         "AEP, lake level, trigger, simulation and duration, with the PMF's event "
         "(the representative events library).",
         True,
-        {"kind": REPRESENTATIVE, "title": "", "method": MCDF, "round_to": 10,
+        {"kind": REPRESENTATIVE, "title": "", "method": MCDF, "sig_figs": DEFAULT_SIG_FIGS,
          "pmp_aep": DEFAULT_PMP_AEP, "pmp_label": "PMPF",
          "triggers": [],
          "sections": []}),     # [{heading, run, group, pmf: {run, group} | None}]
@@ -202,11 +208,41 @@ def fmt_duration(label) -> str:
         return text
 
 
-def fmt_rounded_aep(aep, round_to=10) -> str:
+def aep_step(aep, sig_figs) -> float:
+    """The rounding step that keeps ``sig_figs`` figures of a "1 in N", never finer
+    than 1: a ladder of 1 under 100, 10 to 1,000, 100 to 10,000 and so on at two."""
+    aep = float(aep)
+    if not aep > 0:
+        return 1.0
+    return max(1.0, 10.0 ** (math.floor(math.log10(aep)) - int(sig_figs) + 1))
+
+
+def fmt_rounded_aep(aep, round_to=None, sig_figs=None) -> str:
+    """A "1 in N" as a table quotes it. ``round_to`` is a fixed step, the older
+    setting, honoured where a saved spec still carries one; otherwise the number is
+    rounded to ``sig_figs`` significant figures (``DEFAULT_SIG_FIGS``), so the step
+    grows with N and a frequent AEP keeps its units."""
     if not _finite(aep):
         return NO_VALUE
-    step = float(round_to or 1)
-    return f"{round(float(aep) / step) * step:,.0f}"
+    aep = float(aep)
+    step = float(round_to) if round_to else aep_step(aep, sig_figs or DEFAULT_SIG_FIGS)
+    return f"{math.floor(aep / step + 0.5) * step:,.0f}"
+
+
+def aep_rounding(spec: dict) -> dict:
+    """The rounding a spec asks for, as ``fmt_rounded_aep`` takes it."""
+    spec = spec or {}
+    return {"round_to": spec.get("round_to") or None,
+            "sig_figs": int(spec.get("sig_figs") or DEFAULT_SIG_FIGS)}
+
+
+def rounding_note(spec: dict) -> str:
+    """The footnote that says how the AEPs were rounded."""
+    rounding = aep_rounding(spec)
+    if rounding["round_to"]:
+        return f"AEPs rounded to the nearest {float(rounding['round_to']):g}."
+    figures = rounding["sig_figs"]
+    return f"AEPs to {figures} significant figure{'s' if figures != 1 else ''}."
 
 
 # -- reading a group -----------------------------------------------------------
@@ -310,6 +346,12 @@ def build(study: Study, spec: dict) -> ReportTable:
     footnote = str(spec.get("footnote") or "").strip()
     if footnote:
         table.footnotes.append(footnote)
+    # A table that reads an AEP off a curve says how it rounded it.
+    if kind == REPRESENTATIVE:
+        table.footnotes.append(rounding_note(spec))
+    elif kind == DESIGN_FLOODS and spec.get("dcf") and _finite(spec["dcf"].get("level")):
+        table.footnotes.append("Dam crest flood " + rounding_note(spec["dcf"]).replace(
+            "AEPs ", "AEP ", 1))
     return table
 
 
@@ -368,7 +410,7 @@ def _dcf_row(study, curves, dcf, table) -> list:
         table.problems.append(f"DCF ({level:.2f} m) {problem}")
     if not _finite(aep):
         return []
-    label = f"{fmt_rounded_aep(aep, dcf.get('round_to', 10))} ({dcf.get('label') or 'DCF'})"
+    label = f"{fmt_rounded_aep(aep, **aep_rounding(dcf))} ({dcf.get('label') or 'DCF'})"
     return [(aep, [label, "", "", fmt_level(level), fmt_duration(duration)],
              {"bold": True, "shaded": True})]
 
@@ -417,7 +459,7 @@ def _flood_levels(study: Study, spec: dict) -> ReportTable:
     if spec.get("duration", True):
         header.append("Critical duration (h)")
     table = ReportTable(header=header, align=["left"] + ["center"] * (len(header) - 1))
-    round_to = spec.get("round_to", 10)
+    rounding = aep_rounding(spec)
 
     for heading, row in _rows(spec):
         if row is None:
@@ -435,7 +477,7 @@ def _flood_levels(study: Study, spec: dict) -> ReportTable:
         for item in levels:
             aep, duration, problem = aep_of_level(study, curves, item["level"],
                                                   spec.get("method", MCDF))
-            cells.append(fmt_rounded_aep(aep, round_to))
+            cells.append(fmt_rounded_aep(aep, **rounding))
             if problem:
                 table.problems.append(f"{label}: {item.get('label') or item['level']} "
                                       f"({float(item['level']):.2f} m) {problem}")
@@ -444,6 +486,7 @@ def _flood_levels(study: Study, spec: dict) -> ReportTable:
         if spec.get("duration", True):
             cells.append(fmt_duration(first_duration))
         table.add(cells)
+    table.footnotes.append(rounding_note(spec))
     return table
 
 
@@ -649,7 +692,7 @@ def _representative(study: Study, spec: dict) -> ReportTable:
                 trigger = ((target.name or "").strip() or (target.comment or "").strip()
                            or triggers.get(round(level, 3), ""))
                 rows.append((aep if _finite(aep) else math.inf,
-                             [fmt_rounded_aep(aep, spec.get("round_to", 10)),
+                             [fmt_rounded_aep(aep, **aep_rounding(spec)),
                               fmt_level(level), trigger, str(target.picked), duration]))
             else:
                 aep = float(target.value)

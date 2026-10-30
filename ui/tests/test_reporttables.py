@@ -161,7 +161,24 @@ def sections(*rows, heading="AEP for current RFSL of 215.5 m AHD"):
     return [{"heading": heading, "rows": list(rows)}]
 
 
-def test_flood_levels_read_the_envelope_and_round_to_ten(study):
+def test_an_aep_is_quoted_to_two_figures_unless_told_otherwise():
+    # the step grows with N and is never finer than 1
+    assert [rt.fmt_rounded_aep(a) for a in (7.4, 48.4, 704, 6982, 54942, 1_850_000)] == \
+        ["7", "48", "700", "7,000", "55,000", "1,900,000"]
+    assert rt.fmt_rounded_aep(704, sig_figs=3) == "704"
+    assert rt.fmt_rounded_aep(54942, sig_figs=3) == "54,900"
+    assert rt.fmt_rounded_aep(26810, sig_figs=1) == "30,000"
+    # a saved fixed step still wins
+    assert rt.fmt_rounded_aep(48.4, round_to=10) == "50"
+    assert rt.fmt_rounded_aep(26810, round_to=10) == "26,810"
+    assert rt.fmt_rounded_aep(float("nan")) == rt.NO_VALUE
+    assert rt.aep_rounding({}) == {"round_to": None, "sig_figs": 2}
+    assert rt.aep_rounding({"round_to": 10, "sig_figs": 3}) == {"round_to": 10, "sig_figs": 3}
+    assert rt.rounding_note({"sig_figs": 3}) == "AEPs to 3 significant figures."
+    assert rt.rounding_note({"round_to": 10}) == "AEPs rounded to the nearest 10."
+
+
+def test_flood_levels_read_the_envelope_and_quote_two_figures(study):
     spec = rt.new_spec(rt.FLOOD_LEVELS)
     spec["levels"] = [{"label": "DCF", "level": 219.13}, {"label": "Right", "level": 221.5}]
     spec["method"] = rt.ENVELOPE
@@ -175,10 +192,19 @@ def test_flood_levels_read_the_envelope_and_round_to_ten(study):
     near = rows_of(table)[2]
     envelope = rt.group_curves(study, "E099 RFSL", GROUP).envelope("level")
     expected = rt.EVENTS.aep_for_level(envelope, 219.13).aep
-    assert near[1] == f"{round(expected / 10) * 10:,.0f}"
+    assert near[1] == rt.fmt_rounded_aep(expected)
     assert near[2] == rt.NO_VALUE                     # 221.5 m is above the curve
     assert near[3] == "36"
     assert any("above the top of the level curve" in p for p in table.problems)
+    assert table.footnotes == ["AEPs to 2 significant figures."]
+
+    # Three figures on request; a spec saved with the older fixed step keeps it.
+    spec["sig_figs"] = 3
+    assert rows_of(rt.build(study, spec))[2][1] == rt.fmt_rounded_aep(expected, sig_figs=3)
+    spec["round_to"] = 10
+    older = rt.build(study, spec)
+    assert rows_of(older)[2][1] == f"{round(expected / 10) * 10:,.0f}"
+    assert older.footnotes == ["AEPs rounded to the nearest 10."]
 
 
 def test_peaks_at_one_aep_follow_the_level_unless_told_otherwise(study):

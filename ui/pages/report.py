@@ -532,6 +532,7 @@ class _TableEditor:
                     .on_value_change(lambda e: dcf.update(level=e.value))
                 ui.input("Label", value=dcf.get("label", "DCF")).classes("w-24") \
                     .props("dense").on_value_change(lambda e: dcf.update(label=e.value))
+                self._sig_figs(dcf, "dcf-sig-figs")
                 ui.label("AEP from the critical duration's realisations"
                          ).classes("text-xs text-muted")
         pmf = self.spec.get("pmf")
@@ -717,10 +718,7 @@ class _TableEditor:
                     .on_value_change(lambda e: self.spec.update(
                         levels=reporttables.parse_levels(e.value)))
                 with ui.column().classes("gap-1"):
-                    ui.number("Round AEPs to", value=self.spec.get("round_to", 10),
-                              min=1, step=1) \
-                        .props("dense").classes("w-32") \
-                        .on_value_change(lambda e: self.spec.update(round_to=e.value))
+                    self._sig_figs(self.spec, "level-sig-figs")
                     ui.checkbox("Critical duration column",
                                 value=self.spec.get("duration", True),
                                 on_change=lambda e: self.spec.update(duration=e.value))
@@ -736,6 +734,8 @@ class _TableEditor:
                 .classes("w-48").props("dense") \
                 .on_value_change(lambda e: self.spec.update(
                     aep=(reporttables.parse_aeps(e.value) or [None])[0]))
+        if key == reporttables.REPRESENTATIVE:
+            self._sig_figs(self.spec, "rep-sig-figs")
         if key in (reporttables.PEAK_AT_AEP, reporttables.ENSEMBLE_PEAK):
             ui.radio({reporttables.AT_LEVEL: "Inflow and outflow of the storm that "
                                              "gives the peak level",
@@ -771,6 +771,29 @@ class _TableEditor:
         ui.button("Add section", icon="add",
                   on_click=lambda: self._append(sections, {"heading": "", "rows": []})) \
             .props("outline dense no-caps").mark("add-section")
+
+    def _sig_figs(self, spec: dict, mark: str) -> None:
+        """How many significant figures the AEPs read off a curve are quoted to. A spec
+        saved with the older fixed step keeps it until the figures are set, and says so."""
+        def set_figures(value) -> None:
+            figures = int(value) if value else None
+            if figures:
+                spec["sig_figs"] = figures
+                spec.pop("round_to", None)
+            else:
+                spec.pop("sig_figs", None)
+
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            ui.number("AEP significant figures",
+                      value=spec.get("sig_figs", reporttables.DEFAULT_SIG_FIGS),
+                      min=1, max=6, step=1, format="%d") \
+                .props("dense").classes("w-44").mark(mark) \
+                .tooltip("Two: 1 in 48, 1 in 700, 1 in 7,000, 1 in 55,000. Three keeps "
+                         "1 in 704 and 1 in 54,900 while a frequent AEP stays the same.") \
+                .on_value_change(lambda e: set_figures(e.value))
+            if spec.get("round_to"):
+                ui.label(f"Rounding to the nearest {float(spec['round_to']):g} - the older "
+                         f"setting - until the figures are set.").classes("text-xs text-muted")
 
     def _row_editor(self, rows, index, row, mark) -> None:
         with ui.row().classes("w-full items-center gap-2 no-wrap"):
