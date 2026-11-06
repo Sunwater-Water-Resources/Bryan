@@ -21,6 +21,41 @@ def _options(study, chosen=()) -> dict:
     return {hour: f"{hour:g} h" for hour in hours}
 
 
+class Deferred:
+    """A multi-select's value, applied once its list closes rather than per click.
+
+    Applying the study default rebuilds every open table or figure, so applying
+    it on each tick - and, on the Tables page, rebuilding the select under the
+    cursor - made picking several durations a fight. While the list is open the
+    picks are only held; they are applied when it closes, and only if they
+    differ from what was last applied. A change with the list shut (a chip's
+    cross, the clear button) is one action, so it applies at once.
+    """
+
+    def __init__(self, value, apply) -> None:
+        self.applied = studies.parse_hours(value)
+        self.value = list(self.applied)
+        self.apply = apply
+        self.is_open = False
+
+    def opened(self) -> None:
+        self.is_open = True
+
+    def closed(self) -> None:
+        self.is_open = False
+        self._flush()
+
+    def changed(self, value) -> None:
+        self.value = studies.parse_hours(value)
+        if not self.is_open:
+            self._flush()
+
+    def _flush(self) -> None:
+        if self.value != self.applied:
+            self.applied = list(self.value)
+            self.apply(list(self.value))
+
+
 def default_card(study, on_change) -> None:
     """The study's default: a card for the top of the Tables and Figures pages.
 
@@ -29,8 +64,8 @@ def default_card(study, on_change) -> None:
     """
     chosen = studies.default_durations(study)
 
-    def changed(event) -> None:
-        studies.set_default_durations(study, event.value or [])
+    def store(hours) -> None:
+        studies.set_default_durations(study, hours)
         try:
             study.save()
         except OSError as exc:
@@ -38,15 +73,21 @@ def default_card(study, on_change) -> None:
             return
         on_change()
 
+    pending = Deferred(chosen, store)
+
     with ui.card().classes("w-full gap-1").mark("study-durations"):
         with ui.row().classes("w-full items-center gap-4 no-wrap"):
             with ui.column().classes("gap-0 w-80 shrink-0"):
                 ui.label("Storm durations").classes("font-bold")
                 ui.label("The critical duration of every table and figure is taken over "
                          "these, unless the table or figure chooses its own. None chosen "
-                         "is every duration.").classes("text-xs text-muted")
+                         "is every duration. Applied when the list closes."
+                         ).classes("text-xs text-muted")
             ui.select(_options(study, chosen), multiple=True, value=chosen,
-                      label="Study default (blank: all durations)", on_change=changed) \
+                      label="Study default (blank: all durations)",
+                      on_change=lambda e: pending.changed(e.value)) \
+                .on("popup-show", lambda _: pending.opened()) \
+                .on("popup-hide", lambda _: pending.closed()) \
                 .classes("grow").props("dense use-chips clearable") \
                 .mark("study-durations-select")
 

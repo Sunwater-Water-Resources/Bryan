@@ -80,7 +80,9 @@ class _ReportView:
             self._study_card()
             self._runs_card()
             durationpicker.default_card(self.study, self._durations_changed)
-            self._tables()
+            self.tables_box = ui.column().classes("w-full gap-4")
+            with self.tables_box:
+                self._tables()
 
     def save(self) -> None:
         try:
@@ -106,9 +108,16 @@ class _ReportView:
                               on_click=lambda: ui.navigate.to("/study")).props("flat")
 
     def _durations_changed(self) -> None:
-        """A new study default changes every table that follows it: build afresh."""
+        """A new study default changes every table that follows it: build them afresh.
+
+        Only the tables - redrawing the page would rebuild the select that raised
+        this, and re-read every run for the runs card, for nothing.
+        """
         self.built, self.stale = {}, {}
-        self.redraw()
+        self.tables_box.clear()
+        self.cards = {}
+        with self.tables_box:
+            self._tables()
 
     def _refresh(self) -> None:
         studies.forget_runs()

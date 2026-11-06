@@ -185,3 +185,33 @@ def test_a_figure_s_group_curve_is_the_envelope_over_its_durations(study, tmp_pa
     assert data.to_job(tmp_path / "x.png")["durations"] == [36.0]
     assert figures.build(study, level_figure(durations="all")) \
         .to_job(tmp_path / "x.png")["durations"] == "all"
+
+
+# -- the study default's select: applied once its list closes --------------------
+
+def test_picks_made_with_the_list_open_are_applied_once_when_it_closes():
+    pytest.importorskip("nicegui")
+    from durationpicker import Deferred
+
+    applied = []
+    pending = Deferred([24], applied.append)
+    pending.opened()
+    for value in ([24, 36], [24, 36, 72], [36, 72]):
+        pending.changed(value)
+    assert applied == []                           # nothing rebuilt while picking
+    pending.closed()
+    assert applied == [[36.0, 72.0]]
+    pending.opened()
+    pending.closed()                               # opened and shut, nothing changed
+    assert applied == [[36.0, 72.0]]
+
+
+def test_a_change_with_the_list_shut_applies_at_once():
+    pytest.importorskip("nicegui")
+    from durationpicker import Deferred
+
+    applied = []
+    pending = Deferred([24, 36], applied.append)
+    pending.changed([36])                          # a chip's cross
+    pending.changed([])                            # the clear button
+    assert applied == [[36.0], []]

@@ -298,6 +298,8 @@ async def test_the_study_default_is_set_on_the_page_and_reaches_the_tables(user,
     select.set_value([36.0])
     await asyncio.sleep(0.2)
     assert studies.default_durations(studies.load_study(opened.path)) == [36.0]
+    # only the tables are rebuilt: the select being used is left where it is
+    assert next(iter(user.find(marker="study-durations-select").elements)) is select
     label = next(iter(user.find(marker="describe-table-26-near-term").elements))
     assert label.text.endswith("36 h (study default)")
     html = await preview_text(user, "table-26-near-term")
