@@ -1,6 +1,6 @@
 """Copy for Word, wherever a page shows a table.
 
-The Report page's tables, the Results page's and the Ensemble page's critical
+The Tables page's tables, the Results page's and the Ensemble page's critical
 durations all go to the clipboard the same way (core/wordtable.py): as a
 formatted table in the report's style, which Word pastes, and as tab-separated
 text, which Excel takes. The style is the open study's ``"word"`` settings,

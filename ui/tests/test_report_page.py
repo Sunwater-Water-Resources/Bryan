@@ -75,14 +75,14 @@ async def preview_text(user, table_id, seconds=10.0):
 async def test_without_a_study_the_page_sends_you_to_the_study_page(user, private_settings):
     from state import STATE
     STATE.study = None
-    await user.open("/report")
+    await user.open("/tables")
     await user.should_see("No study is open")
     await user.should_see("Go to Study")
 
 
 @pytest.mark.asyncio
 async def test_the_table_is_built_and_previewed(user, opened):
-    await user.open("/report")
+    await user.open("/tables")
     await user.should_see("Table 26 near-term")
     html = await preview_text(user, "table-26-near-term")
     assert "216.00" in html and "950" in html
@@ -94,7 +94,7 @@ async def test_copy_as_text_puts_the_table_on_the_clipboard(user, opened, monkey
     copied = []
     monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
 
-    await user.open("/report")
+    await user.open("/tables")
     await preview_text(user, "table-26-near-term")
     user.find(marker="copy-text-table-26-near-term").click()
     await asyncio.sleep(0.2)
@@ -112,7 +112,7 @@ async def test_copy_for_word_sends_the_html_and_says_what_it_managed(user, opene
         return "html"
 
     monkeypatch.setattr(report_page.ui, "run_javascript", fake_run_javascript)
-    await user.open("/report")
+    await user.open("/tables")
     await preview_text(user, "table-26-near-term")
     user.find(marker="copy-word-table-26-near-term").click()
     await user.should_see("Copied - paste into Word")
@@ -121,7 +121,7 @@ async def test_copy_for_word_sends_the_html_and_says_what_it_managed(user, opene
 
 @pytest.mark.asyncio
 async def test_the_study_is_named_with_a_way_to_change_it(user, opened):
-    await user.open("/report")
+    await user.open("/tables")
     await user.should_see(marker="report-study")
     await user.should_see("Change study")
 
@@ -162,7 +162,7 @@ def _chevron(user, table_id):
 @pytest.mark.asyncio
 async def test_tables_open_folded_and_named_with_nothing_built(user, two_tables,
                                                                counted_builds):
-    await user.open("/report")
+    await user.open("/tables")
     await user.should_see(marker="table-contents")
     await user.should_see("1. Table 26 near-term")
     await user.should_see("2. Table 27 long-term")
@@ -178,14 +178,14 @@ async def test_opening_one_builds_only_that_one_and_is_remembered(user, two_tabl
                                                                   counted_builds):
     from state import STATE
     first, second = two_tables
-    await user.open("/report")
+    await user.open("/tables")
     await preview_text(user, second)
     assert counted_builds == [second]
     await user.should_see(marker=f"copy-word-{second}")
     await user.should_not_see(marker=f"copy-word-{first}")
     assert STATE.settings.open_tables_for(STATE.study.path) == {second}
 
-    await user.open("/report")                  # it stays open
+    await user.open("/tables")                  # it stays open
     assert _chevron(user, second) == "expand_more"
     assert _chevron(user, first) == "chevron_right"
 
@@ -193,7 +193,7 @@ async def test_opening_one_builds_only_that_one_and_is_remembered(user, two_tabl
 @pytest.mark.asyncio
 async def test_open_all_and_fold_all(user, two_tables, counted_builds):
     from state import STATE
-    await user.open("/report")
+    await user.open("/tables")
     user.find(marker="open-all-tables").click()
     for table_id in two_tables:
         await preview_text(user, table_id)
@@ -206,7 +206,7 @@ async def test_open_all_and_fold_all(user, two_tables, counted_builds):
 @pytest.mark.asyncio
 async def test_the_contents_open_the_table_they_name(user, two_tables):
     second = two_tables[1]
-    await user.open("/report")
+    await user.open("/tables")
     user.find(marker=f"contents-{second}").click()
     assert _chevron(user, second) == "expand_more"
     await preview_text(user, second)
@@ -222,7 +222,7 @@ async def test_a_table_with_problems_says_so_on_its_folded_line(user, opened):
     opened.save()
     from state import STATE
     STATE.open_study(opened.path)
-    await user.open("/report")
+    await user.open("/tables")
     await preview_text(user, stored["id"])
     user.find(marker=f"fold-{stored['id']}").click()
     await user.should_see("to read")
@@ -237,7 +237,7 @@ async def test_a_table_from_stale_results_says_so_and_again_when_copied(user, op
     monkeypatch.setattr(nicegui_ui.clipboard, "write", copied.append)
     make_stale(opened)
     table_id = "table-26-near-term"
-    await user.open("/report")
+    await user.open("/tables")
     await preview_text(user, table_id)
     await user.should_see("dam.sq changed after the run")
     await user.should_see("results out of date")
@@ -261,7 +261,7 @@ async def test_a_calibration_table_previews_shaded_and_its_editor_opens(user, op
     opened.save()
     STATE.open_study(opened.path)              # the page reads the study as saved
 
-    await user.open("/report")
+    await user.open("/tables")
     html = await preview_text(user, "table-16-calibration")
     assert "Flow (m<sup>3</sup>/s)" in html and "-14%" in html
     assert "background:#92D050" in html
@@ -270,3 +270,53 @@ async def test_a_calibration_table_previews_shaded_and_its_editor_opens(user, op
     await user.should_see(marker="calibration-event-0")
     await user.should_see(marker="add-event")
     await user.should_see("Observed flow averaged over")
+
+
+# -- the storm durations a critical duration is taken over -------------------------
+
+def test_the_old_address_still_opens_the_page_and_its_table():
+    from starlette.requests import Request
+    from pages.report import old_address
+
+    def request(query: bytes):
+        return Request({"type": "http", "method": "GET", "path": "/report",
+                        "query_string": query, "headers": []})
+
+    assert old_address(request(b"")).headers["location"] == "/tables"
+    assert old_address(request(b"table=t-27")).headers["location"] == "/tables?table=t-27"
+
+
+@pytest.mark.asyncio
+async def test_the_study_default_is_set_on_the_page_and_reaches_the_tables(user, opened):
+    from core import study as studies
+
+    await user.open("/tables")
+    await user.should_see("Storm durations")
+    assert "72" in await preview_text(user, "table-26-near-term")
+    select = next(iter(user.find(marker="study-durations-select").elements))
+    assert set(select.options) == {36.0, 72.0}
+    select.set_value([36.0])
+    await asyncio.sleep(0.2)
+    assert studies.default_durations(studies.load_study(opened.path)) == [36.0]
+    label = next(iter(user.find(marker="describe-table-26-near-term").elements))
+    assert label.text.endswith("36 h (study default)")
+    html = await preview_text(user, "table-26-near-term")
+    assert "215.80" in html                  # the 36 h level at 1 in 10, not 72 h's 216.00
+
+
+@pytest.mark.asyncio
+async def test_a_table_chooses_its_own_durations_in_its_editor(user, opened):
+    from core import study as studies
+
+    await user.open("/tables")
+    user.find(marker="edit-table-26-near-term").click()
+    mode = next(iter(user.find(marker="table-durations-mode").elements))
+    mode.set_value("choose")
+    await asyncio.sleep(0.1)
+    chosen = next(iter(user.find(marker="table-durations-select").elements))
+    assert chosen.value == [36.0, 72.0]       # starts from what the table reads now
+    chosen.set_value([72.0])
+    user.find(marker="save-table").click()
+    await asyncio.sleep(0.2)
+    stored = studies.load_study(opened.path).table("table-26-near-term")
+    assert stored["durations"] == [72.0]

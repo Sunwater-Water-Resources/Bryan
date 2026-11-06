@@ -1,4 +1,4 @@
-"""Report: the design flood report's result tables, straight from the runs.
+"""Tables: the design flood report's result tables, straight from the runs.
 
 A **study file** names the runs a report is written from - one sims_config.json
 each, RFSL and FSL, the adopted run and the one it replaced - and holds one entry
@@ -7,19 +7,27 @@ here as it will paste, with **Copy for Word** (a formatted table) and **Copy as
 text** (tab-separated, for Excel). When a rating is revised, re-run the groups
 and copy the tables again; nothing is typed.
 
+The **storm durations** card sets the study's default for which durations a
+table's critical duration is taken over; each table can follow it, take every
+duration or choose its own (``durationpicker.py``, ``core/study.durations_for``).
+
 The study file is saved on every change. See ``core/study.py`` for its format and
-``core/reporttables.py`` for what each kind of table computes.
+``core/reporttables.py`` for what each kind of table computes. The route is
+``/tables``; ``/report``, the page's old name, redirects to it.
 """
 
 from __future__ import annotations
 
 import copy
 
+from fastapi import Request
+from fastapi.responses import RedirectResponse
 from nicegui import app, run, ui
 
 from core import calibration, reporttables, staleness, study as studies, wordtable
 from layout import confirm, no_study, page_frame, severity_banner
 import address
+import durationpicker
 from clipboard import copy_table
 from state import STATE
 from widgets import path_input
@@ -34,8 +42,15 @@ async def _off_thread(function, *args):
 
 
 def report_page() -> None:
-    with page_frame("Report"):
+    with page_frame("Tables"):
         _ReportView().build()
+
+
+def old_address(request: Request) -> RedirectResponse:
+    """``/report`` was this page's address: keep a bookmark or a sent link working,
+    query and all (``?table=``)."""
+    query = request.url.query
+    return RedirectResponse("/tables" + (f"?{query}" if query else ""))
 
 
 class _ReportView:
@@ -64,6 +79,7 @@ class _ReportView:
                 return
             self._study_card()
             self._runs_card()
+            durationpicker.default_card(self.study, self._durations_changed)
             self._tables()
 
     def save(self) -> None:
@@ -88,6 +104,11 @@ class _ReportView:
                         .tooltip("Re-read the results - after a re-run")
                     ui.button("Change study", icon="swap_horiz",
                               on_click=lambda: ui.navigate.to("/study")).props("flat")
+
+    def _durations_changed(self) -> None:
+        """A new study default changes every table that follows it: build afresh."""
+        self.built, self.stale = {}, {}
+        self.redraw()
 
     def _refresh(self) -> None:
         studies.forget_runs()
@@ -180,7 +201,7 @@ class _ReportView:
         self._contents()
         for spec in self.study.tables:
             self._table_card(spec)
-        named = address.param("table")           # /report?table=... opens and shows it
+        named = address.param("table")           # /tables?table=... opens and shows it
         if named in self.cards and not self._went_to:
             self._went_to = True
             ui.timer(0.3, lambda: self._go_to(named), once=True)
@@ -219,7 +240,8 @@ class _ReportView:
                         .classes("text-2xl text-muted").mark(f"chevron-{table_id}")
                     with ui.column().classes("gap-0"):
                         ui.label(spec.get("title") or "(untitled)").classes("font-bold")
-                        ui.label(_describe(spec, kind)).classes("text-xs text-muted")
+                        ui.label(_describe(self.study, spec, kind)) \
+                            .classes("text-xs text-muted").mark(f"describe-{table_id}")
                 status = ui.row().classes("items-center no-wrap").mark(f"status-{table_id}")
                 with ui.row().classes("gap-1 no-wrap"):
                     ui.button(icon="edit", on_click=lambda: self._edit(table_id)) \
@@ -400,16 +422,21 @@ class _ReportView:
         self.redraw()
 
 
-def _describe(spec, kind) -> str:
+def _describe(study, spec, kind) -> str:
     label = kind.label if kind else f"unknown kind {spec.get('kind')!r}"
     sources = studies.table_sources(spec)
     if not sources:
-        return label
-    if len(sources) == 1:
+        text = label
+    elif len(sources) == 1:
         source = sources[0]
-        return f"{label} - {source.get('group') or '(no group)'} in {source.get('run') or '(no run)'}"
-    runs = sorted({source.get("run") for source in sources if source.get("run")})
-    return f"{label} - {len(sources)} groups from {', '.join(runs)}"
+        text = (f"{label} - {source.get('group') or '(no group)'} in "
+                f"{source.get('run') or '(no run)'}")
+    else:
+        runs = sorted({source.get("run") for source in sources if source.get("run")})
+        text = f"{label} - {len(sources)} groups from {', '.join(runs)}"
+    durations = (durationpicker.describe(study, spec)
+                 if spec.get("kind") in reporttables.DURATION_KINDS else "")
+    return f"{text} - {durations}" if durations else text
 
 
 # -- editing one table ---------------------------------------------------------
@@ -463,6 +490,8 @@ class _TableEditor:
                          "results table shades its cells by.").classes("text-sm text-body")
             else:
                 self._multi()
+            if self.kind.key in reporttables.DURATION_KINDS:
+                durationpicker.spec_picker(self.study, self.spec, what="table")
             ui.input("Footnote, pasted under the table", value=self.spec.get("footnote", "")) \
                 .classes("w-full").props("dense") \
                 .on_value_change(lambda e: self.spec.update(footnote=e.value))
@@ -606,12 +635,6 @@ class _TableEditor:
                          value=" | ".join(spec.get("columns") or [])) \
                     .classes("w-full").props("dense") \
                     .on("blur", lambda e: self._set_columns(e.sender.value))
-                ui.input("Durations to consider (h), blank for all",
-                         value=" ".join(f"{h:g}" for h in spec.get("durations") or [])) \
-                    .classes("w-full").props("dense") \
-                    .on_value_change(lambda e: spec.update(
-                        durations=[float(token) for token in str(e.value).replace(",", " ").split()
-                                   if token.replace(".", "", 1).isdigit()]))
         columns = spec.get("columns") or []
         sections = spec.setdefault("sections", [])
         for index, section in enumerate(sections):

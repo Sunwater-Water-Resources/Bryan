@@ -250,8 +250,11 @@ Settings are saved as they change to `lake_frequency.json` beside the
 sims_config.json, and fitted results are kept in `_lake_frequency/` so the curves
 come back without resampling.
 
-**Report** — the design flood report's result tables, straight from the
-runs, with **Copy for Word** on each. Tables open folded to one line and are
+**Tables** (once called Report; `/report` still redirects) — the design flood
+report's result tables, straight from the runs, with **Copy for Word** on each.
+Which storm durations a critical duration is taken over is a study default (the
+**Storm durations** card, shared with Figures) that each table and figure can
+override. Tables open folded to one line and are
 built only when opened; a contents list opens and scrolls to one.
 
 A **study file** (`bryan_study.json`, at the top of the study) names the runs a

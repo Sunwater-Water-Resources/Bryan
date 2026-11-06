@@ -54,7 +54,7 @@ def _saved(study):
 
 @pytest.mark.asyncio
 async def test_a_run_is_removed_only_when_confirmed(user, opened):
-    await user.open("/report")
+    await user.open("/tables")
     user.find(marker="remove-run-E099 RFSL").click()
     await user.should_see(marker="confirm-dialog")
     await user.should_see("Table 26 near-term")          # the tables left naming it
@@ -68,7 +68,7 @@ async def test_a_run_is_removed_only_when_confirmed(user, opened):
 
 @pytest.mark.asyncio
 async def test_a_table_is_removed_only_when_confirmed(user, opened):
-    await user.open("/report")
+    await user.open("/tables")
     user.find(marker="remove-table-26-near-term").click()
     user.find(marker="confirm-cancel").click()
     assert len(_saved(opened)["tables"]) == 1

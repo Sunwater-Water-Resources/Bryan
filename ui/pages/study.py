@@ -22,7 +22,7 @@ from state import STATE
 from widgets import EITHER, path_input, path_list
 
 # The pages that read the study, and what each keeps in it.
-READERS = (("Report", "/report", "the runs and the report tables"),
+READERS = (("Tables", "/tables", "the runs and the report tables"),
            ("PMF", "/pmf", "the PMF groups and the adopted notional AEP"),
            ("Figures", "/figures", "the report figures"),
            ("Lake record", "/lake-record", "the lake level record and its four steps"))
@@ -300,7 +300,7 @@ class _StudyView:
     def _contents_card(self) -> None:
         found = contents(STATE.study)
         counts = {
-            "/report": (_plural(len(found["runs"]), "run") + ", "
+            "/tables": (_plural(len(found["runs"]), "run") + ", "
                         + _plural(found["tables"], "table")),
             "/pmf": _plural(found["pmf_groups"], "PMF group"),
             "/figures": _plural(found["figures"], "figure"),

@@ -33,7 +33,7 @@ SECTIONS = {
     "Events": (HOME, "Choosing representative events"),
     "Lake levels": (HOME, "Lake level frequency"),
     "Downstream": ("downstream_storms", ""),
-    "Report": (HOME, "Report tables"),
+    "Tables": (HOME, "Tables"),
     "PMF": (HOME, "The PMF"),
     "Figures": (HOME, "Report figures"),
     "Lake record": (HOME, "Lake record"),

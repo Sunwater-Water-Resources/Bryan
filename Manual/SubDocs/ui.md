@@ -80,7 +80,7 @@ A study saved before the dam inputs existed takes them from its Lake record sett
 
 A sims_config.json and its simulation list are one **run**, E013 RFSL say. The Select, Run, Results, Ensemble, Events, Lake levels and Downstream pages all work on the one opened on the **Simulations** page.
 
-With a study open, the page lists the study's runs first: **Open** beside one loads it and goes to Select. The one already open is marked, and a run whose sims_config.json has gone is marked *not found*. Any other sims_config.json is opened by its path, or from the recent ones below it. When that one is not among the study's runs, the page offers **Add to study** with a name guessed from its folder and whether it is the RFSL or FSL list (```runs/E013/CLD_RFSL_mc_sims_01.json``` becomes *E013 RFSL*). The Report page renames and removes runs.
+With a study open, the page lists the study's runs first: **Open** beside one loads it and goes to Select. The one already open is marked, and a run whose sims_config.json has gone is marked *not found*. Any other sims_config.json is opened by its path, or from the recent ones below it. When that one is not among the study's runs, the page offers **Add to study** with a name guessed from its folder and whether it is the RFSL or FSL list (```runs/E013/CLD_RFSL_mc_sims_01.json``` becomes *E013 RFSL*). The Tables page renames and removes runs.
 
 ### The runs panel
 
@@ -90,7 +90,7 @@ The sums are kept for five minutes, or until the run's sims list or config chang
 
 ### Addresses
 
-A page's address carries what it is showing, so **Back** returns to it and a view can be bookmarked or sent: ```/results?run=E013+RFSL&group=RFSL_Design_GWL1p3&type=Peak+lake+level```. Every page names the open run by the study's name for it, and an address naming another study run opens that one first - a link sent to a colleague opens the run it was made on, not whichever one they last had open. The Results page keeps its group, result type and tab; the Ensemble and Events pages their group (and the Ensemble page its result); the Select page its group and status filters; the Report page the table last opened, which ```?table=``` opens and scrolls to. The address is replaced as the view changes rather than added to, so **Back** goes to the previous page, not the previous tick box.
+A page's address carries what it is showing, so **Back** returns to it and a view can be bookmarked or sent: ```/results?run=E013+RFSL&group=RFSL_Design_GWL1p3&type=Peak+lake+level```. Every page names the open run by the study's name for it, and an address naming another study run opens that one first - a link sent to a colleague opens the run it was made on, not whichever one they last had open. The Results page keeps its group, result type and tab; the Ensemble and Events pages their group (and the Ensemble page its result); the Select page its group and status filters; the Tables page the table last opened, which ```?table=``` opens and scrolls to (an old ```/report``` address still works, and goes to ```/tables```). The address is replaced as the view changes rather than added to, so **Back** goes to the previous page, not the previous tick box.
 
 ## Choosing simulations
 
@@ -172,7 +172,7 @@ Note also that the margin *at* a crossover is near zero whatever the crossover m
 
 ### Copying the table
 
-**Copy for Word** above the critical durations table copies it as it is shown - the durations ticked, the critical duration and the margin - in the report's table style, as the Report page does (see [Copying](#copying)); **Copy as text** gives the tab-separated form for Excel. The Ensemble page's table copies the same way.
+**Copy for Word** above the critical durations table copies it as it is shown - the durations ticked, the critical duration and the margin - in the report's table style, as the Tables page does (see [Copying](#copying)); **Copy as text** gives the tab-separated form for Excel. The Ensemble page's table copies the same way.
 
 ### Exporting the analysis
 
@@ -321,7 +321,7 @@ A **lake level** loading is converted to an AEP by reading it off the level freq
 
 The arrows on a loading's row **move it up or down** the list, which is the order of the cards, the exported table and the event plots; a new loading is added at the bottom. In each card's table the **chosen event's row is shaded**, so it can be found again after scrolling the table sideways. Clicking a row previews its hydrographs without choosing it; when the preview is not the chosen event - a row clicked to look at it, or a different event picked after previewing - a warning above the plot says so, and the plot's title turns orange and carries *NOT THE CHOSEN EVENT* across it.
 
-Each loading can carry a **name** - *dam crest flood*, *right embankment overtopping* - typed in the box at the start of its row. It is optional and only a label: it heads the loading's card, goes into the saved selection, the exported table and the event plots' titles, and is the Trigger the Report page's representative events table shows. Renaming a loading does not re-rank it, and the plot files stay named by the loading's value, so a rename does not leave old plots behind under another name.
+Each loading can carry a **name** - *dam crest flood*, *right embankment overtopping* - typed in the box at the start of its row. It is optional and only a label: it heads the loading's card, goes into the saved selection, the exported table and the event plots' titles, and is the Trigger the Tables page's representative events table shows. Renaming a loading does not re-rank it, and the plot files stay named by the loading's value, so a rename does not leave old plots behind under another name.
 
 The selection is **saved as you go**, like everything else in the launcher - there is no Save button. Every change (a loading added, moved, renamed or removed, a value, an event picked, a ranking setting) writes ```<group>_representative_events.json``` beside the databases, and the line beside **Loadings** says when it last did. Opening a group saves nothing, so a selection is never overwritten just by looking at it. A group that has never been saved says **not saved yet** and shows a **Save** button, so one left at its defaults can still be saved - the Downstream page lists only saved selections. The file holds the loadings, the settings and the event for each, and records the kind of run the events came from (```"method": "monte carlo"```) and the sims config that was open (```"sims_config"```, relative to the project), which is how the Downstream page rebuilds a filtered event's pattern from the right run - the top-ranked one where none was picked, because the extract needs one - but on the page an event nobody picked still follows the ranking when a setting changes. It is reloaded when the page is next opened on that group, so the selection survives and can go into version control. There is a file per group because several groups commonly share one results folder — a GWL series usually does.
 
@@ -421,9 +421,9 @@ The **level record** is either the study's gauge exports (its [dam inputs](#dami
 
 A study with no Lake levels settings yet starts from this sims list's. ```lake_frequency.json``` is still written whole, so a launcher that has not been updated finds what it always did.
 
-## Report tables
+## Tables
 
-The **Report** page fills the design flood report's result tables from the runs, so a revised rating means re-running the groups and copying the tables again rather than re-typing them.
+The **Tables** page (it was called Report) fills the design flood report's result tables from the runs, so a revised rating means re-running the groups and copying the tables again rather than re-typing them.
 
 ### The study file
 
@@ -443,13 +443,22 @@ Everything is saved as it changes.
 | Peaks at one AEP | 33 | Per group, the lake level, inflow and outflow at one AEP - the AEP of the PMP for the PMPF. |
 | Ensemble peak | 34 | Per ensemble group, the event with the highest lake level: its level, inflow, outflow and duration - the PMF. |
 | Representative events | 35-36 | One section per group, from the events **saved on the Events page** for it: each loading's AEP (a level loading's AEP read as above), lake level, trigger, the chosen simulation and the duration it came from, in AEP order, with the PMF's event from an ensemble group last. A level loading takes its trigger from its **name** on the Events page, or failing that from the table's list of named levels (DCF, each embankment crest). |
-| Frequent levels | 37 | A grid: one column per group (the climate horizons), one row per frequency, in sections (RFSL, FSL). A standard AEP the quantile tables carry (1 in 2) is the design curve's value; a more frequent one (1 EY, 1 in 1.582) is read off each duration's realisations and the highest taken. The last column is the critical duration, as a range where the horizons differ. **Durations to consider** limits which runs count: Callide's Table 37 was made from 6-96 h, and a 120 h run changes the 1 in 2 level where it governs. |
+| Frequent levels | 37 | A grid: one column per group (the climate horizons), one row per frequency, in sections (RFSL, FSL). A standard AEP the quantile tables carry (1 in 2) is the design curve's value; a more frequent one (1 EY, 1 in 1.582) is read off each duration's realisations and the highest taken. The last column is the critical duration, as a range where the horizons differ. The storm durations it takes (see [Storm durations](#stormdurations)) limit both readings: Callide's Table 37 was made from 6-96 h, and a 120 h run changes the 1 in 2 level where it governs. |
 | Calibration results | 16 | Per event, a model's dam inflow against the reverse-routed inflow: both peaks and the peak ratio (PR), both volumes and the volume ratio (VR), the Nash-Sutcliffe efficiency and, optionally, the peak timing, each shaded by its class. The observed inflow is the [inflow record](#4inflowrecord) over the modelled period; the modelled one is a CSV you give, time in the first column (dates, or hours from the event's start) and flow in m³/s. See [The calibration table](#thecalibrationtable). |
 | Model performance criteria | 15 | The classes the calibration results are shaded by: Excellent to Poor on PR, VR, NSE and timing. |
 
 The last three hold **sections** (the RFSL and FSL halves of a table, each under a heading row) of **rows**: a row either reads a group, or holds fixed values - for a previous study's numbers, such as the Sunwater 2020 baseline, which are not a run in this one.
 
 **Where the inflow and outflow are read** is a choice for the last two kinds. The default is the storm that gives the peak level, consistent with the "Level critical duration" column and with Tables 1 and 26-31. The alternative is each result's own maximum, which is what the scripts that first filled Tables 33 and 34 did - the peak inflow of the PMPF then comes from a shorter storm than the peak level beside it, and differs from the PMPF row of Table 26.
+
+### Storm durations
+
+A design curve is the envelope over a group's storm durations, and the critical duration is whichever owns it. A report is often written over fewer durations than were run - Callide's tables from 6-96 h, where a 120 h run would govern the 1 in 2 level - so which durations count is a setting, at two levels:
+
+- **The study default** - the **Storm durations** card on the Tables and Figures pages (one setting, shown on both). Pick the durations the report uses; none picked is every duration, which is how a study without the setting reads.
+- **Each table and figure** - in its editor, **Critical duration over**: *Study default* (the default), *All durations* whatever the default says, or *Choose* its own. Choosing starts from what it reads now, so nothing moves until a duration is taken off.
+
+The folded line of a table, and a figure's header, says which durations it uses when it is not every one, and whether that is the study default or its own. A limit changes the envelope, the critical duration, the flows read at it and the dam crest flood's AEP, which is read off the critical duration's realisations. A limit that leaves a group with nothing is listed above the preview rather than drawn empty. A representative event picked from a duration outside the table's limit is still shown with its own duration, and listed, because the event is what was picked on the Events page. It applies to the design flood, AEP of given levels, peaks at one AEP, representative events and frequent levels tables, and to a figure's group curves; a figure's job file records it. The **ensemble peak** table, the design flood table's **PMF** row and the **PMF** page keep their own rules - an ensemble's durations are the PMF's own - and the Results and Events pages are not affected.
 
 ### The calibration table
 
@@ -506,6 +515,7 @@ A straight read off the realisations without a fit is too noisy up there - a doz
 The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Study page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped. Each figure is a card that opens on its name; the header keeps the file name, the output path and the Export PNG, Edit, Duplicate and Remove buttons, and the preview is only drawn once the card is opened, so a long list opens quickly. An open card stays open while its labels are edited or it is exported.
 
 - **Curves**: a group's design curve (the envelope over its durations, as the Results page draws it); a curve from a file with the AEP ('1 in X') in its first column and the result as a column, for a previous study's adopted curve; or an **FFA** - an RMC Bestfit export, drawn as v03 drew it: the posterior mode (solid) and/or mean (dashed) in black, the 90% credible interval in faint grey when there is only one FFA on the figure, the annual maxima as dots and any paleoflood lower bounds as upward triangles.
+- **Storm durations**: a group's design curve is the envelope over the study's default durations unless the figure chooses its own - see [Storm durations](#stormdurations).
 - **Labels** belong to the figure. The same group can be 'URBS' on the FFA comparison and 'GWL 1.3 °C' among the horizons; edit a label in the box beside the preview and the figure redraws.
 - **Reference levels** are one ```label = level``` or ```label = level = colour``` per line (full supply, the dam crest, an embankment crest). The **AEP of the PMP** draws a vertical line.
 - **Duplicate** a figure and swap one curve for a sensitivity figure.

@@ -7,6 +7,10 @@ only, because one curve is 'URBS' against the FFA and 'GWL 1.3 °C' among the
 horizons. **Export PNG** runs util/ReportFigure.py under Bryan's interpreter, in
 the style of PlotFrequencyCurves_v03.py, and leaves the job (``<name>.json``)
 beside the PNG as a record of what was drawn. See ``core/figures.py``.
+
+A group's design curve is the envelope over the storm durations the figure
+chooses, or the study's default (the **storm durations** card, shared with the
+Tables page) when it chooses none.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from pathlib import Path
 
 from nicegui import app, run, ui
 
+import durationpicker
 from core import figurechart, figures, staleness, study as studies
 from layout import confirm, no_study, page_frame, severity_banner
 from state import STATE
@@ -69,6 +74,7 @@ class _FiguresView:
                     .props("outline").mark("add-figure")
                 ui.button("Export all", icon="collections", on_click=self._export_all) \
                     .props("outline").mark("export-all")
+        durationpicker.default_card(self.study, self.redraw)
         self.body = ui.column().classes("w-full gap-4")
         self.redraw()
 
@@ -149,10 +155,12 @@ class _FigureCard:
         with ui.row().classes("grow items-start justify-between no-wrap"):
             with ui.column().classes("gap-0"):
                 ui.label(self.spec.get("filename") or self.figure_id).classes("font-bold")
+                durations = durationpicker.describe(self.study, self.spec)
                 ui.label(f"{TYPES.get(self.spec.get('type'), self.spec.get('type'))} - "
                          f"{len(self.spec.get('curves') or [])} curves - "
-                         f"{figures.output_path(self.study, self.spec)}") \
-                    .classes("text-xs text-muted")
+                         + (f"{durations} - " if durations else "")
+                         + f"{figures.output_path(self.study, self.spec)}") \
+                    .classes("text-xs text-muted").mark(f"describe-{self.figure_id}")
             # A click on a button must not also open or shut the card.
             with ui.row().classes("gap-1 no-wrap") \
                     .on("click", js_handler="(e) => e.stopPropagation()"):
@@ -320,6 +328,7 @@ class _FigureEditor:
                 .classes("w-full").props("dense autogrow").mark("figure-levels") \
                 .on_value_change(lambda e: spec.update(
                     reference_levels=figures.parse_reference_levels(e.value)))
+            durationpicker.spec_picker(self.study, spec, what="figure")
             ui.label("Curves, in legend order").classes("text-sm font-bold pt-2")
             curves = spec.setdefault("curves", [])
             for index, curve in enumerate(curves):

@@ -41,6 +41,11 @@ than the level's, so its own maximum comes from a different storm from the
 level beside it. ``flows_at`` says which: ``level`` (the default, consistent
 with the header) or ``own``.
 
+**Which durations count.** The envelope, and so the critical duration, is over
+the storm durations ``study.durations_for`` gives the table - its own
+``durations``, ``"all"``, or the study's default - for the kinds in
+``DURATION_KINDS``. The ensemble peak and the PMF row are the PMF's own.
+
 The arithmetic was checked against the tables of a published design flood
 report, digit for digit; tests/test_reporttables.py pins it.
 
@@ -57,6 +62,7 @@ import pandas as pd
 
 from . import ensemble, results
 from .bryan import representative_events
+from . import study as studies
 from .study import Study, StudyError
 from .wordtable import ReportTable
 
@@ -154,7 +160,7 @@ KINDS = {
         {"kind": FREQUENT, "title": "", "first_column": "Frequency",
          "frequencies": [{"label": "1 in 2 AEP", "aep": 2}, {"label": "1 EY", "aep": 1.582}],
          "columns": ["GWL 0°C", "GWL 1.3°C", "GWL 1.7°C", "GWL 2.7°C"],
-         "duration": True, "durations": [],     # hours to consider; blank = all
+         "duration": True,      # "durations": see core/study.py - absent follows the study
          "sections": []}),     # [{heading, groups: [{run, group}] in column order}]
     CALIBRATION: Kind(
         CALIBRATION, "Calibration results",
@@ -171,6 +177,12 @@ KINDS = {
         False,
         {"kind": CRITERIA, "title": ""}),
 }
+
+
+#: The kinds whose critical duration comes off a group's design curve, and so
+#: take a ``durations`` choice (core/study.py). The ensemble peak and the PMF row
+#: are the PMF's own; the calibration tables read no design curve.
+DURATION_KINDS = (DESIGN_FLOODS, FLOOD_LEVELS, PEAK_AT_AEP, REPRESENTATIVE, FREQUENT)
 
 
 # -- formatting ----------------------------------------------------------------
@@ -253,6 +265,7 @@ class GroupCurves:
 
     run: str
     group: str
+    durations: list = field(default_factory=list)     # hours it was limited to; [] all
     comparisons: dict = field(default_factory=dict)   # result type -> Comparison
     analyses: dict = field(default_factory=dict)      # result type -> Analysis
     problems: list = field(default_factory=list)
@@ -284,9 +297,16 @@ class GroupCurves:
 _CURVE_CACHE: dict = {}
 
 
-def group_curves(study: Study, run_name: str, group: str) -> GroupCurves:
-    """Read a group's level, inflow and outflow curves, once per change on disk."""
-    curves = GroupCurves(run=run_name, group=group)
+def group_curves(study: Study, run_name: str, group: str, durations=None) -> GroupCurves:
+    """Read a group's level, inflow and outflow curves, once per change on disk.
+
+    ``durations`` (hours) limits which storm durations the envelope and the
+    critical duration are taken over; empty or None is every duration. A table
+    passes ``studies.durations_for(study, spec)`` - its own choice or the study's
+    default.
+    """
+    hours = tuple(studies.parse_hours(durations))
+    curves = GroupCurves(run=run_name, group=group, durations=list(hours))
     if not run_name or not group:
         curves.problems.append("no run and group chosen")
         return curves
@@ -308,7 +328,7 @@ def group_curves(study: Study, run_name: str, group: str) -> GroupCurves:
                 stamp.append((str(source.path), source.path.stat().st_mtime_ns))
             except OSError:
                 stamp.append((str(source.path), None))
-    cache_key = (str(run.config.config_path), group, tuple(stamp))
+    cache_key = (str(run.config.config_path), group, hours, tuple(stamp))
     if cache_key in _CURVE_CACHE:
         return _CURVE_CACHE[cache_key]
 
@@ -316,6 +336,12 @@ def group_curves(study: Study, run_name: str, group: str) -> GroupCurves:
         found = sources.get(key, [])
         if not found:
             curves.problems.append(f"{group}: no {key} results on disk")
+            continue
+        found, left_out = results.limit_durations(found, hours)
+        curves.problems.extend(f"{group} {key} {why}" for why in left_out)
+        if not found:
+            curves.problems.append(f"{group}: no {key} results for the durations chosen "
+                                   f"({studies.durations_text(hours)})")
             continue
         comparison = results.compare(found)
         for label, why in comparison.problems:
@@ -361,7 +387,8 @@ def _design_floods(study: Study, spec: dict) -> ReportTable:
                 "Peak level (m AHD)", "Level critical duration (h)"],
         align=["right"] * 5)
     source = spec.get("source") or {}
-    curves = group_curves(study, source.get("run", ""), source.get("group", ""))
+    curves = group_curves(study, source.get("run", ""), source.get("group", ""),
+                          studies.durations_for(study, spec))
     table.problems.extend(curves.problems)
     if not curves.has("level"):
         return table
@@ -470,7 +497,8 @@ def _flood_levels(study: Study, spec: dict) -> ReportTable:
         if "values" in row:
             table.add([label] + _fixed(row, len(header) - 1))
             continue
-        curves = group_curves(study, row.get("run", ""), row.get("group", ""))
+        curves = group_curves(study, row.get("run", ""), row.get("group", ""),
+                              studies.durations_for(study, spec))
         table.problems.extend(curves.problems)
         cells = [label]
         first_duration = None
@@ -571,7 +599,8 @@ def _peak_at_aep(study: Study, spec: dict) -> ReportTable:
         if "values" in row:
             table.add([label] + _fixed(row, 4))
             continue
-        curves = group_curves(study, row.get("run", ""), row.get("group", ""))
+        curves = group_curves(study, row.get("run", ""), row.get("group", ""),
+                              studies.durations_for(study, spec))
         table.problems.extend(curves.problems)
         envelope = curves.envelope("level")
         if aep not in envelope.index:
@@ -676,13 +705,22 @@ def _representative(study: Study, spec: dict) -> ReportTable:
         except StudyError as exc:
             table.problems.append(str(exc))
             targets, run = [], None
-        curves = group_curves(study, run_name, group) if run is not None else None
+        hours = studies.durations_for(study, spec)
+        curves = group_curves(study, run_name, group, hours) if run is not None else None
         rows = []
         for target in targets:
             if target.picked is None:
                 table.problems.append(f"{group}: no event picked for {target.label}")
                 continue
             duration = _event_duration(run, target)
+            # The event is a fact about the run it was taken from; the limit decides
+            # only which durations the AEP is read across. An event outside it is
+            # not wrong, but the table should not pass it silently.
+            if hours and duration and ensemble._hours(duration) not in hours:
+                table.problems.append(
+                    f"{group}: the event for {target.label} is from the {duration} run, "
+                    f"which is outside the durations this table reads "
+                    f"({studies.durations_text(hours)})")
             if target.kind == "level":
                 level = float(target.value)
                 aep, _, problem = aep_of_level(study, curves, level,
@@ -726,20 +764,18 @@ def frequent_level(study: Study, run_name: str, group: str, aep: float, duration
     duration's realisations and the highest taken, as ``List_1EY_results.py``
     does; at 1 in 2 the two readings agree to the digit.
 
-    ``durations`` (hours) limits which runs count. ``List_1EY_results.py`` took
-    6-96 h; a run that also has 120 h storms can find those govern the 1 in 2
+    ``durations`` (hours) limits which runs count, for both readings - the design
+    curve is then the envelope over those durations only. ``List_1EY_results.py``
+    took 6-96 h; a run that also has 120 h storms can find those govern the 1 in 2
     level, so a table made with the 6-96 h limit is reproduced only with it.
-    With a limit the envelope shortcut is not taken, since the envelope is over
-    every duration.
     """
-    wanted = {float(hours) for hours in durations or []}
-    if not wanted:
-        curves = group_curves(study, run_name, group)
-        if curves.problems and not curves.has("level"):
-            return math.nan, None, "; ".join(curves.problems)
-        envelope = curves.envelope("level")
-        if aep in envelope.index and _finite(envelope.get(aep)):
-            return float(envelope[aep]), curves.critical("level").get(aep), ""
+    wanted = set(studies.parse_hours(durations))
+    curves = group_curves(study, run_name, group, sorted(wanted))
+    envelope = curves.envelope("level")
+    if aep in envelope.index and _finite(envelope.get(aep)):
+        return float(envelope[aep]), curves.critical("level").get(aep), ""
+    if curves.problems and not curves.has("level") and not wanted:
+        return math.nan, None, "; ".join(curves.problems)
     try:
         databases = ensemble.mc_databases(study, run_name, group)
     except StudyError as exc:
@@ -797,7 +833,7 @@ def _frequent(study: Study, spec: dict) -> ReportTable:
                     continue
                 level, duration, problem = frequent_level(study, source.get("run", ""),
                                                           source["group"], aep,
-                                                          spec.get("durations"))
+                                                          studies.durations_for(study, spec))
                 if problem:
                     table.problems.append(problem)
                 # numpy's rounding, as List_1EY_results.py wrote the report's values

@@ -10,7 +10,10 @@ against the FFA and 'GWL 1.3 °C' among the horizons.
 Three kinds of curve:
 
 ``group``  A group's design curve - the envelope over its durations - read the
-           way the Results page reads it (``results.compare``/``analyse``).
+           way the Results page reads it (``results.compare``/``analyse``). The
+           durations are the figure's ``"durations"``, or the study's default
+           when it has none (``study.durations_for``); a file or FFA curve is
+           drawn as it is.
 ``file``   A table with AEP ('1 in X') in its first column and the result as a
            column: a previous study's adopted curve (Sunwater 2020).
 ``ffa``    An RMC Bestfit export: the posterior mode and/or mean, the 90%
@@ -41,6 +44,7 @@ import pandas as pd
 from . import results
 from .bryan import BRYAN_ROOT
 from .paths import atomic_write_json
+from . import study as studies
 from .study import Study, StudyError, resolve
 
 SCRIPT = BRYAN_ROOT / "util" / "ReportFigure.py"
@@ -142,6 +146,7 @@ class FigureData:
     spec: dict
     series: list = field(default_factory=list)
     problems: list = field(default_factory=list)
+    durations: list = field(default_factory=list)    # hours the group curves span; [] all
 
     @property
     def key(self) -> str:
@@ -156,6 +161,8 @@ class FigureData:
                 "aep_of_pmp": spec.get("aep_of_pmp"),
                 "y_min": spec.get("y_min"), "y_max": spec.get("y_max"),
                 "reference_levels": spec.get("reference_levels") or [],
+                # the record of what the group curves were enveloped over; not drawn
+                "durations": list(self.durations) or "all",
                 "series": [{"label": s.label, "style": s.style, "legend": s.legend,
                             "points": [[float(a), float(v)] for a, v in s.points]}
                            for s in self.series]}
@@ -174,7 +181,11 @@ def _trimmed(series: pd.Series, spec) -> list:
     return sorted(out)
 
 
-def group_envelope(study: Study, run_name: str, group: str, key: str) -> pd.Series:
+def group_envelope(study: Study, run_name: str, group: str, key: str,
+                   durations=None, problems=None) -> pd.Series:
+    """A group's design curve: the envelope over its durations, or over ``durations``
+    (hours) when given. Durations left out for want of a readable duration go to
+    ``problems``."""
     run = study.open_run(run_name)
     rows = run.rows_in(group)
     if not rows:
@@ -182,6 +193,12 @@ def group_envelope(study: Study, run_name: str, group: str, key: str) -> pd.Seri
     sources = results.sources_for_rows(run.frame, run.project_folder, rows).get(key, [])
     if not sources:
         raise StudyError(f"{group}: no {key} results on disk")
+    sources, left_out = results.limit_durations(sources, durations)
+    if problems is not None:
+        problems.extend(left_out)
+    if not sources:
+        raise StudyError(f"{group}: no {key} results for the durations chosen "
+                         f"({studies.durations_text(durations)})")
     comparison = results.compare(sources)
     if comparison.is_empty:
         raise StudyError(f"{group}: the {key} results could not be read")
@@ -236,13 +253,16 @@ def build(study: Study, spec: dict) -> FigureData:
     data = FigureData(spec=spec)
     key = spec.get("type") or "level"
     ffa_count = sum(1 for curve in spec.get("curves") or [] if curve.get("kind") == FFA)
+    data.durations = studies.durations_for(study, spec)
     for curve in spec.get("curves") or []:
         kind = curve.get("kind", GROUP)
         label = curve.get("label") or curve.get("group") or Path(str(curve.get("file", ""))).stem
         try:
             if kind == GROUP:
+                left_out: list = []
                 envelope = group_envelope(study, curve.get("run", ""), curve.get("group", ""),
-                                          key)
+                                          key, data.durations, left_out)
+                data.problems.extend(f"{label}: {why}" for why in left_out)
                 data.series.append(Series(label, _trimmed(envelope, spec)))
             elif kind == FILE:
                 path = resolve(study.folder, curve.get("file"))

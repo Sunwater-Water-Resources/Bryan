@@ -19,7 +19,7 @@ What steps 2 to 4 all read - the gauge exports, the storage table, the rating
 register, the evaporation, the longest step and the water year - is set once,
 in "The lake level record" card at the top.
 
-Everything is kept in the study file (open it on the Report page) and saved as
+Everything is kept in the study file (open it on the Study page) and saved as
 it changes; each run leaves its job file beside its outputs. See
 ``core/lakerecord.py``.
 """

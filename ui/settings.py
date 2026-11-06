@@ -33,7 +33,7 @@ class UiSettings:
     # filename at different paths (one per model revision), and keying on the name would
     # hand one project's regional model to the other.
     downstream_configs: dict = field(default_factory=dict)
-    # Study files (the Report page's), most recent first - the same list shape as
+    # Study files (the Tables page's), most recent first - the same list shape as
     # recent_configs, kept apart because a study and a sims config are opened on
     # different pages and one is never offered for the other.
     recent_studies: list = field(default_factory=list)
@@ -44,7 +44,7 @@ class UiSettings:
     awap_folder: str = ""
     # The runs panel down the left of every page: open, or folded to a strip.
     runs_panel_open: bool = True
-    # The Report page's tables that are open, per study (resolved path -> table ids).
+    # The Tables page's tables that are open, per study (resolved path -> table ids).
     # The user's, not the study's, so two people on one study keep their own view.
     report_open_tables: dict = field(default_factory=dict)
 
@@ -116,7 +116,7 @@ class UiSettings:
         self.save()
 
     def open_tables_for(self, study_path) -> set:
-        """The Report tables left open on this study; none the first time."""
+        """The tables left open on this study; none the first time."""
         return set(self.report_open_tables.get(self._project_key(study_path)) or [])
 
     def remember_open_tables(self, study_path, table_ids) -> None:

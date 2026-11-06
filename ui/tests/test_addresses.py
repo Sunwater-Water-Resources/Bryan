@@ -100,7 +100,7 @@ async def test_the_results_group_and_type_are_kept(user, opened, addresses):
 
 @pytest.mark.asyncio
 async def test_a_report_table_named_in_the_address_is_opened(user, opened, addresses):
-    await user.open("/report?table=table-27-long-term")
+    await user.open("/tables?table=table-27-long-term")
     for _ in range(30):
         chevron = next(iter(user.find(marker="chevron-table-27-long-term").elements))
         if chevron.name == "expand_more":

@@ -505,7 +505,7 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   when in metres they are 0.02–0.10 m and four of them are real. Nothing assumes which way the critical duration
   moves with AEP: it lengthens with rarity for inflow but *shortens* for lake level, which goes long
   at frequent AEPs while the storage fills and short on the rare tail as the dam becomes a conveyance.
-- **The Report page works from a study file, one level above a sims_config.json**
+- **The Tables page (route `/tables`; it was Report, and `/report` redirects) works from a study file, one level above a sims_config.json**
   (`core/study.py`, `bryan_study.json`): a report draws on several runs - RFSL and FSL are
   separate configs - so the file names the runs once and each table names its run **by name**,
   never by path. Re-pointing a report at a re-run is then one edit, and `rename_run` carries
@@ -525,6 +525,17 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   `ReportTable` as HTML for Word (inline styles in points, the report's table style) and as
   tab-separated text, and the page puts both on the clipboard with one `ClipboardItem`; a
   browser without it gets the text and the page says so.
+- **Which storm durations a critical duration is taken over** is a study default
+  (`"durations"` at the top of the study file) that each table and figure follows unless its
+  own `"durations"` says otherwise: absent, None or `[]` follows the default, `"all"` is every
+  duration, a list is its own (`study.durations_for`). **`[]` follows rather than meaning all**
+  because the Frequent levels table saved `[]` for "blank, all" before there was a default;
+  `"all"` is the override. The filter is `results.limit_durations`, on `CurveSource.duration`
+  (never the label - two runs of one duration are '24h (A)', '24h (B)'), applied in
+  `reporttables.group_curves` (its cache key carries the hours) and `figures.group_envelope`.
+  It covers `reporttables.DURATION_KINDS`; the ensemble peak table, the PMF row and the PMF
+  page keep their own rules, and `ensemble.critical_at` calls `group_curves` unfiltered on
+  purpose. The two pickers are `ui/durationpicker.py`, shared by Tables and Figures.
 - **The calibration table** (`core/calibration.py`, a report table kind) holds a modelled dam
   inflow CSV against one of the inflow record's event hydrographs. Its choices are fixed in the
   module docstring because each moves the numbers: the window is the modelled period, cut from the whole inflow record (`inflow_intervals.csv.gz`)

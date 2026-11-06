@@ -332,6 +332,117 @@ def table_sources(table: dict) -> list:
     return found
 
 
+# -- the storm durations a critical duration is taken over -------------------------
+#
+# A table's or figure's design curve is the envelope over its group's storm
+# durations, and the critical duration is whichever owns it. A study often reports
+# over fewer durations than it ran - Callide's tables were made from 6-96 h, and a
+# 120 h run governs the 1 in 2 level where it is allowed to - so the study keeps a
+# **default** set (``"durations"`` at the top of the file) and each table and figure
+# may override it with its own ``"durations"``:
+#
+#   absent, None or []   follow the study's default
+#   "all"                every duration, whatever the default says
+#   [6, 12, 24, ...]     those durations (hours)
+#
+# A default that is empty is every duration, so a study that never sets one reads
+# exactly as before. An empty list on a table follows the default rather than
+# meaning "all", because that is what the Frequent levels table wrote for "blank,
+# all" before there was a default to follow.
+#
+# The PMF page and the ensemble peak table are not read through this: an ensemble's
+# durations are the PMF's own, with their own rules (core/ensemble.py).
+
+DURATIONS_KEY = "durations"
+ALL_DURATIONS = "all"
+
+
+def parse_hours(value) -> list:
+    """Hours as a sorted list of distinct floats; anything not a number is dropped."""
+    if isinstance(value, str):
+        value = value.replace(",", " ").split()
+    found = set()
+    for item in value or []:
+        try:
+            hours = float(item)
+        except (TypeError, ValueError):
+            continue
+        if hours == hours and hours > 0:
+            found.add(hours)
+    return sorted(found)
+
+
+def default_durations(study: Study) -> list:
+    """The study's default durations (hours); empty is every duration."""
+    return parse_hours(study.extra.get(DURATIONS_KEY))
+
+
+def set_default_durations(study: Study, hours) -> None:
+    hours = parse_hours(hours)
+    if hours:
+        study.extra[DURATIONS_KEY] = hours
+    else:
+        study.extra.pop(DURATIONS_KEY, None)
+
+
+def follows_default(spec: dict) -> bool:
+    value = (spec or {}).get(DURATIONS_KEY)
+    return value is None or (not isinstance(value, str) and not parse_hours(value))
+
+
+def durations_for(study: Study, spec: dict) -> list:
+    """The durations (hours) a table or figure takes its critical duration over.
+
+    Empty means every duration.
+    """
+    value = (spec or {}).get(DURATIONS_KEY)
+    if isinstance(value, str) and value.strip().lower() == ALL_DURATIONS:
+        return []
+    if follows_default(spec):
+        return default_durations(study)
+    return parse_hours(value)
+
+
+def durations_text(hours) -> str:
+    """'6, 12, 24, 48 h', or 'all durations' when there is no limit."""
+    hours = parse_hours(hours)
+    if not hours:
+        return "all durations"
+    return ", ".join(f"{hour:g}" for hour in hours) + " h"
+
+
+def durations_in(study: Study, sources=None) -> list:
+    """The storm durations (hours) run by the groups ``sources`` names.
+
+    None means every row of every run in the study - what the default is chosen
+    from. A run that cannot be opened contributes nothing.
+    """
+    from .results import duration_of             # local: results is the heavier module
+
+    found = set()
+    if sources is None:
+        wanted = {name: None for name in study.run_names()}
+    else:
+        wanted = {}
+        for source in sources:
+            if source.get("run") and source.get("group"):
+                wanted.setdefault(source["run"], set()).add(source["group"])
+    for run_name, groups in wanted.items():
+        try:
+            run = study.open_run(run_name)
+        except StudyError:
+            continue
+        rows = (list(run.frame.index) if groups is None
+                else [index for group in groups for index in run.rows_in(group)])
+        for index in rows:
+            row = run.frame.loc[index]
+            output = str(row.get("Output file") or "").replace("\\", "/").rsplit("/", 1)[-1]
+            duration = duration_of(row, output)
+            if duration is not None:
+                found.add(float(duration))
+    return sorted(found)
+
+
 def pmf_entries(study: Study) -> list:
     """The PMF page's groups, as stored (core/ensemble.py owns the section)."""
     section = study.extra.get("pmf")

@@ -132,3 +132,23 @@ async def test_a_redraw_keeps_the_open_card_open(user, opened):
     expansion = next(iter(user.find(marker="open-levels").elements))
     assert expansion.value is True
     await seen(user, "preview-levels")
+
+
+@pytest.mark.asyncio
+async def test_a_figure_follows_the_study_durations_or_chooses_its_own(user, opened):
+    from core import figures, study as studies
+
+    await user.open("/figures")
+    await user.should_see("Storm durations")
+    (await seen(user, "study-durations-select")).set_value([36.0])
+    await asyncio.sleep(0.2)
+    header = await seen(user, "describe-levels")
+    assert "36 h (study default)" in header.text
+
+    user.find(marker="edit-levels").click()
+    (await seen(user, "figure-durations-mode")).set_value("all")
+    user.find(marker="save-figure").click()
+    await asyncio.sleep(0.2)
+    stored = figures.figure(studies.load_study(opened.path), "levels")
+    assert stored["durations"] == "all"
+    assert "36 h" not in (await seen(user, "describe-levels")).text

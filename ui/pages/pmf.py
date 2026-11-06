@@ -10,7 +10,7 @@ the fit laid out and a grid of how the answer moves with the fit's settings.
 The adopted notional AEP is the analyst's call, typed in at the top and kept in
 the study file with a note of how it was reached. Everything on the page is
 saved to the study file (``bryan_study.json``, under ``"pmf"``) as it changes;
-the study is opened on the Report page. See ``core/ensemble.py``.
+the study is opened on the Study page. See ``core/ensemble.py``.
 """
 
 from __future__ import annotations
@@ -158,8 +158,9 @@ class _PmfView:
         with ui.dialog() as dialog, ui.card().classes("min-w-[44rem]"):
             ui.label("Add a PMF group").classes("text-lg font-bold")
             if not runs:
-                ui.label("Add the runs on the Report page first - the PMF ensemble run "
-                         "and the Monte Carlo run.").classes("text-muted")
+                ui.label("Add the runs to the study first, on the Simulations page - "
+                         "the PMF ensemble run and the Monte Carlo run."
+                         ).classes("text-muted")
             label = ui.input("Label, e.g. 'Near-term RFSL'").classes("w-full").props("dense")
             box = ui.column().classes("w-full gap-1")
 

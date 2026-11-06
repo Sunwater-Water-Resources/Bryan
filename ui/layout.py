@@ -21,7 +21,7 @@ NAV = [
     ("Events", "/events"),
     ("Lake levels", "/lake-levels"),
     ("Downstream", "/downstream"),
-    ("Report", "/report"),
+    ("Tables", "/tables"),
     ("PMF", "/pmf"),
     ("Figures", "/figures"),
     ("Lake record", "/lake-record"),

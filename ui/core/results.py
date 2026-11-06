@@ -280,6 +280,27 @@ def sources_for_rows(frame, project_folder, rows=None) -> dict:
             for key, sources in found.items()}
 
 
+def limit_durations(sources, hours) -> tuple:
+    """(the sources whose storm duration is in ``hours``, what was left out and why).
+
+    ``hours`` empty or None keeps every source - every duration counts, as the
+    Results page draws the envelope. It filters on ``CurveSource.duration``, never
+    on the label: two runs of one duration are labelled '24h (A)' and '24h (B)'.
+    A source whose duration cannot be read is dropped once a limit is set, since
+    nothing says whether it is in it, and the problems say so.
+    """
+    sources = list(sources or [])
+    wanted = {float(hour) for hour in hours or []}
+    if not wanted:
+        return sources, []
+    kept = [source for source in sources
+            if source.duration is not None and float(source.duration) in wanted]
+    unknown = [source.label for source in sources if source.duration is None]
+    problems = [f"{label}: left out - its storm duration could not be read, so it "
+                f"cannot be matched to the durations chosen" for label in unknown]
+    return kept, problems
+
+
 def _uniquely_labelled(sources: list) -> list:
     """Two rows of the same duration must not both be called '24h'.
 

@@ -1,6 +1,6 @@
 """A report table as Word will take it off the clipboard.
 
-The Report page puts two forms of one table on the clipboard at once: HTML,
+The Tables page puts two forms of one table on the clipboard at once: HTML,
 which Word pastes as a real table with the house formatting, and tab-separated
 text, which is what Excel, a plain-text editor or Word's "keep text only" paste
 option take instead. Both come from one ``ReportTable`` so they cannot differ.
