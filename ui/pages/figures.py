@@ -156,11 +156,15 @@ class _FigureCard:
             with ui.column().classes("gap-0"):
                 ui.label(self.spec.get("filename") or self.figure_id).classes("font-bold")
                 durations = durationpicker.describe(self.study, self.spec)
-                ui.label(f"{TYPES.get(self.spec.get('type'), self.spec.get('type'))} - "
-                         f"{len(self.spec.get('curves') or [])} curves - "
-                         + (f"{durations} - " if durations else "")
-                         + f"{figures.output_path(self.study, self.spec)}") \
+                described = ui.label(
+                    f"{TYPES.get(self.spec.get('type'), self.spec.get('type'))} - "
+                    f"{len(self.spec.get('curves') or [])} curves - "
+                    + (f"{durations} - " if durations else "")
+                    + f"{figures.output_path(self.study, self.spec)}") \
                     .classes("text-xs text-muted").mark(f"describe-{self.figure_id}")
+                reason = studies.note_for(self.study, self.spec)
+                if reason:
+                    described.tooltip(f"Durations: {reason}")
             # A click on a button must not also open or shut the card.
             with ui.row().classes("gap-1 no-wrap") \
                     .on("click", js_handler="(e) => e.stopPropagation()"):

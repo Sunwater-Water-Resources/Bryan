@@ -215,3 +215,65 @@ def test_a_change_with_the_list_shut_applies_at_once():
     pending.changed([36])                          # a chip's cross
     pending.changed([])                            # the clear button
     assert applied == [[36.0], []]
+
+
+# -- the decision, noted ---------------------------------------------------------
+
+def test_a_change_to_the_default_is_dated_and_a_non_change_is_not(study):
+    import datetime as dt
+
+    assert studies.durations_changed(study) == ""
+    studies.set_default_durations(study, [36], today=dt.date(2026, 11, 6))
+    studies.set_default_durations(study, [36.0], today=dt.date(2026, 12, 1))   # same
+    assert studies.durations_changed(study) == "2026-11-06"
+    studies.set_default_durations(study, [], today=dt.date(2026, 12, 2))       # cleared
+    assert studies.durations_changed(study) == "2026-12-02"
+
+
+def test_the_reason_is_kept_in_the_study_file(study):
+    studies.set_durations_note(study, "  120 h left out: outside the ARR temporal patterns  ")
+    study.save()
+    assert studies.durations_note(studies.load_study(study.path)) \
+        == "120 h left out: outside the ARR temporal patterns"
+    studies.set_durations_note(study, "")
+    assert "durations_note" not in study.extra
+
+
+def test_what_is_left_out_is_read_against_what_was_run(study):
+    assert studies.left_out(study) == []                  # no default, nothing left out
+    studies.set_default_durations(study, [36])
+    assert studies.left_out(study) == [72.0]
+    assert studies.left_out(study, [36, 72]) == []
+
+
+def test_the_reason_in_effect_is_the_study_s_or_an_override_s_own(study):
+    studies.set_durations_note(study, "study reason")
+    assert studies.note_for(study, {}) == ""              # the default limits nothing
+    studies.set_default_durations(study, [36])
+    assert studies.note_for(study, {}) == "study reason"
+    assert studies.note_for(study, {"durations": "all", "durations_note": "own"}) == "own"
+    assert studies.note_for(study, {"durations": [72]}) == ""
+
+
+def test_the_folded_line_says_what_is_left_out_and_an_override_s_reason():
+    pytest.importorskip("nicegui")
+    import durationpicker
+    from report_fixtures import build_study as build
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        studies.forget_runs()
+        study = build(Path(folder) / "study")
+        studies.set_default_durations(study, [36])
+        assert durationpicker.describe(study, {}) == "leaves out 72 h (study default)"
+        long = "the 36 h storms are left out because " + "x" * 80
+        assert durationpicker.describe(study, {"durations": [72], "durations_note": long}) \
+            == "leaves out 36 h (own choice: the 36 h storms are left out because...)"
+        assert durationpicker.describe(study, {"durations": "all"}) == "all durations"
+
+
+def test_an_exported_figure_records_the_reason(study, tmp_path):
+    studies.set_default_durations(study, [36])
+    studies.set_durations_note(study, "120 h dropped")
+    job = figures.build(study, level_figure()).to_job(tmp_path / "x.png")
+    assert job["durations"] == [36.0] and job["durations_note"] == "120 h dropped"

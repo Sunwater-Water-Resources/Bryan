@@ -32,6 +32,7 @@ import copy
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from . import grouping
@@ -377,12 +378,66 @@ def default_durations(study: Study) -> list:
     return parse_hours(study.extra.get(DURATIONS_KEY))
 
 
-def set_default_durations(study: Study, hours) -> None:
+def set_default_durations(study: Study, hours, *, today=None) -> None:
+    """Store the default, and the date it last changed when it does change.
+
+    The date is kept when the default is cleared: "every duration since 6 November"
+    is as much a decision as leaving one out.
+    """
     hours = parse_hours(hours)
+    if hours == default_durations(study):
+        return
     if hours:
         study.extra[DURATIONS_KEY] = hours
     else:
         study.extra.pop(DURATIONS_KEY, None)
+    study.extra[DURATIONS_CHANGED_KEY] = (today or date.today()).isoformat()
+
+
+# Why the default leaves what it leaves out, and when it last changed - a decision
+# the report rests on, kept with it. A table or figure that overrides the default
+# keeps its own reason under the same note key.
+DURATIONS_NOTE_KEY = "durations_note"
+DURATIONS_CHANGED_KEY = "durations_changed"
+
+
+def durations_note(study: Study) -> str:
+    return str(study.extra.get(DURATIONS_NOTE_KEY) or "").strip()
+
+
+def set_durations_note(study: Study, text) -> None:
+    text = str(text or "").strip()
+    if text:
+        study.extra[DURATIONS_NOTE_KEY] = text
+    else:
+        study.extra.pop(DURATIONS_NOTE_KEY, None)
+
+
+def durations_changed(study: Study) -> str:
+    """The date (ISO) the default last changed; '' if it never has."""
+    return str(study.extra.get(DURATIONS_CHANGED_KEY) or "")
+
+
+def left_out(study: Study, hours=None) -> list:
+    """The durations the study ran that ``hours`` (default: the study's default) drops.
+
+    Empty when there is no limit - nothing is left out.
+    """
+    hours = default_durations(study) if hours is None else parse_hours(hours)
+    if not hours:
+        return []
+    return [each for each in durations_in(study) if each not in set(hours)]
+
+
+def note_for(study: Study, spec: dict) -> str:
+    """The reason in effect for a table's or figure's durations, or ''.
+
+    Its own note when it overrides the default; the study's when it follows a
+    default that limits anything.
+    """
+    if follows_default(spec):
+        return durations_note(study) if default_durations(study) else ""
+    return str((spec or {}).get(DURATIONS_NOTE_KEY) or "").strip()
 
 
 def follows_default(spec: dict) -> bool:

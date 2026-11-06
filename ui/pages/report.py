@@ -249,8 +249,12 @@ class _ReportView:
                         .classes("text-2xl text-muted").mark(f"chevron-{table_id}")
                     with ui.column().classes("gap-0"):
                         ui.label(spec.get("title") or "(untitled)").classes("font-bold")
-                        ui.label(_describe(self.study, spec, kind)) \
+                        described = ui.label(_describe(self.study, spec, kind)) \
                             .classes("text-xs text-muted").mark(f"describe-{table_id}")
+                        reason = (studies.note_for(self.study, spec)
+                                  if spec.get("kind") in reporttables.DURATION_KINDS else "")
+                        if reason:
+                            described.tooltip(f"Durations: {reason}")
                 status = ui.row().classes("items-center no-wrap").mark(f"status-{table_id}")
                 with ui.row().classes("gap-1 no-wrap"):
                     ui.button(icon="edit", on_click=lambda: self._edit(table_id)) \

@@ -535,7 +535,14 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   `reporttables.group_curves` (its cache key carries the hours) and `figures.group_envelope`.
   It covers `reporttables.DURATION_KINDS`; the ensemble peak table, the PMF row and the PMF
   page keep their own rules, and `ensemble.critical_at` calls `group_curves` unfiltered on
-  purpose. The two pickers are `ui/durationpicker.py`, shared by Tables and Figures.
+  purpose. The two pickers are `ui/durationpicker.py`, shared by Tables and Figures. The
+  decision is kept with it: `"durations_note"` (the reason; a table or figure that overrides
+  keeps its own under the same key) and `"durations_changed"` (ISO date, written only when the
+  default actually changes - `set_default_durations` returns early on a non-change, so reopening
+  the list does not re-date it). `study.note_for` is the reason in effect for a spec. The study
+  default is applied when its list **closes** (`durationpicker.Deferred`), not per pick, and the
+  Tables page then rebuilds only its tables: per-pick rebuilt every open table and, on Tables,
+  the select under the cursor.
 - **The calibration table** (`core/calibration.py`, a report table kind) holds a modelled dam
   inflow CSV against one of the inflow record's event hydrographs. Its choices are fixed in the
   module docstring because each moves the numbers: the window is the modelled period, cut from the whole inflow record (`inflow_intervals.csv.gz`)

@@ -301,7 +301,7 @@ async def test_the_study_default_is_set_on_the_page_and_reaches_the_tables(user,
     # only the tables are rebuilt: the select being used is left where it is
     assert next(iter(user.find(marker="study-durations-select").elements)) is select
     label = next(iter(user.find(marker="describe-table-26-near-term").elements))
-    assert label.text.endswith("36 h (study default)")
+    assert label.text.endswith("leaves out 72 h (study default)")
     html = await preview_text(user, "table-26-near-term")
     assert "215.80" in html                  # the 36 h level at 1 in 10, not 72 h's 216.00
 
@@ -318,7 +318,28 @@ async def test_a_table_chooses_its_own_durations_in_its_editor(user, opened):
     chosen = next(iter(user.find(marker="table-durations-select").elements))
     assert chosen.value == [36.0, 72.0]       # starts from what the table reads now
     chosen.set_value([72.0])
+    user.find(marker="table-durations-note").type("Table 26 as issued in 2020")
     user.find(marker="save-table").click()
     await asyncio.sleep(0.2)
     stored = studies.load_study(opened.path).table("table-26-near-term")
     assert stored["durations"] == [72.0]
+    assert stored["durations_note"] == "Table 26 as issued in 2020"
+    await user.should_see("own choice: Table 26 as issued in 2020")
+
+
+@pytest.mark.asyncio
+async def test_the_card_asks_why_and_keeps_the_reason(user, opened):
+    from core import study as studies
+
+    await user.open("/tables")
+    next(iter(user.find(marker="study-durations-select").elements)).set_value([36.0])
+    await asyncio.sleep(0.2)
+    await user.should_see("Leaves out 72 h")
+    await user.should_see(marker="study-durations-changed")
+    await user.should_see(marker="study-durations-ask")
+    note = user.find(marker="study-durations-note")
+    note.type("72 h governs only through the long recession - not credible here")
+    note.trigger("blur")
+    await asyncio.sleep(0.2)
+    assert studies.durations_note(studies.load_study(opened.path)).startswith("72 h governs")
+    await user.should_not_see(marker="study-durations-ask")

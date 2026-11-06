@@ -143,7 +143,7 @@ async def test_a_figure_follows_the_study_durations_or_chooses_its_own(user, ope
     (await seen(user, "study-durations-select")).set_value([36.0])
     await asyncio.sleep(0.2)
     header = await seen(user, "describe-levels")
-    assert "36 h (study default)" in header.text
+    assert "leaves out 72 h (study default)" in header.text
 
     user.find(marker="edit-levels").click()
     (await seen(user, "figure-durations-mode")).set_value("all")
@@ -151,4 +151,4 @@ async def test_a_figure_follows_the_study_durations_or_chooses_its_own(user, ope
     await asyncio.sleep(0.2)
     stored = figures.figure(studies.load_study(opened.path), "levels")
     assert stored["durations"] == "all"
-    assert "36 h" not in (await seen(user, "describe-levels")).text
+    assert "leaves out" not in (await seen(user, "describe-levels")).text

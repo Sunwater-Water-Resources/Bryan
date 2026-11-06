@@ -147,6 +147,7 @@ class FigureData:
     series: list = field(default_factory=list)
     problems: list = field(default_factory=list)
     durations: list = field(default_factory=list)    # hours the group curves span; [] all
+    durations_note: str = ""                          # why, as the study or figure says
 
     @property
     def key(self) -> str:
@@ -163,6 +164,7 @@ class FigureData:
                 "reference_levels": spec.get("reference_levels") or [],
                 # the record of what the group curves were enveloped over; not drawn
                 "durations": list(self.durations) or "all",
+                "durations_note": self.durations_note,
                 "series": [{"label": s.label, "style": s.style, "legend": s.legend,
                             "points": [[float(a), float(v)] for a, v in s.points]}
                            for s in self.series]}
@@ -254,6 +256,7 @@ def build(study: Study, spec: dict) -> FigureData:
     key = spec.get("type") or "level"
     ffa_count = sum(1 for curve in spec.get("curves") or [] if curve.get("kind") == FFA)
     data.durations = studies.durations_for(study, spec)
+    data.durations_note = studies.note_for(study, spec)
     for curve in spec.get("curves") or []:
         kind = curve.get("kind", GROUP)
         label = curve.get("label") or curve.get("group") or Path(str(curve.get("file", ""))).stem

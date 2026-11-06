@@ -8,6 +8,8 @@ storage are ``core/study.py``'s (``durations_for``). These are the controls.
 
 from __future__ import annotations
 
+from datetime import date
+
 from nicegui import ui
 
 from core import study as studies
@@ -56,40 +58,90 @@ class Deferred:
             self.apply(list(self.value))
 
 
+def _date_text(iso: str) -> str:
+    try:
+        when = date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return iso
+    return f"{when.day} {when:%B %Y}"
+
+
+def _left_out_text(hours) -> str:
+    return "Leaves out " + studies.durations_text(hours) if hours else ""
+
+
 def default_card(study, on_change) -> None:
     """The study's default: a card for the top of the Tables and Figures pages.
 
     ``on_change()`` runs after the default is stored and saved, so the page can
-    rebuild what was drawn under the old one.
+    rebuild what was drawn under the old one. The reason is saved as the box is
+    left and changes no numbers, so it rebuilds nothing.
     """
     chosen = studies.default_durations(study)
 
-    def store(hours) -> None:
-        studies.set_default_durations(study, hours)
+    def save() -> bool:
         try:
             study.save()
         except OSError as exc:
             ui.notify(f"Could not save {study.path.name}: {exc}", type="warning")
+            return False
+        return True
+
+    def store(hours) -> None:
+        studies.set_default_durations(study, hours)
+        if save():
+            draw_status()
+            on_change()
+
+    def store_note(text) -> None:
+        if str(text or "").strip() == studies.durations_note(study):
             return
-        on_change()
+        studies.set_durations_note(study, text)
+        if save():
+            draw_status()
 
     pending = Deferred(chosen, store)
 
     with ui.card().classes("w-full gap-1").mark("study-durations"):
-        with ui.row().classes("w-full items-center gap-4 no-wrap"):
+        with ui.row().classes("w-full items-start gap-4 no-wrap"):
             with ui.column().classes("gap-0 w-80 shrink-0"):
                 ui.label("Storm durations").classes("font-bold")
                 ui.label("The critical duration of every table and figure is taken over "
                          "these, unless the table or figure chooses its own. None chosen "
                          "is every duration. Applied when the list closes."
                          ).classes("text-xs text-muted")
-            ui.select(_options(study, chosen), multiple=True, value=chosen,
-                      label="Study default (blank: all durations)",
-                      on_change=lambda e: pending.changed(e.value)) \
-                .on("popup-show", lambda _: pending.opened()) \
-                .on("popup-hide", lambda _: pending.closed()) \
-                .classes("grow").props("dense use-chips clearable") \
-                .mark("study-durations-select")
+            with ui.column().classes("grow gap-1"):
+                ui.select(_options(study, chosen), multiple=True, value=chosen,
+                          label="Study default (blank: all durations)",
+                          on_change=lambda e: pending.changed(e.value)) \
+                    .on("popup-show", lambda _: pending.opened()) \
+                    .on("popup-hide", lambda _: pending.closed()) \
+                    .classes("w-full").props("dense use-chips clearable") \
+                    .mark("study-durations-select")
+                status = ui.row().classes("w-full items-center gap-3")
+                ui.textarea("Reason - why these durations, for whoever reviews the study",
+                            value=studies.durations_note(study)) \
+                    .classes("w-full").props("dense autogrow") \
+                    .mark("study-durations-note") \
+                    .on("blur", lambda e: store_note(e.sender.value))
+
+    def draw_status() -> None:
+        """What is left out, when the default last changed, and a nudge for a reason."""
+        status.clear()
+        dropped = studies.left_out(study)
+        changed = studies.durations_changed(study)
+        with status:
+            if dropped:
+                ui.label(_left_out_text(dropped)).classes("text-sm font-bold") \
+                    .mark("study-durations-left-out")
+            if changed:
+                ui.label(f"Changed {_date_text(changed)}").classes("text-xs text-muted") \
+                    .mark("study-durations-changed")
+            if studies.default_durations(study) and not studies.durations_note(study):
+                ui.label("Say why these are left out.").classes("text-xs text-attention") \
+                    .mark("study-durations-ask")
+
+    draw_status()
 
 
 def mode_of(spec: dict) -> str:
@@ -129,6 +181,13 @@ def spec_picker(study, spec: dict, *, what: str = "table") -> None:
                     .mark(f"{what}-durations-select")
                 ui.label("None chosen follows the study default.") \
                     .classes("text-xs text-muted")
+            if mode != FOLLOW:
+                ui.input(f"Why this {what} differs from the study default",
+                         value=spec.get(studies.DURATIONS_NOTE_KEY) or "") \
+                    .classes("w-full").props("dense") \
+                    .mark(f"{what}-durations-note") \
+                    .on_value_change(lambda e: spec.update(
+                        {studies.DURATIONS_NOTE_KEY: str(e.value or "").strip()}))
 
     def set_mode(mode) -> None:
         if mode == mode_of(spec):
@@ -145,11 +204,22 @@ def spec_picker(study, spec: dict, *, what: str = "table") -> None:
     draw()
 
 
+NOTE_SHOWN = 60          # characters of a table's own reason on its folded line
+
+
 def describe(study, spec: dict) -> str:
-    """'' when a table or figure reads every duration; otherwise which, and whose."""
+    """'' when a table or figure reads every duration; otherwise what it leaves out
+    (or keeps), whose choice that is, and an override's own reason, cut short.
+    The reason in full is ``studies.note_for``, for a tooltip."""
     hours = studies.durations_for(study, spec)
+    mode = mode_of(spec)
     if not hours:
-        return "" if mode_of(spec) != ALL or not studies.default_durations(study) \
-            else "all durations"
-    whose = "study default" if mode_of(spec) == FOLLOW else "own choice"
-    return f"{studies.durations_text(hours)} ({whose})"
+        return "all durations" if mode == ALL and studies.default_durations(study) else ""
+    dropped = studies.left_out(study, hours)
+    text = _left_out_text(dropped).lower() if dropped else studies.durations_text(hours)
+    if mode == FOLLOW:
+        return f"{text} (study default)"
+    note = studies.note_for(study, spec)
+    if len(note) > NOTE_SHOWN:
+        note = note[:NOTE_SHOWN].rsplit(" ", 1)[0] + "..."
+    return f"{text} (own choice{': ' + note if note else ''})"
