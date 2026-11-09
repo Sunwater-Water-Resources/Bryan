@@ -269,9 +269,11 @@ class SubBurstView:
                 .props("dense flat").mark("subburst-weights")
             if subburst.has_curves(self.results):
                 with ui.row().classes("items-end gap-4"):
-                    ui.number("AEP of a level (m AHD)", value=self.level, format="%.2f",
-                              on_change=lambda e: self._set_level(e.value)) \
+                    # read on blur or Enter, not per keystroke: each read redraws the page
+                    level = ui.number("AEP of a level (m AHD)", value=self.level, format="%.2f") \
                         .classes("w-56").props("dense").mark("subburst-level")
+                    level.on("blur", lambda _, box=level: self._set_level(box.value))
+                    level.on("keydown.enter", lambda _, box=level: self._set_level(box.value))
                     ui.label("The dam crest, say: its AEP on each curve.").classes("text-xs text-muted")
                 cases, level_rows = subburst.level_rows(self.results, self.level)
                 columns = [{"name": "aep", "label": "AEP (1 in X)", "field": "aep", "align": "left"}]
@@ -281,7 +283,10 @@ class SubBurstView:
                     .props("dense flat").mark("subburst-levels")
 
     def _set_level(self, value) -> None:
-        self.level = value if value not in ("", None) else None
+        value = value if value not in ("", None) else None
+        if value == self.level:      # a blur after Enter, or leaving the box untouched
+            return
+        self.level = value
         self.draw()
 
     def _files(self) -> None:

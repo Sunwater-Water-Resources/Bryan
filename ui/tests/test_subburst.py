@@ -300,6 +300,31 @@ async def test_the_tab_draws_a_saved_result(user, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_the_level_is_read_when_the_box_is_left_not_on_every_digit(user, tmp_path):
+    from core import subburst
+    config = build(tmp_path)
+    project = open_project(config)
+    tested = subburst.candidates(project)[next(iter(subburst.candidates(project)))]
+    plan = subburst.build_job(project, tested, calibrate=True)
+    save(config, plan, results_for(plan, calibrated=True))
+
+    await open_tab(user, config)
+    table = next(iter(user.find(marker="subburst-levels").elements))
+    box = user.find(marker="subburst-level")
+    box.type("201")
+    # typing redraws nothing: the same table, and no row for the level yet
+    assert next(iter(user.find(marker="subburst-levels").elements)) is table
+    assert all(r["aep"] != "AEP of 201.00" for r in table.rows)
+    box.trigger("blur")
+    redrawn = next(iter(user.find(marker="subburst-levels").elements))
+    assert redrawn is not table
+    assert redrawn.rows[-1]["aep"] == "AEP of 201.00"
+    box = user.find(marker="subburst-level")
+    box.trigger("keydown.enter")         # unchanged: no second redraw
+    assert next(iter(user.find(marker="subburst-levels").elements)) is redrawn
+
+
+@pytest.mark.asyncio
 async def test_a_project_whose_databases_predate_sub_bursts_says_how_to_get_them(user, tmp_path):
     await open_tab(user, build(tmp_path, groups=("GWL1p3",), unrecorded=("GWL1p3",)))
     await user.should_see("No group here has recorded sub-burst depths.")
