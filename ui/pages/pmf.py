@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import math
 
-from nicegui import app, run, ui
+from nicegui import app, background_tasks, run, ui
 
-from core import ensemble, pmfchart, reporttables, staleness, study as studies
+from core import ensemble, pmfchart, reporttables, staleness, study as studies, worldfloods
 from core.results import format_aep
 from layout import confirm, no_study, page_frame, severity_banner
 from state import STATE
@@ -146,6 +146,7 @@ class _PmfView:
                 return
             self.summary_box = ui.column().classes("w-full")
             _GroupView(self, groups[self.selected]).build()
+            _WorldFloodsView(self).build()
 
     def _select(self, index) -> None:
         self.selected = index
@@ -447,3 +448,121 @@ class _GroupView:
         self.entry[key] = value
         self.page.save()
         self.page.redraw()
+
+
+WORLD_CAPTION = (
+    "World maximum observed floods and the WMO (2009) envelope from "
+    + worldfloods.SOURCE + " The PMF inflow is the largest inflow in each PMF ensemble; "
+    "the PMPF inflow is the Monte Carlo inflow envelope at the AEP of the PMP.")
+
+
+def _flow(value) -> str:
+    return f"{value:,.0f}" if value and math.isfinite(value) else "-"
+
+
+def _share(value) -> str:
+    return f"{value:.0%}" if value and math.isfinite(value) else "-"
+
+
+class _WorldFloodsView:
+    """Every PMF group's PMF and PMPF inflow against the world's maximum floods:
+    the reasonableness check the report carries, copied to the clipboard as a PNG."""
+
+    def __init__(self, page: _PmfView) -> None:
+        self.page = page
+        self.study = page.study
+        self.section = page.section
+        self.chart = None
+
+    def build(self) -> None:
+        with ui.card().classes("w-full"):
+            ui.label("Against the world's maximum observed floods").classes(
+                "text-lg font-bold")
+            with ui.row().classes("w-full items-end gap-3 no-wrap"):
+                ui.input("Catchment area at the dam (km²)",
+                         value=_grouped(self.section.get("catchment_area_km2"))) \
+                    .classes("w-56").props("dense").mark("world-area") \
+                    .on("blur", lambda e: self._set("catchment_area_km2",
+                                                    _number(e.sender.value)))
+                ui.checkbox("Herschy (2003) envelope too",
+                            value=bool(self.section.get("world_herschy")),
+                            on_change=lambda e: self._set("world_herschy", e.value))
+                ui.space()
+                ui.button("Copy plot", icon="content_copy", on_click=self._copy) \
+                    .props("outline dense no-caps").mark("world-copy") \
+                    .tooltip("A PNG of the plot, to paste into the report")
+                ui.button("Save PNG", icon="download", on_click=self._save) \
+                    .props("flat dense no-caps").mark("world-save")
+            self.box = ui.column().classes("w-full gap-2")
+            with self.box:
+                ui.spinner()
+        ui.timer(0.01, self.fill, once=True)
+
+    def _set(self, key, value) -> None:
+        if self.section.get(key) == value:
+            return
+        self.section[key] = value
+        self.page.save()
+        background_tasks.create(self.fill(), name="world floods")
+
+    async def fill(self) -> None:
+        durations = studies.durations_for(self.study, {})
+        floods = await _off_thread(worldfloods.dam_floods, self.study, self.section,
+                                   durations) or []
+        if self.box.is_deleted:
+            return
+        area = _number(self.section.get("catchment_area_km2"))
+        self.box.clear()
+        with self.box:
+            if not area:
+                severity_banner("warn", "Give the catchment area at the dam to place the "
+                                        "PMF and PMPF on the plot.")
+            problems = [p for flood in floods for p in flood.problems]
+            if problems:
+                severity_banner("warn", "\n".join(problems))
+            self.chart = house_echart(pmfchart.world_floods_chart(
+                worldfloods.WORLD_FLOODS, area, floods,
+                herschy=bool(self.section.get("world_herschy")))) \
+                .classes("w-full h-[32rem]").mark("world-chart")
+            if area:
+                limit = worldfloods.wmo_envelope(area)
+                columns = [{"name": k, "label": l, "field": k,
+                            "align": "left" if k == "label" else "right"}
+                           for k, l in (("label", "PMF group"),
+                                        ("pmf", "PMF inflow (m³/s)"),
+                                        ("pmf_event", "Inflow of the PMF-level event"),
+                                        ("pmpf", "PMPF inflow (m³/s)"),
+                                        ("pmf_share", "PMF / WMO envelope"),
+                                        ("pmpf_share", "PMPF / WMO envelope"))]
+                rows = [{"label": f.label, "pmf": _flow(f.pmf),
+                         "pmf_event": _flow(f.pmf_level_event), "pmpf": _flow(f.pmpf),
+                         "pmf_share": _share(worldfloods.ratio_to_envelope(area, f.pmf)),
+                         "pmpf_share": _share(worldfloods.ratio_to_envelope(area, f.pmpf))}
+                        for f in floods]
+                ui.table(columns=columns, rows=rows, row_key="label") \
+                    .props("dense flat bordered").classes("w-full").mark("world-table")
+                ui.label(f"The WMO envelope at {area:,.0f} km² is {_flow(limit)} m³/s. "
+                         "It is a fitted envelope: six of the 54 floods sit up to 12% "
+                         "above it.").classes("text-sm text-body")
+            ui.label(WORLD_CAPTION).classes("text-xs text-muted")
+
+    async def _copy(self) -> None:
+        await self._render("")
+
+    async def _save(self) -> None:
+        name = (self.study.name or "pmf").strip().replace(" ", "_")
+        await self._render(f"{name}_world_floods.png")
+
+    async def _render(self, filename: str) -> None:
+        if self.chart is None:
+            ui.notify("The plot is still being drawn", type="warning")
+            return
+        outcome = await ui.run_javascript(
+            pmfchart.copy_chart_script(self.chart.id, filename), timeout=10.0)
+        if outcome == "image":
+            ui.notify("Plot copied - paste it into the report", type="positive")
+        elif outcome == "saved":
+            ui.notify(f"Saved {filename} to your downloads", type="positive")
+        else:
+            ui.notify(f"Could not copy the plot ({outcome}). Use Save PNG instead.",
+                      type="warning", multi_line=True)

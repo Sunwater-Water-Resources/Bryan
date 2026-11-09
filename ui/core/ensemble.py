@@ -413,6 +413,9 @@ def settings(study: Study) -> dict:
            "adopted_note": stored.get("adopted_note", ""),
            "pmp_aep": stored.get("pmp_aep", DEFAULT_PMP_AEP),
            "reference_levels": list(stored.get("reference_levels") or []),
+           # the world maximum floods plot (core/worldfloods.py)
+           "catchment_area_km2": stored.get("catchment_area_km2"),
+           "world_herschy": bool(stored.get("world_herschy", False)),
            "groups": [dict(entry) for entry in stored.get("groups") or []]}
     for entry in out["groups"]:
         entry.setdefault("label", entry.get("ensemble", {}).get("group", ""))

@@ -96,3 +96,29 @@ async def test_a_pmf_from_stale_realisations_says_so(user, opened):
     await user.open("/pmf")
     await seen(user, "pmf-highest")
     await user.should_see("dam.sq changed after the run")
+
+
+@pytest.mark.asyncio
+async def test_the_world_floods_plot_is_drawn_and_copied_as_a_png(user, opened, monkeypatch):
+    import pages.pmf as pmf_page
+    from core import ensemble, study as studies
+
+    scripts = []
+
+    async def fake_run_javascript(code, timeout=1.0):
+        scripts.append(code)
+        return "image"
+
+    await user.open("/pmf")
+    await seen(user, "world-chart")
+    await user.should_see("Give the catchment area")
+    user.find(marker="world-area").type("1,250").trigger("blur")
+    table = await seen(user, "world-table")
+    assert table.rows[0]["pmf"] == "18,000" and table.rows[0]["pmpf"] == "16,000"
+    assert ensemble.settings(studies.load_study(opened.path))["catchment_area_km2"] == 1250
+
+    monkeypatch.setattr(pmf_page.ui, "run_javascript", fake_run_javascript)
+    user.find(marker="world-copy").click()
+    await asyncio.sleep(0.3)
+    assert scripts and "getDataURL" in scripts[0] and "'image/png'" in scripts[0]
+    await user.should_see("Plot copied")

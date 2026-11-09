@@ -512,6 +512,17 @@ A straight read off the realisations without a fit is too noisy up there - a doz
 
 **Adopted** is the value carried into the report: the analyst's judgement across the horizons and the grid, typed in with a note of how it was reached. **Summary of all** estimates every PMF group with its current settings.
 
+### Against the world's maximum observed floods
+
+A reasonableness check for the report: every PMF group's peak **PMF** and **PMPF** inflow, plotted at the dam's catchment area against the world's maximum observed floods and the WMO (2009) envelope over them, on log axes of catchment area against peak discharge. Give **Catchment area at the dam (km²)**; it is kept in the study file.
+
+- **The floods** are the 54 of Table 1 in Li, Wang and Li (2013), *Maximum observed floods in China*, Hydrological Sciences Journal 58(3), 728-735, from 0.9 to 4,640,300 km². Gauged floods are filled dots and the eleven surveyed ones open; the Amazon at Obidos is the paper's modified value, 303,000 m³/s rather than the original 370,000.
+- **The WMO envelope** is the paper's equation (2), from the WMO *Manual on Estimation of Probable Maximum Precipitation* (2009): Qm = 1830 A^0.316 for 300 to 3,000,000 km², 154 A^0.738 below 300 km². It steps at 300 km² because the equation does. It is a fitted envelope, not a strict bound: six of the 54 floods sit up to 12% above it. **Herschy (2003) envelope too** adds the paper's equation (1), for comparison with older reports.
+- **The PMF inflow** is the largest inflow in the PMF ensemble, the peak of the largest flood, which is what a maximum observed flood is. That is not always the inflow of the event that gives the PMF *level*, which the PMF table quotes, so the table under the plot shows both.
+- **The PMPF inflow** is the Monte Carlo group's inflow envelope (the largest over its durations, within the study's storm durations) at the AEP of the PMP.
+
+The table also gives each as a share of the WMO envelope at the catchment area. **Copy plot** puts the plot on the clipboard as a PNG, at three times its size on screen, to paste into Word; **Save PNG** downloads it instead, for a browser that cannot put a picture on the clipboard.
+
 ## Report figures
 
 The **Figures** page replaces the plot-list workbook of ```PlotFrequencyCurves_v03.py```. Figures are kept in the study file (open it on the Study page) and name their curves by run and group, so a re-run moves every figure with it and nothing is retyped. Each figure is a card that opens on its name; the header keeps the file name, the output path and the Export PNG, Edit, Duplicate and Remove buttons, and the preview is only drawn once the card is opened, so a long list opens quickly. An open card stays open while its labels are edited or it is exported.

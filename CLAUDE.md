@@ -572,6 +572,14 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   digits at 1e-8. numpy and `statistics.NormalDist` only - the fit runs in the UI environment,
   no util script. The settings live in the study file under `"pmf"`, and `Study.all_sources`
   includes them so renaming a run carries them too.
+  **The world floods plot** (`core/worldfloods.py`, `pmfchart.world_floods_chart`) lays each PMF
+  group's PMF and PMPF inflow against Table 1 of Li et al. (2013) and the WMO (2009) envelope,
+  their eq. (2), drawn as written - it steps at 300 km² and six of the 54 floods sit above it, so
+  it is not a bound. The PMF there is the **largest** ensemble inflow, not the inflow of the
+  PMF-level event (the table shows both); the PMPF is the inflow envelope at the AEP of the PMP.
+  **Copy plot** is ECharts' own render (`copy_chart_script`: `getElement(id).chart.getDataURL`,
+  then a `ClipboardItem` of `image/png`), which is why the chart is drawn with `animation: False`
+  - a copy taken mid-animation would be half drawn. No matplotlib, so no util script.
 - **The Figures page builds the data; `util/ReportFigure.py` only draws it** (`core/figures.py`).
   The UI reduces every curve to (AEP, value) pairs with its label - a group's envelope through
   `results.compare`/`analyse`, a file curve, or an RMC Bestfit export - previews them, and writes
