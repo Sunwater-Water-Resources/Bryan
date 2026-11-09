@@ -103,6 +103,16 @@ def test_the_chart_places_the_dam_floods_at_the_catchment_area(study):
     assert pmf == [1_250, 18_000]
     assert len(options["series"][0]["data"]) + len(options["series"][1]["data"]) == 54
     assert options["series"][2]["markLine"]["data"] == [{"xAxis": 1_250}]
+    # the legend stands beside the plot, never under the area axis, and names every entry
+    assert options["legend"]["orient"] == "vertical" and options["legend"]["data"] == names
+    assert options["grid"]["right"] == pmfchart.legend_width(names)
+
+
+def test_a_legend_too_long_for_one_column_takes_the_room_of_two():
+    one = pmfchart.legend_width(["x" * 10] * 19)
+    two = pmfchart.legend_width(["x" * 10] * 20)
+    assert two - pmfchart._LEGEND_PAD == 2 * (one - pmfchart._LEGEND_PAD)
+    assert pmfchart.legend_width(["x" * 20]) > pmfchart.legend_width(["x" * 10])
 
 
 def test_several_groups_are_told_apart_by_label_and_without_an_area_none_are_placed(study):
@@ -119,5 +129,9 @@ def test_the_copy_script_renders_the_chart_to_a_png():
     copy = pmfchart.copy_chart_script(42)
     assert "getElement(42)" in copy and "getDataURL" in copy
     assert "'image/png'" in copy and "ClipboardItem" in copy
+    # entries switched off are cut from the legend for the render and put back after it
+    assert "selected[nameOf(item)] !== false" in copy
+    assert copy.index("chart.setOption(change)") < copy.index("getDataURL") \
+        < copy.index("chart.setOption(restore)")
     save = pmfchart.copy_chart_script(42, "callide_world_floods.png")
     assert '"callide_world_floods.png"' in save and "link.download" in save

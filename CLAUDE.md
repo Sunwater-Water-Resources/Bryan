@@ -579,7 +579,9 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   PMF-level event (the table shows both); the PMPF is the inflow envelope at the AEP of the PMP.
   **Copy plot** is ECharts' own render (`copy_chart_script`: `getElement(id).chart.getDataURL`,
   then a `ClipboardItem` of `image/png`), which is why the chart is drawn with `animation: False`
-  - a copy taken mid-animation would be half drawn. No matplotlib, so no util script.
+  - a copy taken mid-animation would be half drawn. The legend stands beside the plot (`legend_width` sizes the room),
+  because under it the rows for eight groups ran over the area axis, and the copy cuts the
+  legend to the entries still switched on for the render and puts it back after. No matplotlib, so no util script.
 - **The Figures page builds the data; `util/ReportFigure.py` only draws it** (`core/figures.py`).
   The UI reduces every curve to (AEP, value) pairs with its label - a group's envelope through
   `results.compare`/`analyse`, a file curve, or an RMC Bestfit export - previews them, and writes

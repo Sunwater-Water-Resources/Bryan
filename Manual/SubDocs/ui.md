@@ -521,7 +521,7 @@ A reasonableness check for the report: every PMF group's peak **PMF** and **PMPF
 - **The PMF inflow** is the largest inflow in the PMF ensemble, the peak of the largest flood, which is what a maximum observed flood is. That is not always the inflow of the event that gives the PMF *level*, which the PMF table quotes, so the table under the plot shows both.
 - **The PMPF inflow** is the Monte Carlo group's inflow envelope (the largest over its durations, within the study's storm durations) at the AEP of the PMP.
 
-The table also gives each as a share of the WMO envelope at the catchment area. **Copy plot** puts the plot on the clipboard as a PNG, at three times its size on screen, to paste into Word; **Save PNG** downloads it instead, for a browser that cannot put a picture on the clipboard.
+The table also gives each as a share of the WMO envelope at the catchment area. **Copy plot** puts the plot on the clipboard as a PNG, at three times its size on screen, to paste into Word; **Save PNG** downloads it instead, for a browser that cannot put a picture on the clipboard. Click a legend entry to switch it off - a group you are not reporting, say; switched-off entries are left out of the copy and the saved PNG altogether, not drawn greyed.
 
 ## Report figures
 

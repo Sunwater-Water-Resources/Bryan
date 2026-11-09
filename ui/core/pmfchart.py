@@ -156,6 +156,28 @@ WORLD_PEAK_RANGE = (10, 1_000_000)
 # Thousands separators on a log axis: ECharts writes 100000 otherwise.
 _GROUPED = "value => value.toLocaleString('en-AU', {maximumFractionDigits: 1})"
 
+#: The page draws the chart 32rem high. The legend stands to the right of the
+#: plot, one column of up to that height, and wraps into more columns past it.
+#: A legend under the plot wraps into as many rows as the groups need, and ECharts
+#: does not move the plot up for them.
+WORLD_CHART_HEIGHT = 512
+_LEGEND_TOP = 20     # px above and below the legend
+_LEGEND_ROW = 24     # px per entry: the 14 px icon and the 10 px gap
+_LEGEND_ICON = 40    # px per column besides the text: the icon, its gap and air
+_LEGEND_CHAR = 7.5   # px per character of a 12 px label, generously
+_LEGEND_PAD = 20     # px between the plot and the legend
+
+
+def legend_width(names, height: float = WORLD_CHART_HEIGHT) -> float:
+    """The room a vertical legend of ``names`` takes on the right of a chart
+    ``height`` px high. ``copy_chart_script`` works it out again, the same way,
+    for the entries left switched on."""
+    if not names:
+        return _LEGEND_PAD
+    rows = max(1, int((height - 2 * _LEGEND_TOP) // _LEGEND_ROW))
+    columns = math.ceil(len(names) / rows)
+    return _LEGEND_PAD + columns * (_LEGEND_ICON + _LEGEND_CHAR * max(map(len, names)))
+
 
 def world_floods_chart(floods, area_km2=None, dam_floods=(), *, herschy=False) -> dict:
     """Peak discharge against catchment area: the world's maximum observed floods
@@ -221,12 +243,16 @@ def world_floods_chart(floods, area_km2=None, dam_floods=(), *, herschy=False) -
             "splitLine": {"show": True, "lineStyle": {"opacity": 0.35}},
             "minorTick": {"show": True}, "minorSplitLine": {"show": True,
                                                            "lineStyle": {"opacity": 0.12}}}
+    # every entry named, so a copy can take the switched-off ones out and put them back
+    names = [s["name"] for s in series]
     return {
         "animation": False,
         "backgroundColor": "#FFFFFF",
         "tooltip": {"trigger": "item"},
-        "legend": {"bottom": 0, "itemGap": 14},
-        "grid": {"left": 80, "right": 30, "top": 20, "bottom": 90},
+        "legend": {"data": names, "orient": "vertical", "right": 10,
+                   "top": _LEGEND_TOP, "bottom": _LEGEND_TOP,
+                   "itemGap": _LEGEND_ROW - 14, "itemHeight": 14},
+        "grid": {"left": 80, "right": legend_width(names), "top": 20, "bottom": 60},
         "xAxis": {**axis, "name": "Catchment area (km²)", "nameGap": 30,
                   "min": WORLD_AREA_RANGE[0], "max": WORLD_AREA_RANGE[1]},
         "yAxis": {**axis, "name": "Peak discharge (m³/s)", "nameGap": 62,
@@ -243,6 +269,12 @@ def copy_chart_script(element_id: int, filename: str = "", *, pixel_ratio: int =
     screen, on white, so it pastes into Word sharp at the width of a page. The
     clipboard needs ``ClipboardItem`` and a secure context, which localhost is; a
     browser without it is told to use Save instead.
+
+    Legend entries switched off on screen are left out of the picture rather than
+    drawn greyed: the legend is cut to the entries still on for the render and put
+    back after it, and a vertical legend's room is worked out again for what is left
+    (``legend_width``). ECharts redraws synchronously on ``setOption``, so the render
+    in between is of the cut legend.
     """
     import json
     return (
@@ -250,8 +282,33 @@ def copy_chart_script(element_id: int, filename: str = "", *, pixel_ratio: int =
         f"const element = getElement({int(element_id)});"
         "const chart = element && element.chart;"
         "if (!chart) return 'failed: the chart has not been drawn yet';"
-        "const url = chart.getDataURL({type: 'png', backgroundColor: '#FFFFFF',"
-        f" pixelRatio: {int(pixel_ratio)}}});"
+        "const option = chart.getOption();"
+        "const legend = (option.legend || [])[0];"
+        "let restore = null;"
+        "if (legend && Array.isArray(legend.data) && legend.data.length) {"
+        "  const nameOf = item => typeof item === 'string' ? item : item.name;"
+        "  const selected = legend.selected || {};"
+        "  const shown = legend.data.filter(item => selected[nameOf(item)] !== false);"
+        "  if (shown.length < legend.data.length) {"
+        "    restore = {legend: {data: legend.data}};"
+        "    const change = {legend: {data: shown}};"
+        "    if (legend.orient === 'vertical' && option.grid && option.grid.length) {"
+        f"      const rows = Math.max(1, Math.floor((chart.getHeight() - {2 * _LEGEND_TOP})"
+        f" / {_LEGEND_ROW}));"
+        "      const columns = Math.ceil(shown.length / rows);"
+        "      const longest = Math.max(0, ...shown.map(item => nameOf(item).length));"
+        "      restore.grid = {right: option.grid[0].right};"
+        f"      change.grid = {{right: shown.length ? {_LEGEND_PAD} + columns * ({_LEGEND_ICON}"
+        f" + {_LEGEND_CHAR} * longest) : {_LEGEND_PAD}}};"
+        "    }"
+        "    chart.setOption(change);"
+        "  }"
+        "}"
+        "let url;"
+        "try {"
+        "  url = chart.getDataURL({type: 'png', backgroundColor: '#FFFFFF',"
+        f"   pixelRatio: {int(pixel_ratio)}}});"
+        "} finally { if (restore) chart.setOption(restore); }"
         f"const filename = {json.dumps(filename)};"
         "if (filename) {"
         "  const link = document.createElement('a');"
