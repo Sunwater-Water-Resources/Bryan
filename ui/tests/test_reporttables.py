@@ -305,7 +305,11 @@ def test_table_1_carries_the_dcf_and_pmf_rows_in_aep_order(study):
     table = rt.build(study, spec)
     labels = [row.cells[0] for row in table.rows]
     dcf = next(row for row in table.rows if row.cells[0].endswith("(DCF)"))
-    assert dcf.bold and dcf.shaded and dcf.cells[1:4] == ["", "", "219.13"]
+    # No inflow; the outflow off the rating at the crest: 40,333 ML above full
+    # supply on the fixture's ELS, about halfway from 2,000 to 10,000 m3/s
+    # on its SQ - and the footnote says where it came from.
+    assert dcf.bold and dcf.shaded and dcf.cells[1:4] == ["", "6,067", "219.13"]
+    assert any("outflow from the spillway rating" in note for note in table.footnotes)
     order = [float(label.split()[0].replace(",", "")) for label in labels]
     assert order == sorted(order)                        # the DCF sits in AEP order
     assert labels.index(dcf.cells[0]) == labels.index("1,000") + 1
@@ -317,6 +321,30 @@ def test_a_dcf_row_without_a_level_asks_for_one(study):
     table = rt.build(study, design_spec(dcf={"level": None, "label": "DCF"}))
     assert not any(row.cells[0].endswith("(DCF)") for row in table.rows)
     assert "Dam crest flood row: give the dam crest level" in table.problems
+
+
+def _dcf_cells(table):
+    return next(row.cells for row in table.rows if row.cells[0].endswith("(DCF)"))
+
+
+def test_a_dcf_above_the_rating_is_left_blank_and_says_why(study):
+    # The crest is 40,333 ML above full supply; a rating that stops at 30,000 ML
+    # would have to be extrapolated to give an outflow there
+    from report_fixtures import write_rating
+    write_rating(study.folder / "runs" / "E099" / "reservoir",
+                 pairs=[(0, 0), (20_000, 2_000), (30_000, 4_000)])
+    table = rt.build(study, design_spec(dcf={"level": 219.13, "label": "DCF"}))
+    assert _dcf_cells(table)[2] == ""
+    assert any(p.startswith("DCF outflow:") and "above the top of the rating dam.sq" in p
+               for p in table.problems)
+
+
+def test_a_dcf_without_its_rating_on_disk_says_which_file(study):
+    (study.folder / "runs" / "E099" / "reservoir" / "dam.sq").unlink()
+    table = rt.build(study, design_spec(dcf={"level": 219.13, "label": "DCF"}))
+    assert _dcf_cells(table)[1:4] == ["", "", "219.13"]       # the AEP still stands
+    assert any("DCF outflow" in p and "dam.sq" in p and "not on disk" in p
+               for p in table.problems)
 
 
 def test_new_tables_start_with_no_dam_specific_levels():

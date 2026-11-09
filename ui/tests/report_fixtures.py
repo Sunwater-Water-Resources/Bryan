@@ -54,14 +54,34 @@ def _config(folder: Path, name: str, sims_list: str) -> Path:
     return path
 
 
+# The dam the design run was routed through: straight lines, so an outflow off it
+# can be worked by hand. FSL 215.5 m holds 50,000 ML and each metre above it
+# 11,111 ML; the rating is storage above full supply against outflow.
+RATING_FSL = 215.5
+ELS = {"EL": [210.0, 215.5, 220.0, 225.0], "V": [0.0, 50_000.0, 100_000.0, 160_000.0]}
+SQ_PAIRS = [(0, 0), (20_000, 2_000), (60_000, 10_000), (110_000, 20_000)]
+
+
+def write_rating(folder: Path, name: str = "dam", pairs=SQ_PAIRS) -> None:
+    """An ELS and an SQ as URBS reads them: five header lines, then the pairs."""
+    folder.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(ELS).to_csv(folder / f"{name}.els", index=False)
+    header = ["Miniature dam storage above FSL vs flow", "*", "*", "*",
+              f"{len(pairs)} PAIRS:"]
+    lines = header + [f"{s}\t{q}" for s, q in pairs]
+    (folder / f"{name}.sq").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def build_design_run(folder: Path) -> Path:
-    """A reservoir-routing sims list of two durations and its quantile files."""
+    """A reservoir-routing sims list of two durations, its quantile files and its rating."""
     rows = []
+    write_rating(folder / "reservoir")
     for duration in (36, 72):
         name = f"CLD_mc_{duration}h_GWL1p3_RFSL"
         rows.append(reservoir_row(**{
             "Group": GROUP, "Duration": duration, "Output file": name,
-            "Output suffix": "", "Results folder": r"sims_mc\results"}))
+            "Output suffix": "", "Results folder": r"sims_mc\results",
+            "FSL": RATING_FSL}))
         results = folder / "sims_mc" / "results"
         _quantiles(results / f"{name}__level_quantiles.csv", "level", LEVEL[duration])
         _quantiles(results / f"{name}__inflow_quantiles.csv", "inflow", INFLOW[duration])

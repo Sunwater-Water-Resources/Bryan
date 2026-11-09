@@ -519,7 +519,11 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   Callide's Tables 33 and 34 took each result's own maximum instead, so those kinds carry a
   `flows_at` choice with the level as the default. **`results.compare` drops an AEP where every
   duration is blank**, which is what a dam that does not spill writes for outflow - so a missing
-  outflow at an AEP the level has is 0, not a gap. Validated against Callide E012 on 23 September
+  outflow at an AEP the level has is 0, not a gap. **The DCF row's outflow comes off the dam's
+  rating at the crest level** (`core/damrating.py`), not off a quantile: the sims list's
+  `ELS file`/`SQ file`/`FSL` for a reservoir routing group, the `.vec` DAM ROUTE line at
+  `max_keys.level` for one URBS routed, read linearly as `ReservoirRouting` routes and never
+  extrapolated past either curve. Validated against Callide E012 on 23 September
   2026: Tables 26 and 28 reproduce to the digit, and where the report differed, E012's own
   `_00h_` files agreed with this module - the report was behind. `core/wordtable.py` renders one
   `ReportTable` as HTML for Word (inline styles in points, the report's table style) and as

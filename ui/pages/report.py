@@ -575,8 +575,8 @@ class _TableEditor:
                 ui.input("Label", value=dcf.get("label", "DCF")).classes("w-24") \
                     .props("dense").on_value_change(lambda e: dcf.update(label=e.value))
                 self._sig_figs(dcf, "dcf-sig-figs")
-                ui.label("AEP from the critical duration's realisations"
-                         ).classes("text-xs text-muted")
+                ui.label("AEP from the critical duration's realisations; outflow "
+                         "from the dam's rating").classes("text-xs text-muted")
         pmf = self.spec.get("pmf")
         ui.checkbox("PMF row, at the notional AEP adopted on the PMF page", value=bool(pmf),
                     on_change=lambda e: self._toggle(

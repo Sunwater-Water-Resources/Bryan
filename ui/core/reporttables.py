@@ -14,7 +14,9 @@ The kinds:
                    A duration that does not spill has no outflow quantile at
                    that AEP, and the table says 0. Two optional rows go in AEP
                    order: the dam crest flood (``dcf``: its AEP by
-                   ``aep_of_level``, no flows, shaded) and the PMF (``pmf``:
+                   ``aep_of_level``, its outflow off the dam's rating at the
+                   crest level - core/damrating.py - no inflow, shaded) and the
+                   PMF (``pmf``:
                    the highest ensemble event at the notional AEP adopted on
                    the PMF page).
 ``flood_levels``   The AEP at which the level envelope reaches each of a list of
@@ -60,7 +62,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from . import ensemble, results
+from . import damrating, ensemble, results
 from .bryan import representative_events
 from . import study as studies
 from .study import Study, StudyError
@@ -354,6 +356,7 @@ def group_curves(study: Study, run_name: str, group: str, durations=None) -> Gro
 
 def forget_cached() -> None:
     _CURVE_CACHE.clear()
+    damrating.forget_cached()
 
 
 # -- the kinds -----------------------------------------------------------------
@@ -377,7 +380,8 @@ def build(study: Study, spec: dict) -> ReportTable:
         table.footnotes.append(rounding_note(spec))
     elif kind == DESIGN_FLOODS and spec.get("dcf") and _finite(spec["dcf"].get("level")):
         table.footnotes.append("Dam crest flood " + rounding_note(spec["dcf"]).replace(
-            "AEPs ", "AEP ", 1))
+            "AEPs ", "AEP ", 1).rstrip(".") + "; outflow from the spillway rating at "
+            "the crest level.")
     return table
 
 
@@ -417,15 +421,16 @@ def _design_floods(study: Study, spec: dict) -> ReportTable:
         rows.append((aep, [label, fmt_flow(inflow, thousands), fmt_flow(outflow, thousands),
                            fmt_level(envelope[aep]), fmt_duration(duration)], {}))
 
-    rows += _dcf_row(study, curves, spec.get("dcf"), table)
+    rows += _dcf_row(study, curves, spec.get("dcf"), thousands, table)
     rows += _pmf_row(study, spec.get("pmf"), thousands, table)
     for _, cells, options in sorted(rows, key=lambda item: item[0]):
         table.add(cells, **options)
     return table
 
 
-def _dcf_row(study, curves, dcf, table) -> list:
-    """The dam crest flood row: its AEP and level, no flows, shaded."""
+def _dcf_row(study, curves, dcf, thousands, table) -> list:
+    """The dam crest flood row: its AEP, its level and the outflow the rating gives
+    there, shaded. No inflow: the crest is reached by many storms, not one."""
     if not dcf:
         return []
     if not _finite(dcf.get("level")):
@@ -438,7 +443,14 @@ def _dcf_row(study, curves, dcf, table) -> list:
     if not _finite(aep):
         return []
     label = f"{fmt_rounded_aep(aep, **aep_rounding(dcf))} ({dcf.get('label') or 'DCF'})"
-    return [(aep, [label, "", "", fmt_level(level), fmt_duration(duration)],
+    outflow = ""
+    try:
+        run = study.open_run(curves.run)
+        rating = damrating.rating_for(run, run.rows_in(curves.group))
+        outflow = fmt_flow(rating.outflow_at(level), thousands)
+    except (StudyError, damrating.RatingError) as exc:
+        table.problems.append(f"DCF outflow: {exc}")
+    return [(aep, [label, "", outflow, fmt_level(level), fmt_duration(duration)],
              {"bold": True, "shaded": True})]
 
 
