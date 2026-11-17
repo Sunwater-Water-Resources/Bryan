@@ -306,10 +306,12 @@ It is a button rather than something the page does by itself because the file is
 
 The plot marks the loading with a line on each axis. For a **lake level** loading there are two honest answers to *where is this level on the result axis*, and both are drawn:
 
-- the **design AEP** — where the frequency curve puts the level. This is the loading, and it is the one the ranking uses;
+- the **design AEP** — the level read off the realisations of the duration that is critical for it, as the Tables page reads the AEP of a level. This is the loading, and it is the one the ranking uses;
 - **the level in this run** (the dotted line) — the AEP at which this database's own realisations reach it.
 
-They rarely coincide, and the gap is not a rounding error. The design AEP is read off the **envelope** over the durations, as a straight line between the standard AEPs of the quantile table, from a curve that has been through the analysis; the dots are one duration's raw realisations. Where the two are more than about 0.05 in z apart the page says so in the loading's notes — *"This run reaches 220.50 at 1 in 1,340; the design curve puts it at 1 in 1,000"* — which is worth reading, because a large gap means the run being drawn is not the one the loading was quoted from. A level nothing in the run reached gets no second mark.
+When the event comes from the critical duration the two coincide; they part when **From** names another run, and the page then says so in the loading's notes — *"This run reaches 220.50 at 1 in 1,340; its design AEP is 1 in 1,000"* — which is worth reading, because the run being drawn is not the one the loading's AEP was read from. A level nothing in the run reached gets no second mark.
+
+The design AEP is **not** read off the envelope's quantile table. That table holds only the standard AEPs, and a straight line between two of them is several per cent out wherever the level curve bends between them: at Callide E013 with every gate failed shut, the lake rises 1.3 m between 1 in 20 and 1 in 50 while the closed gates hold the outflow back, then slows once the embankments overtop, and the line put the dam crest flood (219.13 m) at 1 in 31.5 where the 72 h realisations reach it at 1 in 29.2. The envelope still decides which duration is critical, and its own read is given in the notes beside the one used. Where the critical duration's realisations do not reach the level, the envelope's AEP is used and the notes say so.
 
 ### Which run the event comes from
 

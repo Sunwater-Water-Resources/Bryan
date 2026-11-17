@@ -36,11 +36,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import grouping, results
+from . import ensemble, grouping, results
 from .bryan import BRYAN_ROOT, representative_events
 from .columns import MONTE_CARLO, RESERVOIR_ROUTING, normalise_method
 from .outputs import find_database
 from .paths import atomic_write_json, cell_text, normalise_sep
+from .study import StudyError
 
 # Bryan's own analysis. Imported through the seam so the allow-list test sees it.
 EVENTS = representative_events()
@@ -271,6 +272,46 @@ def critical_source(project, sources, result_type, target_aep):
     return None, ""
 
 
+def level_aep(project, sources, level, curve_aep) -> tuple:
+    """The AEP of a lake level loading, as the Tables page reads it.
+
+    Returns ``(aep, note)``. The critical duration is taken off the envelope
+    at ``curve_aep`` (the envelope's own read of the level), and the level is
+    then read off **that duration's realisations** - ``reporttables.aep_of_level``
+    under its default ``mcdf`` method, through the same ``ensemble`` reader, so
+    the page and the report cannot quote different AEPs for one level.
+
+    The envelope alone is a straight line between the standard AEPs, and where
+    the level curve bends between two of them it is several per cent out: on
+    Callide E013 with every gate failed shut, the dam crest flood (219.13 m)
+    reads 1 in 31.5 off the line and is reached at 1 in 29.2 by the 72 h
+    realisations, which agree with the quantiles at 1 in 20 and 1 in 50.
+    Where the realisations cannot answer, the envelope's AEP is kept and the
+    note says why.
+    """
+    shown = f"{float(level):,.2f}"
+    source, _ = critical_source(project, sources, "level", curve_aep)
+    if source is None:
+        return curve_aep, (f"{shown} is 1 in {results.format_aep(curve_aep)} on the "
+                           f"design curve; no critical duration to read it off "
+                           f"the realisations of.")
+    try:
+        real = ensemble.read_realisations(source.path, "level")
+    except (StudyError, OSError, ValueError) as error:
+        return curve_aep, (f"{shown} is 1 in {results.format_aep(curve_aep)} on the "
+                           f"design curve; the {source.label} realisations could "
+                           f"not be read ({error}).")
+    found = ensemble.aep_at_value(real, level)
+    if not (found == found and 0 < found < float("inf")):
+        return curve_aep, (f"{shown} is 1 in {results.format_aep(curve_aep)} on the "
+                           f"design curve; the {source.label} realisations do "
+                           f"not reach it.")
+    return found, (f"{shown} is 1 in {results.format_aep(found)} in the "
+                   f"{source.label} realisations, the critical duration; a straight "
+                   f"line between the design curve's standard AEPs puts it at "
+                   f"1 in {results.format_aep(curve_aep)}.")
+
+
 # -- evaluating one loading --------------------------------------------------
 
 @dataclass
@@ -356,6 +397,9 @@ def evaluate(project, sources, target: Target, filters: Filters,
         if aep is None and not above_curve:
             outcome.problem = lookup.note or "The level is off the frequency curve."
             return outcome
+        if aep and not above_curve:
+            aep, note = level_aep(project, sources, target.value, aep)
+            outcome.notes.append(note)
     outcome.aep = aep
 
     # Where the ranking takes the loading's value from, and whether the plot
@@ -427,8 +471,8 @@ def evaluate(project, sources, target: Target, filters: Filters,
             if z_design == z_design and abs(z_data - z_design) > 0.05:
                 outcome.notes.append(
                     f"This run reaches {target_value:,.2f} at 1 in "
-                    f"{results.format_aep(outcome.data_aep)}; the design curve "
-                    f"puts it at 1 in {results.format_aep(aep)}. The plot marks "
+                    f"{results.format_aep(outcome.data_aep)}; its design AEP "
+                    f"is 1 in {results.format_aep(aep)}. The plot marks "
                     f"both.")
 
     # Above the curve there is no target to be near; rank() sorts by level

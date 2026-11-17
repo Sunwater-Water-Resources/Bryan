@@ -426,3 +426,70 @@ def test_a_level_outside_the_run_gets_no_second_mark(project):
                            source="24h", count=5)
     outcome = events.evaluate(project, sources, target, events.Filters())
     assert outcome.data_z is None
+
+
+# -- the AEP of a level loading ----------------------------------------------
+
+def _dense_realisations(curve: dict, offset: float) -> pd.DataFrame:
+    """Realisations that follow a level curve, ``offset`` metres above it.
+
+    Read between the standard AEPs as a straight line in z, so the curve and the
+    realisations differ only by the offset - which is what makes the AEP the
+    realisations give a different, known number.
+    """
+    import numpy as np
+    standard = sorted(curve)
+    zs = [events.EVENTS.normal_variate(aep) for aep in standard]
+    rows = {}
+    for i, aep in enumerate(np.geomspace(20, 20_000, 400)):
+        z = events.EVENTS.normal_variate(float(aep))
+        level = float(np.interp(z, zs, [curve[a] for a in standard])) + offset
+        rows[i] = realisation(i, float(aep), float(aep), level=level)
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def test_a_level_loading_takes_its_aep_from_the_critical_durations_realisations(project, tmp_path):
+    """The Tables page's reading, so the page and the report quote one AEP.
+
+    The envelope is a straight line between the standard AEPs; where the level
+    curve bends between two of them that line is several per cent out (Callide
+    E013, gates all failed: the DCF reads 1 in 31.5 off it and 1 in 29.2 off
+    the 72 h realisations).
+    """
+    from core import ensemble
+    folder = tmp_path / "sims_mc" / "results"
+    for duration in DURATIONS:
+        _dense_realisations(level_curve(duration), 0.5).to_csv(
+            folder / f"TFD_mc_{duration}h_GWL1p3__mcdf.csv")
+    events.forget_cached()
+    sources = events.sources_for_rows(project)
+    curve = events.level_curve(project, sources)
+    level = float(curve.loc[1000])
+    target = events.Target(kind="level", value=level, result_type="level")
+    outcome = events.evaluate(project, sources, target, events.Filters())
+
+    critical, _ = events.critical_source(project, sources, "level", 1000)
+    expected = ensemble.aep_at_value(ensemble.read_realisations(critical.path), level)
+    assert outcome.aep == pytest.approx(expected)
+    # half a metre higher at every AEP, so the level is reached sooner
+    assert outcome.aep < 900
+    from core import results
+    on_the_line = results.format_aep(events.EVENTS.aep_for_level(curve, level).aep)
+    assert any("realisations, the critical duration" in note
+               and f"puts it at 1 in {on_the_line}." in note for note in outcome.notes)
+    # ranked in the duration it was read off, which then agrees with it
+    assert outcome.source == critical
+    assert outcome.data_z is None or abs(
+        outcome.data_z - events.EVENTS.normal_variate(outcome.aep)) < 0.05
+
+
+def test_a_level_the_realisations_do_not_reach_keeps_the_curves_aep(project):
+    """The fixture's realisations sit at 214-230 m and its curves at 105-142 m."""
+    sources = events.sources_for_rows(project)
+    curve = events.level_curve(project, sources)
+    level = float(curve.loc[1000])
+    target = events.Target(kind="level", value=level, result_type="level")
+    outcome = events.evaluate(project, sources, target, events.Filters())
+    assert outcome.aep == pytest.approx(
+        events.EVENTS.aep_for_level(curve, level).aep)
+    assert any("do not reach it" in note for note in outcome.notes)

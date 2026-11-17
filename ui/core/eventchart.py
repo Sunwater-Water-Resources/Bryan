@@ -103,11 +103,10 @@ def neutrality_chart(outcome, result_type="level", title="") -> dict:
     z_target = normal_variate(outcome.aep) if outcome.aep else None
     z_rain_target = normal_variate(
         outcome.target.rain_aep or outcome.aep) if outcome.aep else None
-    # Where the loading sits in this database's own realisations, which is not
-    # where the design curve puts it: the curve is the envelope over the
-    # durations, read as a straight line between the standard AEPs and smoothed
-    # on the way. Marking only the design AEP makes that gap look like the plot
-    # is wrong, so both are drawn.
+    # Where the loading sits in this database's own realisations. A level
+    # loading's design AEP is read off the critical duration's realisations
+    # (events.level_aep), so the two coincide when that is the run drawn and
+    # part when another duration is; both are drawn so the gap is visible.
     z_data = numeric(getattr(outcome, "data_z", None))
     for value in (z_target, z_rain_target, z_data):
         if numeric(value) is not None:

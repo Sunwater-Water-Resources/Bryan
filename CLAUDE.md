@@ -460,13 +460,17 @@ Bryan and following it. See `ui/README.md` and `Manual/SubDocs/ui.md`.
   control change. Leave a blank source on a loading and it takes the event from the duration
   that is **critical at that loading's AEP**, reusing `results.compare`/`analyse`; for level
   that genuinely differs across the frequency range, so one list of loadings draws from several
-  runs. A level loading is read off the **envelope**, not one duration's curve, because the
-  envelope is the design quantile the level was quoted from. **A level loading therefore has two places on the
-  result axis and the plot marks both** (`variate_at_value`, `data_z`): the design AEP off
-  that envelope, and the AEP this database's own realisations reach the level at. They
-  differ by the envelope-versus-duration gap, the straight-line read between the standard
-  AEPs, and the smoothing — nothing to do with rounding, and marking only the first made the
-  line look offset from the level that was asked for. The chosen list is saved per group
+  runs. A level loading's AEP is read as the Tables page reads it (`events.level_aep`,
+  `reporttables.aep_of_level` under `mcdf`, one `ensemble.aep_at_value` reader): the
+  critical duration off the **envelope**, then the level off **that duration's
+  realisations**. The envelope's own read is a straight line between the standard AEPs, and
+  where the level curve bends between two of them it is several per cent out - Callide E013
+  gates-all-fail put the 219.13 m DCF at 1 in 31.5 on the line and 1 in 29.2 in the 72 h
+  realisations, so the Δz ranking offered events 0.1-0.3 m above the loading (fixed
+  17 November 2026). The envelope's AEP is the fallback where the realisations do not reach
+  the level, and the notes say which was used. **The plot still marks two places** (`variate_at_value`,
+  `data_z`): the design AEP, and where the run being drawn reaches the level - they coincide
+  for the critical duration and part when **From** names another. The chosen list is saved per group
   as `<group>_representative_events.json` beside the databases — per group because a GWL series
   usually shares one results folder.
   **`core/hydrographs.py` is the only thing that reads a stored hydrograph file**, and it does
