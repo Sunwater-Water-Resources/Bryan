@@ -584,19 +584,24 @@ class _EventsView:
         python = STATE.settings.bryan_python or "python"
         command = events.extract_command(self.project, path, python)
         with self.command_box:
-            with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                ui.code(command).classes("grow text-xs")
-                # The command is long and wraps, so selecting it by hand is
-                # fiddly and easy to get half of.
-                ui.button(icon="content_copy",
-                          on_click=lambda: self._copy(command)) \
-                    .props("flat dense round").mark("copy-command") \
-                    .tooltip("Copy the command")
+            # The buttons go above the command, not beside it: the command is one
+            # long line of absolute paths, and in a row with it Run was pushed off
+            # the right edge of the card and only found by scrolling sideways.
+            with ui.row().classes("items-center gap-2"):
                 ui.button("Run", icon="play_arrow",
                           on_click=lambda: self._run_extract(path)) \
                     .props("dense no-caps").mark("run-extract") \
                     .tooltip("Write the hydrographs, the rebuilt hyetographs and a plot "
                              "per chosen event, beside the saved selection")
+                # The command is long, so selecting it by hand is fiddly and easy
+                # to get half of.
+                ui.button(icon="content_copy",
+                          on_click=lambda: self._copy(command)) \
+                    .props("flat dense round").mark("copy-command") \
+                    .tooltip("Copy the command")
+            # min-w-0 lets the box be narrower than its line, which then scrolls
+            # inside it rather than widening the card.
+            ui.code(command).classes("w-full min-w-0 text-xs").style("overflow-x: auto")
             self.extract_box = ui.column().classes("w-full gap-2")
 
     async def _run_extract(self, selection) -> None:
